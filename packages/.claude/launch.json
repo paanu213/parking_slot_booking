@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:api"],
+      "port": 4000
+    },
+    {
+      "name": "web-vendor",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:vendor"],
+      "port": 5174
+    },
+    {
+      "name": "web-customer",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:customer"],
+      "port": 5173
+    },
+    {
+      "name": "web-admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:admin"],
+      "port": 5175
+    }
+  ]
+}

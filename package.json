@@ -1,0 +1,18 @@
+{
+  "name": "parking-slot-booking",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "parking_space_backend",
+    "parking_space_frontend",
+    "parking_space_frontend_vendor",
+    "parking_space_frontend_admin"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=parking_space_backend",
+    "dev:customer": "npm run dev --workspace=parking_space_frontend",
+    "dev:vendor": "npm run dev --workspace=parking_space_frontend_vendor",
+    "dev:admin": "npm run dev --workspace=parking_space_frontend_admin"
+  }
+}
