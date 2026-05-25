@@ -1,0 +1,9 @@
+# React Router SPA — redirect all requests to index.html
+# Apache (Hostinger) reads this automatically from public_html
+Options -MultiViews
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\.html$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]

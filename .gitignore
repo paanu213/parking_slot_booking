@@ -1,0 +1,38 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Build output ──────────────────────────────────────────────────────────────
+dist/
+build/
+.vite/
+
+# ── Environment variables — NEVER commit real .env files ──────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# ── Uploads / local file storage ─────────────────────────────────────────────
+parking_space_backend/uploads/
+
+# ── Prisma generated client (re-generated on each deploy) ────────────────────
+parking_space_backend/node_modules/.prisma/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+
+# ── Archives ──────────────────────────────────────────────────────────────────
+*.zip
+*.tar.gz
+
+# ── TypeScript cache ──────────────────────────────────────────────────────────
+*.tsbuildinfo

@@ -1,0 +1,1009 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { prisma } from '../../lib/prisma.js';
+import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { validate } from '../../middleware/validate.js';
+import { hashPassword } from '../../lib/password.js';
+import { BadRequest } from '../../lib/http.js';
+import { storeIconBuffer, storeImageBuffer, deleteImageByUrl, storeDocumentBuffer, deleteDocumentByUrl } from '../../lib/images.js';
+import { imageUpload, docUpload } from '../uploads/uploads.routes.js';
+
+const r = Router();
+r.use(requireAuth, requireRole('SUPER_ADMIN', 'ADMIN', 'SUB_ADMIN'));
+
+// --- Dashboard stats ---
+r.get('/stats', async (req, res, next) => {
+  try {
+    // Range window — defaults to today if no params supplied
+    const now = new Date();
+    const defaultStart = new Date(now); defaultStart.setHours(0,  0,  0,   0);
+    const defaultEnd   = new Date(now); defaultEnd.setHours(23, 59, 59, 999);
+
+    const rangeStart: Date = req.query.start
+      ? new Date(req.query.start as string)
+      : defaultStart;
+    const rangeEnd: Date = req.query.end
+      ? new Date(req.query.end as string)
+      : defaultEnd;
+
+    if (isNaN(rangeStart.getTime()) || isNaN(rangeEnd.getTime())) {
+      return next(BadRequest('Invalid start or end date'));
+    }
+
+    const rangeCond = { gte: rangeStart, lte: rangeEnd };
+
+    const [
+      // Static / global counts
+      totalVendors, pendingVendors, approvedVendors,
+      pendingProfileEdits,
+      totalSpaces, pendingSpaces, approvedSpaces,
+      // Range-filtered metrics
+      rangeBookingsTotal,
+      rangeBookingsConfirmed,
+      rangeBookingsCancelled,
+      rangeRevenueResult,
+      // Recent lists for pending-action panels
+      recentBookings,
+      recentPendingVendors,
+      recentPendingSpaces,
+      recentProfileEdits,
+    ] = await prisma.$transaction([
+      prisma.vendor.count(),
+      prisma.vendor.count({ where: { status: 'PENDING' } }),
+      prisma.vendor.count({ where: { status: 'APPROVED' } }),
+      prisma.vendor.count({ where: { pendingProfileData: { not: null } } }),
+      prisma.parkingLocation.count(),
+      prisma.parkingLocation.count({ where: { approvalStatus: 'PENDING_REVIEW' } }),
+      prisma.parkingLocation.count({ where: { approvalStatus: 'APPROVED', isActive: true } }),
+      // Range bookings
+      prisma.booking.count({ where: { createdAt: rangeCond } }),
+      prisma.booking.count({ where: { status: 'CONFIRMED', createdAt: rangeCond } }),
+      prisma.booking.count({ where: { status: 'CANCELLED', createdAt: rangeCond } }),
+      prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: { status: 'PAID', createdAt: rangeCond },
+      }),
+      // Recent panels (always last 6/5, not range-filtered)
+      prisma.booking.findMany({
+        take: 6,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: { select: { fullName: true, email: true } },
+          slot: { include: { location: { select: { name: true, city: true } } } },
+        },
+      }),
+      prisma.vendor.findMany({
+        where: { status: 'PENDING' },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: { user: { select: { fullName: true, email: true } } },
+      }),
+      prisma.parkingLocation.findMany({
+        where: { approvalStatus: 'PENDING_REVIEW' },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: { vendor: { select: { businessName: true } } },
+      }),
+      prisma.vendor.findMany({
+        where: { pendingProfileData: { not: null } },
+        take: 5,
+        orderBy: { updatedAt: 'desc' },
+        include: { user: { select: { fullName: true, email: true } } },
+      }),
+    ]);
+
+    res.json({
+      vendors: { total: totalVendors, pending: pendingVendors, approved: approvedVendors, pendingProfileEdits },
+      spaces:  { total: totalSpaces,  pending: pendingSpaces,  approved: approvedSpaces  },
+      range: {
+        bookings:  rangeBookingsTotal,
+        confirmed: rangeBookingsConfirmed,
+        cancelled: rangeBookingsCancelled,
+        revenue:   Number(rangeRevenueResult._sum.amount ?? 0),
+      },
+      recent: {
+        bookings:       recentBookings,
+        pendingVendors: recentPendingVendors,
+        pendingSpaces:  recentPendingSpaces,
+        profileEdits:   recentProfileEdits,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Vendor approval flow ---
+r.get('/vendors', async (req, res) => {
+  const status = (req.query.status as string | undefined) ?? undefined;
+  const items = await prisma.vendor.findMany({
+    where: status ? { status: status as any } : {},
+    include: { user: { select: { fullName: true, email: true, phone: true, status: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ items });
+});
+
+r.post('/vendors/:id/approve', async (req, res, next) => {
+  try {
+    const vendor = await prisma.vendor.update({
+      where: { id: req.params.id },
+      data: { status: 'APPROVED', approvedAt: new Date(), approvedById: req.user!.sub },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'VENDOR_APPROVE', entity: 'Vendor', entityId: vendor.id },
+    });
+    res.json(vendor);
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.post('/vendors/:id/reject', async (req, res, next) => {
+  try {
+    const vendor = await prisma.vendor.update({
+      where: { id: req.params.id },
+      data: { status: 'REJECTED', rejectionNote: req.body?.note ?? null },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'VENDOR_REJECT', entity: 'Vendor', entityId: vendor.id },
+    });
+    res.json(vendor);
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.patch('/vendors/:id/status', async (req, res, next) => {
+  try {
+    const status = req.body?.status === 'INACTIVE' ? 'INACTIVE' : 'APPROVED';
+    const vendor = await prisma.vendor.update({ where: { id: req.params.id }, data: { status } });
+    res.json(vendor);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Edit vendor details
+const updateVendorSchema = z.object({
+  // Vendor-level fields
+  businessName: z.string().min(2).optional(),
+  contactPhone: z.string().min(7).optional(),
+  address:      z.string().min(3).optional(),
+  aadharNumber: z.string().max(20).optional(),
+  aadharDocUrl: z.string().url().optional(),
+  // Owner / User-level fields
+  fullName:     z.string().min(2).optional(),
+  phone:        z.string().optional(),
+  email:        z.string().email().optional(),
+});
+
+r.patch('/vendors/:id', validate(updateVendorSchema), async (req, res, next) => {
+  try {
+    const { fullName, phone, email, ...vendorData } = req.body as z.infer<typeof updateVendorSchema>;
+
+    // Find current vendor to get userId and check old aadhar doc
+    const current = await prisma.vendor.findUniqueOrThrow({
+      where: { id: req.params.id },
+      include: { user: { select: { id: true } } },
+    });
+
+    // Clean up old aadhar doc if being replaced
+    if (vendorData.aadharDocUrl && current.aadharDocUrl && current.aadharDocUrl !== vendorData.aadharDocUrl) {
+      await deleteDocumentByUrl(current.aadharDocUrl);
+    }
+
+    // Update User-level fields (fullName, phone, email) if provided
+    if (fullName !== undefined || phone !== undefined || email !== undefined) {
+      const userUpdate: Record<string, string> = {};
+      if (fullName !== undefined) userUpdate.fullName = fullName;
+      if (phone    !== undefined) userUpdate.phone    = phone;
+      if (email    !== undefined) userUpdate.email    = email;
+      await prisma.user.update({ where: { id: current.user.id }, data: userUpdate });
+    }
+
+    const vendor = await prisma.vendor.update({
+      where: { id: req.params.id },
+      data:  vendorData,
+      include: { user: { select: { fullName: true, email: true, phone: true, status: true } } },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'VENDOR_EDIT', entity: 'Vendor', entityId: vendor.id },
+    });
+    res.json(vendor);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Create vendor (admin action) ---
+const createVendorSchema = z.object({
+  email:        z.string().email(),
+  fullName:     z.string().min(2),
+  phone:        z.string().optional(),
+  businessName: z.string().min(2),
+  contactPhone: z.string().min(7),
+  address:      z.string().min(3),
+  aadharNumber: z.string().max(20).optional(),
+  aadharDocUrl: z.string().url().optional(),
+  tempPassword: z.string().min(8),
+});
+
+r.post('/vendors', validate(createVendorSchema), async (req, res) => {
+  const { email, fullName, phone, businessName, contactPhone, address, aadharNumber, aadharDocUrl, tempPassword } =
+    req.body as z.infer<typeof createVendorSchema>;
+  const user = await prisma.user.create({
+    data: {
+      email,
+      fullName,
+      phone,
+      role: 'VENDOR',
+      passwordHash: await hashPassword(tempPassword),
+      vendor: {
+        create: {
+          businessName, contactPhone, address,
+          aadharNumber: aadharNumber ?? null,
+          aadharDocUrl: aadharDocUrl ?? null,
+          status: 'APPROVED', approvedAt: new Date(),
+        },
+      },
+    },
+    include: { vendor: true },
+  });
+  res.status(201).json(user);
+});
+
+// --- Vendor profile edit approval (vendor-submitted pending edits) ---
+const VENDOR_USER_FIELDS = new Set(['fullName', 'phone', 'email']);
+
+r.post('/vendors/:id/approve-profile', async (req, res, next) => {
+  try {
+    const vendor = await prisma.vendor.findUniqueOrThrow({
+      where: { id: req.params.id },
+      include: { user: { select: { id: true } } },
+    });
+    if (!vendor.pendingProfileData) return next(BadRequest('No pending profile edits to approve'));
+    const pending = JSON.parse(vendor.pendingProfileData) as Record<string, unknown>;
+
+    // Delete old aadhar doc if being replaced by the pending edit
+    if (pending.aadharDocUrl && vendor.aadharDocUrl && pending.aadharDocUrl !== vendor.aadharDocUrl) {
+      await deleteDocumentByUrl(vendor.aadharDocUrl);
+    }
+
+    // Separate user-level fields from vendor-level fields
+    const userUpdate: Record<string, unknown> = {};
+    const vendorUpdate: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(pending)) {
+      if (VENDOR_USER_FIELDS.has(key)) userUpdate[key] = value;
+      else vendorUpdate[key] = value;
+    }
+
+    if (Object.keys(userUpdate).length > 0) {
+      await prisma.user.update({ where: { id: vendor.user.id }, data: userUpdate });
+    }
+
+    const updated = await prisma.vendor.update({
+      where: { id: req.params.id },
+      data: { ...vendorUpdate, pendingProfileData: null },
+      include: { user: { select: { fullName: true, email: true, phone: true, status: true } } },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'VENDOR_PROFILE_APPROVE', entity: 'Vendor', entityId: vendor.id },
+    });
+    res.json(updated);
+  } catch (e) { next(e); }
+});
+
+r.post('/vendors/:id/reject-profile', async (req, res, next) => {
+  try {
+    const vendor = await prisma.vendor.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (vendor.pendingProfileData) {
+      const pending = JSON.parse(vendor.pendingProfileData) as Record<string, unknown>;
+      // Delete the newly uploaded aadhar doc (if any) since it won't be used
+      if (pending.aadharDocUrl && pending.aadharDocUrl !== vendor.aadharDocUrl) {
+        await deleteDocumentByUrl(pending.aadharDocUrl as string);
+      }
+    }
+    const updated = await prisma.vendor.update({
+      where: { id: req.params.id },
+      data: { pendingProfileData: null, rejectionNote: req.body?.note ?? null },
+      include: { user: { select: { fullName: true, email: true, phone: true, status: true } } },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'VENDOR_PROFILE_REJECT', entity: 'Vendor', entityId: vendor.id },
+    });
+    res.json(updated);
+  } catch (e) { next(e); }
+});
+
+// --- Parking space approval flow ---
+
+// Single space — full detail (for admin edit page)
+r.get('/spaces/:id', async (req, res, next) => {
+  try {
+    const space = await prisma.parkingLocation.findUniqueOrThrow({
+      where: { id: req.params.id },
+      include: {
+        vendor: { include: { user: { select: { fullName: true, email: true } } } },
+        images: { orderBy: { sortOrder: 'asc' } },
+        slots:  { orderBy: { createdAt: 'asc' } },
+        amenities: { include: { amenity: true } },
+      },
+    });
+    res.json(space);
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.get('/spaces', async (req, res) => {
+  const status = req.query.status as string | undefined;
+  const items = await prisma.parkingLocation.findMany({
+    where: status ? { approvalStatus: status as any } : {},
+    include: {
+      vendor: { include: { user: { select: { fullName: true, email: true } } } },
+      images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+      slots: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ items });
+});
+
+r.post('/spaces/:id/approve', async (req, res, next) => {
+  try {
+    const space = await prisma.parkingLocation.findUniqueOrThrow({ where: { id: req.params.id } });
+    const pendingEdits = space.pendingData ? (JSON.parse(space.pendingData) as Record<string, unknown>) : null;
+    const updated = await prisma.parkingLocation.update({
+      where: { id: req.params.id },
+      data: {
+        ...(pendingEdits ?? {}),
+        approvalStatus: 'APPROVED',
+        approvalNote: null,
+        pendingData: null,
+        isActive: true,
+        approvedAt: new Date(),
+        approvedById: req.user!.sub,
+      },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'SPACE_APPROVE', entity: 'ParkingLocation', entityId: updated.id },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.post('/spaces/:id/reject', async (req, res, next) => {
+  try {
+    const updated = await prisma.parkingLocation.update({
+      where: { id: req.params.id },
+      data: {
+        approvalStatus: 'REJECTED',
+        approvalNote: req.body?.note ?? null,
+        pendingData: null,
+        isActive: false,
+      },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'SPACE_REJECT', entity: 'ParkingLocation', entityId: updated.id },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Reject only the pending edits on an already-approved space (keeps it live)
+r.post('/spaces/:id/reject-edits', async (req, res, next) => {
+  try {
+    const updated = await prisma.parkingLocation.update({
+      where: { id: req.params.id },
+      data: { pendingData: null, approvalNote: req.body?.note ?? null },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'SPACE_REJECT_EDITS', entity: 'ParkingLocation', entityId: updated.id },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Admin direct edit of a space's details
+const updateSpaceSchema = z.object({
+  name:        z.string().min(2).optional(),
+  description: z.string().optional(),
+  addressLine: z.string().min(3).optional(),
+  city:        z.string().min(2).optional(),
+  state:       z.string().min(2).optional(),
+  pincode:     z.string().length(6).optional(),
+  latitude:    z.coerce.number().optional(),
+  longitude:   z.coerce.number().optional(),
+});
+
+r.patch('/spaces/:id', validate(updateSpaceSchema), async (req, res, next) => {
+  try {
+    const updated = await prisma.parkingLocation.update({
+      where: { id: req.params.id },
+      data: req.body,
+      include: {
+        vendor: { include: { user: { select: { fullName: true, email: true } } } },
+        slots: true,
+      },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'SPACE_EDIT', entity: 'ParkingLocation', entityId: updated.id },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Admin: create a parking space for any approved vendor (auto-approved) ---
+const createLocationSchema = z.object({
+  vendorId:    z.string().min(1),
+  name:        z.string().min(2),
+  addressLine: z.string().min(3),
+  city:        z.string().min(2),
+  state:       z.string().min(2),
+  pincode:     z.string().length(6),
+  area:        z.string().max(100).optional(),
+  latitude:    z.coerce.number(),
+  longitude:   z.coerce.number(),
+  description: z.string().optional(),
+});
+
+r.post('/locations', validate(createLocationSchema), async (req, res, next) => {
+  try {
+    const { vendorId, ...locationData } = req.body;
+    const loc = await prisma.parkingLocation.create({
+      data: {
+        ...locationData,
+        vendorId,
+        approvalStatus: 'APPROVED',
+        isActive: true,
+        approvedAt:   new Date(),
+        approvedById: req.user!.sub,
+      },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'SPACE_CREATE', entity: 'ParkingLocation', entityId: loc.id },
+    });
+    res.status(201).json(loc);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Admin location images ---
+r.post('/locations/:id/images', imageUpload.array('files', 10), async (req, res, next) => {
+  try {
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    if (!files.length) throw BadRequest('No files uploaded');
+    const existing = await prisma.locationImage.count({ where: { locationId: req.params.id } });
+    const created = await Promise.all(
+      files.map(async (f, i) => {
+        const img = await storeImageBuffer(f.buffer);
+        return prisma.locationImage.create({
+          data: { locationId: req.params.id, url: img.url, width: img.width, height: img.height, sortOrder: existing + i },
+        });
+      }),
+    );
+    res.status(201).json({ items: created });
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.delete('/locations/:id/images/:imageId', async (req, res, next) => {
+  try {
+    const image = await prisma.locationImage.findFirstOrThrow({
+      where: { id: req.params.imageId, locationId: req.params.id },
+    });
+    await prisma.locationImage.delete({ where: { id: image.id } });
+    await deleteImageByUrl(image.url);
+    res.status(204).end();
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Admin amenities for a location ---
+r.put('/locations/:id/amenities', async (req, res, next) => {
+  try {
+    const amenityIds: string[] = req.body?.amenityIds ?? [];
+    await prisma.parkingLocationAmenity.deleteMany({ where: { locationId: req.params.id } });
+    if (amenityIds.length > 0) {
+      await prisma.parkingLocationAmenity.createMany({
+        data: amenityIds.map((amenityId) => ({ locationId: req.params.id, amenityId })),
+      });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Admin slot management ---
+const adminSlotSchema = z.object({
+  code:        z.string().min(1),
+  vehicleType: z.enum(['TWO_WHEELER', 'FOUR_WHEELER', 'HEAVY']),
+  hourlyPrice: z.coerce.number().min(0),
+});
+
+r.post('/locations/:id/slots', validate(adminSlotSchema), async (req, res, next) => {
+  try {
+    const slot = await prisma.slot.create({
+      data: { locationId: req.params.id, ...req.body, dailyPrice: 0 },
+    });
+    res.status(201).json(slot);
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.delete('/slots/:id', async (req, res, next) => {
+  try {
+    await prisma.slot.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Locations & slots (any vendor's) ---
+r.patch('/locations/:id/status', async (req, res, next) => {
+  try {
+    const loc = await prisma.parkingLocation.update({
+      where: { id: req.params.id },
+      data: { isActive: Boolean(req.body?.isActive) },
+    });
+    res.json(loc);
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.patch('/slots/:id/status', async (req, res, next) => {
+  try {
+    const slot = await prisma.slot.update({
+      where: { id: req.params.id },
+      data: { status: req.body?.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE' },
+    });
+    res.json(slot);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Edit slot details (code and/or hourly price)
+const updateSlotSchema = z.object({
+  code:        z.string().min(1).optional(),
+  hourlyPrice: z.coerce.number().positive().optional(),
+});
+
+r.patch('/slots/:id', validate(updateSlotSchema), async (req, res, next) => {
+  try {
+    const slot = await prisma.slot.update({
+      where: { id: req.params.id },
+      data:  req.body,
+    });
+    res.json(slot);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Bookings & payments overview ---
+r.get('/bookings', async (_req, res) => {
+  const items = await prisma.booking.findMany({
+    include: {
+      user: { select: { fullName: true, email: true, phone: true } },
+      slot: {
+        include: {
+          location: {
+            include: {
+              vendor: {
+                select: {
+                  businessName: true,
+                  contactPhone: true,
+                  user: { select: { fullName: true, email: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+      payments: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 200,
+  });
+  res.json({ items });
+});
+
+r.get('/payments', async (_req, res, next) => {
+  try {
+    // Return ALL bookings (online & direct) with payment + refund info.
+    const items = await prisma.booking.findMany({
+      include: {
+        user: { select: { fullName: true, email: true, phone: true } },
+        slot: {
+          include: {
+            location: {
+              include: {
+                vendor: { select: { id: true, businessName: true } },
+              },
+            },
+          },
+        },
+        payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    res.json({ items });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Update payment method for a direct booking
+r.patch('/bookings/:id/payment-method', async (req, res, next) => {
+  try {
+    const METHODS = ['CASH', 'UPI', 'CARD_DEBIT', 'CARD_CREDIT', 'NETBANKING', 'WALLET'];
+    const method = (req.body?.paymentMethod ?? '').toUpperCase();
+    if (!METHODS.includes(method)) return next(BadRequest('Invalid payment method'));
+    // Use `as any` because Prisma client may not yet be regenerated for the new paymentMethod field
+    const booking = await (prisma.booking.update as any)({
+      where: { id: req.params.id },
+      data: { paymentMethod: method },
+    });
+    res.json(booking);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Record a refund against a booking (direct or online)
+const refundSchema = z.object({
+  amount: z.coerce.number().positive(),
+  note:   z.string().optional(),
+});
+
+r.post('/bookings/:id/refund', validate(refundSchema), async (req, res, next) => {
+  try {
+    const { amount, note } = req.body as z.infer<typeof refundSchema>;
+    const booking = await prisma.booking.findUniqueOrThrow({
+      where: { id: req.params.id },
+      include: { payments: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+
+    if (amount > Number(booking.totalAmount)) {
+      return next(BadRequest('Refund amount cannot exceed total booking amount'));
+    }
+
+    if (booking.isDirectBooking) {
+      // Use `as any` because Prisma client may not yet be regenerated for the new refund fields
+      const updated = await (prisma.booking.update as any)({
+        where: { id: req.params.id },
+        data: { refundAmount: amount, refundedAt: new Date(), refundNote: note ?? null },
+      });
+      await prisma.auditLog.create({
+        data: {
+          actorId: req.user!.sub, action: 'BOOKING_REFUND',
+          entity: 'Booking', entityId: booking.id,
+          metadata: JSON.stringify({ amount, note }),
+        },
+      });
+      return res.json(updated);
+    }
+
+    // Online booking — store refund on the Payment record
+    const payment = booking.payments[0];
+    if (!payment) return next(BadRequest('No payment record found for this booking'));
+
+    const updatedPayment = await (prisma.payment.update as any)({
+      where: { id: payment.id },
+      data: {
+        refundAmount: amount,
+        refundedAt:   new Date(),
+        refundNote:   note ?? null,
+        status:       'REFUNDED',
+      },
+    });
+    await prisma.auditLog.create({
+      data: {
+        actorId: req.user!.sub, action: 'PAYMENT_REFUND',
+        entity: 'Payment', entityId: payment.id,
+        metadata: JSON.stringify({ amount, note }),
+      },
+    });
+    res.json(updatedPayment);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Cancel a booking (admin) ---
+r.patch('/bookings/:id/cancel', async (req, res, next) => {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return next(BadRequest('Booking not found'));
+    if (!['CONFIRMED', 'PENDING_PAYMENT'].includes(booking.status)) {
+      return next(BadRequest('Only confirmed or pending bookings can be cancelled'));
+    }
+    const updated = await prisma.booking.update({
+      where: { id: req.params.id },
+      data: {
+        status: 'CANCELLED',
+        cancelReason: (req.body?.reason as string | undefined) ?? null,
+      },
+    });
+    await prisma.auditLog.create({
+      data: {
+        actorId: req.user!.sub, action: 'BOOKING_CANCEL',
+        entity: 'Booking', entityId: updated.id,
+        metadata: req.body?.reason ? JSON.stringify({ reason: req.body.reason }) : null,
+      },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Customer list ---
+// Returns two lists:
+//   registered  – users with role CUSTOMER (have accounts)
+//   guests      – unique walk-in guests from direct bookings (no account)
+r.get('/customers', async (req, res, next) => {
+  try {
+    const search = ((req.query.search as string) ?? '').trim();
+
+    // 1. Registered customers
+    const registered = await prisma.user.findMany({
+      where: {
+        role: 'CUSTOMER',
+        ...(search
+          ? {
+              OR: [
+                { fullName: { contains: search } },
+                { email:    { contains: search } },
+                { phone:    { contains: search } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id:        true,
+        fullName:  true,
+        email:     true,
+        phone:     true,
+        status:    true,
+        createdAt: true,
+        _count: { select: { bookings: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    // 2. Walk-in / direct booking guests (vendor-created, no account)
+    const directBookings = await prisma.booking.findMany({
+      where: {
+        isDirectBooking: true,
+        guestPhone: { not: null },
+        ...(search
+          ? {
+              OR: [
+                { guestName:          { contains: search } },
+                { guestPhone:         { contains: search } },
+                { guestVehicleNumber: { contains: search } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id:                 true,
+        guestName:          true,
+        guestPhone:         true,
+        guestVehicleNumber: true,
+        guestVehicleModel:  true,
+        totalAmount:        true,
+        status:             true,
+        createdAt:          true,
+        slot: {
+          select: {
+            location: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+
+    // Deduplicate guests by phone — keep most-recent name/vehicle, accumulate booking count
+    const guestMap = new Map<string, {
+      phone: string; name: string; vehicleNumber: string | null;
+      vehicleModel: string | null; bookingCount: number; lastSeen: Date;
+      locations: Set<string>;
+    }>();
+
+    for (const b of directBookings) {
+      const phone = b.guestPhone!;
+      const existing = guestMap.get(phone);
+      if (!existing) {
+        guestMap.set(phone, {
+          phone,
+          name:          b.guestName ?? '',
+          vehicleNumber: b.guestVehicleNumber ?? null,
+          vehicleModel:  b.guestVehicleModel  ?? null,
+          bookingCount:  1,
+          lastSeen:      b.createdAt,
+          locations:     new Set(b.slot?.location?.name ? [b.slot.location.name] : []),
+        });
+      } else {
+        existing.bookingCount++;
+        if (b.createdAt > existing.lastSeen) {
+          existing.lastSeen      = b.createdAt;
+          existing.name          = b.guestName ?? existing.name;
+          existing.vehicleNumber = b.guestVehicleNumber ?? existing.vehicleNumber;
+          existing.vehicleModel  = b.guestVehicleModel  ?? existing.vehicleModel;
+        }
+        if (b.slot?.location?.name) existing.locations.add(b.slot.location.name);
+      }
+    }
+
+    const guests = Array.from(guestMap.values()).map((g) => ({
+      ...g,
+      locations: Array.from(g.locations),
+    }));
+
+    res.json({ registered, guests });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Toggle customer account status
+r.patch('/customers/:id/status', async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (user.role !== 'CUSTOMER') return next(BadRequest('User is not a customer'));
+    const newStatus = user.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    const updated = await prisma.user.update({
+      where: { id: req.params.id },
+      data:  { status: newStatus },
+      select: { id: true, fullName: true, email: true, phone: true, status: true, createdAt: true },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'CUSTOMER_STATUS', entity: 'User', entityId: updated.id },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Amenities master list (admin-managed) ---
+r.get('/amenities', async (_req, res, next) => {
+  try {
+    const items = await prisma.amenity.findMany({ orderBy: { name: 'asc' } });
+    res.json({ items });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Create amenity — JSON body { name, description?, iconName? }
+// iconName is a Lucide icon name string (e.g. "Cctv", "ShieldCheck")
+r.post('/amenities', async (req, res, next) => {
+  try {
+    const name = (req.body.name ?? '').trim();
+    if (name.length < 2) return next(BadRequest('Name must be at least 2 characters'));
+    const icon = (req.body.iconName ?? '').trim();
+    const amenity = await prisma.amenity.create({
+      data: { name, icon, description: req.body.description?.trim() || null },
+    });
+    res.status(201).json(amenity);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Update amenity icon by Lucide icon name
+r.patch('/amenities/:id', async (req, res, next) => {
+  try {
+    const iconName = (req.body.iconName ?? '').trim();
+    if (!iconName) return next(BadRequest('iconName is required'));
+    const existing = await prisma.amenity.findUniqueOrThrow({ where: { id: req.params.id } });
+    // Clean up old uploaded image if replacing with a named icon
+    if (existing.icon?.startsWith('http')) await deleteImageByUrl(existing.icon);
+    const updated = await prisma.amenity.update({
+      where: { id: req.params.id },
+      data: { icon: iconName },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.delete('/amenities/:id', async (req, res, next) => {
+  try {
+    const existing = await prisma.amenity.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (existing.icon?.startsWith('http')) await deleteImageByUrl(existing.icon);
+    await prisma.amenity.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Admin / Sub-Admin management ---
+const createAdminSchema = z.object({
+  email: z.string().email(),
+  fullName: z.string().min(2),
+  password: z.string().min(8),
+  role: z.enum(['ADMIN', 'SUB_ADMIN']),
+});
+
+// List all admins & sub-admins
+r.get('/admins', async (_req, res, next) => {
+  try {
+    const items = await prisma.user.findMany({
+      where: { role: { in: ['SUPER_ADMIN', 'ADMIN', 'SUB_ADMIN'] } },
+      select: { id: true, email: true, fullName: true, role: true, status: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ items });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Create admin / sub-admin (super admin only)
+r.post('/admins', requireRole('SUPER_ADMIN'), validate(createAdminSchema), async (req, res, next) => {
+  try {
+    const { email, fullName, password, role } = req.body as z.infer<typeof createAdminSchema>;
+    const user = await prisma.user.create({
+      data: { email, fullName, role, passwordHash: await hashPassword(password) },
+      select: { id: true, email: true, fullName: true, role: true, status: true, createdAt: true },
+    });
+    res.status(201).json(user);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Toggle admin active/inactive (super admin only)
+r.patch('/admins/:id/status', requireRole('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { status: req.body?.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE' },
+      select: { id: true, email: true, fullName: true, role: true, status: true, createdAt: true },
+    });
+    res.json(user);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Delete admin / sub-admin (super admin only, cannot delete self or another super admin)
+r.delete('/admins/:id', requireRole('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    const target = await prisma.user.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (target.role === 'SUPER_ADMIN') return next(BadRequest('Cannot delete a Super Admin'));
+    if (target.id === req.user!.sub) return next(BadRequest('Cannot delete yourself'));
+    await prisma.user.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+export default r;

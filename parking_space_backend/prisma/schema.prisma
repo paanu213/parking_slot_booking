@@ -1,0 +1,281 @@
+// Prisma schema — MySQL
+// Run: npm run prisma:migrate -- --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  SUB_ADMIN
+  VENDOR
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  FACEBOOK
+  APPLE
+}
+
+enum VendorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  INACTIVE
+}
+
+enum SlotStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SpaceApprovalStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  FAILED
+}
+
+enum PaymentStatus {
+  CREATED
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  passwordHash  String?
+  phone         String?      @unique
+  fullName      String
+  role          Role         @default(CUSTOMER)
+  status        UserStatus   @default(ACTIVE)
+  emailVerified Boolean      @default(false)
+  avatarUrl     String?
+  provider      AuthProvider @default(EMAIL)
+  providerId    String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  vendor        Vendor?
+  bookings      Booking[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@index([role, status])
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  userAgent  String?
+  ip         String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Vendor {
+  id            String        @id @default(cuid())
+  userId        String        @unique
+  businessName  String
+  gstNumber     String?
+  panNumber     String?
+  contactPhone  String
+  address       String
+  status        VendorStatus  @default(PENDING)
+  approvedAt    DateTime?
+  approvedById  String?
+  rejectionNote String?       @db.Text
+  payoutUpiId         String?
+  aadharNumber        String?
+  aadharDocUrl        String?
+  pendingProfileData  String?       @db.Text
+  createdAt           DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  locations ParkingLocation[]
+
+  @@index([status])
+}
+
+model ParkingLocation {
+  id          String   @id @default(cuid())
+  vendorId    String
+  name        String
+  description String?  @db.Text
+  addressLine String
+  city        String
+  state       String
+  pincode     String
+  area        String?
+  latitude    Decimal  @db.Decimal(10, 7)
+  longitude   Decimal  @db.Decimal(10, 7)
+  isActive        Boolean             @default(false)
+  approvalStatus  SpaceApprovalStatus @default(PENDING_REVIEW)
+  approvalNote    String?             @db.Text
+  approvedById    String?
+  approvedAt      DateTime?
+  pendingData     String?             @db.Text
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  vendor    Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  slots     Slot[]
+  images    LocationImage[]
+  amenities ParkingLocationAmenity[]
+
+  @@index([city, isActive])
+  @@index([latitude, longitude])
+}
+
+model Amenity {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  icon        String   @default("✓")
+  description String?
+  createdAt   DateTime @default(now())
+
+  locations ParkingLocationAmenity[]
+}
+
+model ParkingLocationAmenity {
+  locationId String
+  amenityId  String
+
+  location ParkingLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  amenity  Amenity         @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([locationId, amenityId])
+}
+
+model LocationImage {
+  id         String   @id @default(cuid())
+  locationId String
+  url        String
+  width      Int?
+  height     Int?
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  location ParkingLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId])
+}
+
+model Slot {
+  id             String     @id @default(cuid())
+  locationId     String
+  code           String
+  vehicleType    String     @default("CAR")
+  hourlyPrice    Decimal    @db.Decimal(10, 2)
+  dailyPrice     Decimal    @db.Decimal(10, 2)
+  monthlyPrice   Decimal?   @db.Decimal(10, 2)
+  status         SlotStatus @default(ACTIVE)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  location ParkingLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@unique([locationId, code])
+  @@index([status])
+}
+
+model Booking {
+  id                 String        @id @default(cuid())
+  reference          String        @unique
+  userId             String?
+  slotId             String
+  startAt            DateTime
+  endAt              DateTime
+  totalAmount        Decimal       @db.Decimal(10, 2)
+  currency           String        @default("INR")
+  status             BookingStatus @default(PENDING_PAYMENT)
+  cancelReason       String?       @db.Text
+  isDirectBooking    Boolean       @default(false)
+  guestName          String?
+  guestPhone         String?
+  guestVehicleNumber String?
+  guestVehicleModel  String?
+  // Direct booking payment tracking
+  paymentMethod      String?       // CASH | UPI | CARD_DEBIT | CARD_CREDIT | NETBANKING | WALLET
+  refundAmount       Decimal?      @db.Decimal(10, 2)
+  refundedAt         DateTime?
+  refundNote         String?       @db.Text
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  user     User?     @relation(fields: [userId], references: [id])
+  slot     Slot      @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@index([userId, status])
+  @@index([slotId, startAt, endAt])
+}
+
+model Payment {
+  id                 String        @id @default(cuid())
+  bookingId          String
+  provider           String        @default("razorpay")
+  providerOrderId    String?
+  providerPaymentId  String?
+  amount             Decimal       @db.Decimal(10, 2)
+  currency           String        @default("INR")
+  status             PaymentStatus @default(CREATED)
+  rawResponse        String?       @db.Text
+  // Refund tracking for online payments
+  refundAmount       Decimal?      @db.Decimal(10, 2)
+  refundedAt         DateTime?
+  refundNote         String?       @db.Text
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  String?  @db.Text
+  ip        String?
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([actorId])
+}
