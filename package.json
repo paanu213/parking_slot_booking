@@ -13,6 +13,7 @@
     "dev:backend": "npm run dev --workspace=parking_space_backend",
     "dev:customer": "npm run dev --workspace=parking_space_frontend",
     "dev:vendor": "npm run dev --workspace=parking_space_frontend_vendor",
-    "dev:admin": "npm run dev --workspace=parking_space_frontend_admin"
+    "dev:admin": "npm run dev --workspace=parking_space_frontend_admin",
+    "build:api": "npm run build --workspace=parking_space_backend && cd parking_space_backend && npx prisma generate && npx prisma db push"
   }
 }
