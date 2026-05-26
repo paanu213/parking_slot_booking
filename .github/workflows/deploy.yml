@@ -1,20 +1,21 @@
 name: Deploy to Hostinger
 
 # Runs on every push to main.
-# Three independent jobs run in parallel:
+# Two independent jobs run in parallel:
 #   1. deploy-admin   → builds React SPA, rsyncs dist/ to admin subdomain
 #   2. deploy-vendor  → builds React SPA, rsyncs dist/ to vendor subdomain
-#   3. deploy-backend → SSH into server: git pull → build → migrate → PM2 restart
+#
+# Backend API is deployed automatically by Hostinger's Node.js manager
+# (connected directly to this GitHub repo — no SSH step needed).
 #
 # Required GitHub Secrets (Settings → Secrets → Actions):
 #   HOSTINGER_HOST      Hostinger server IP or hostname  (e.g. srv1749.hstgr.io)
 #   HOSTINGER_USER      SSH username                     (e.g. u577205845)
 #   HOSTINGER_SSH_KEY   Private SSH key content          (-----BEGIN ... KEY-----)
 #   HOSTINGER_SSH_PORT  SSH port — Hostinger default is  65002
-#   VITE_API_URL        Production API base URL          (https://api.yourdomain.com/api)
-#   ADMIN_DEPLOY_PATH   Absolute path on server          (/home/u.../domains/admin.domain.com/public_html)
-#   VENDOR_DEPLOY_PATH  Absolute path on server          (/home/u.../domains/vendor.domain.com/public_html)
-#   BACKEND_DEPLOY_PATH Absolute path to repo on server  (/home/u.../parking-api)
+#   VITE_API_URL        Production API base URL          (https://api.autosahay.com/api)
+#   ADMIN_DEPLOY_PATH   Absolute path on server          (/home/u.../domains/autosahay.com/public_html/admin)
+#   VENDOR_DEPLOY_PATH  Absolute path on server          (/home/u.../domains/autosahay.com/public_html/vendor)
 
 on:
   push:
@@ -98,55 +99,4 @@ jobs:
           remote_key:  ${{ secrets.HOSTINGER_SSH_KEY }}
           remote_port: ${{ secrets.HOSTINGER_SSH_PORT }}
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 3 — Backend API (SSH: git pull → npm build → prisma → PM2 restart)
-  # ═══════════════════════════════════════════════════════════════════════════
-  deploy-backend:
-    name: Backend API
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:     ${{ secrets.HOSTINGER_HOST }}
-          username: ${{ secrets.HOSTINGER_USER }}
-          key:      ${{ secrets.HOSTINGER_SSH_KEY }}
-          port:     ${{ secrets.HOSTINGER_SSH_PORT }}
-          # Exit immediately if any command fails
-          script_stop: true
-          script: |
-            set -e
-
-            # Load NVM so node/npm/npx are available in non-interactive SSH sessions
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-
-            DEPLOY_DIR="${{ secrets.BACKEND_DEPLOY_PATH }}"
-
-            echo "→ Pulling latest code from main..."
-            cd "$DEPLOY_DIR"
-            git fetch origin main
-            git reset --hard origin/main
-
-            echo "→ Installing dependencies..."
-            npm install
-
-            echo "→ Building TypeScript..."
-            npm run build --workspace=parking_space_backend
-
-            echo "→ Running Prisma generate..."
-            cd parking_space_backend
-            npx prisma generate
-            npx prisma db push
-            cd ..
-
-            echo "→ Restarting API with PM2..."
-            if npx pm2 describe parking-api > /dev/null 2>&1; then
-              npx pm2 restart parking-api --update-env
-            else
-              npx pm2 start ecosystem.config.cjs
-            fi
-            npx pm2 save
-
-            echo "✓ Backend deployed successfully"
+  # Backend API is handled by Hostinger's Node.js manager — no CI job needed.
