@@ -69,7 +69,7 @@ ssh -T git@github.com
 
 ```bash
 cd ~
-git clone git@github.com:YOUR_GITHUB_USERNAME/YOUR_REPO_NAME.git parking-api
+git clone git@github.com:paanu213/parking_slot_booking.git parking-api
 cd parking-api
 ```
 
