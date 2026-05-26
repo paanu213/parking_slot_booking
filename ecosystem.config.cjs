@@ -11,7 +11,10 @@ module.exports = {
       name: 'parking-api',
 
       // Entry point — compiled TypeScript output
-      script: './parking_space_backend/dist/server.js',
+      script: './dist/server.js',
+
+      // Run from the backend directory so dotenv finds .env correctly
+      cwd: './parking_space_backend',
 
       // Number of instances (1 = single process; 'max' = one per CPU core)
       instances: 1,
