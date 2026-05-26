@@ -118,6 +118,10 @@ jobs:
           script: |
             set -e
 
+            # Load NVM so node/npm/npx are available in non-interactive SSH sessions
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
             DEPLOY_DIR="${{ secrets.BACKEND_DEPLOY_PATH }}"
 
             echo "→ Pulling latest code from main..."
@@ -131,10 +135,10 @@ jobs:
             echo "→ Building TypeScript..."
             npm run build --workspace=parking_space_backend
 
-            echo "→ Running Prisma generate + migrate..."
+            echo "→ Running Prisma generate..."
             cd parking_space_backend
             npx prisma generate
-            npx prisma migrate deploy
+            npx prisma db push
             cd ..
 
             echo "→ Restarting API with PM2..."
