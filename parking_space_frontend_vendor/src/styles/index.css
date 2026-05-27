@@ -9,4 +9,17 @@
   .btn-ghost { @apply btn bg-transparent text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800; }
   .input { @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900; }
   .card { @apply rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900; }
+
+  /* Table component — used across dashboard, bookings, payments, etc. */
+  .table { @apply w-full border-collapse text-left; }
+  .table thead { @apply bg-slate-50 dark:bg-slate-800/50; }
+  .table thead th {
+    @apply px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 whitespace-nowrap;
+  }
+  .table tbody tr {
+    @apply border-t border-slate-100 transition hover:bg-slate-50/60 dark:border-slate-800 dark:hover:bg-slate-800/40;
+  }
+  .table tbody td {
+    @apply px-4 py-3 align-middle text-sm text-slate-700 dark:text-slate-200;
+  }
 }

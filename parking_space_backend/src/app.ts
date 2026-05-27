@@ -18,6 +18,7 @@ import vendorRoutes from './modules/vendor/vendor.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import uploadRoutes from './modules/uploads/uploads.routes.js';
 import paymentRoutes from './modules/payments/payments.routes.js';
+import utilRoutes from './modules/util/util.routes.js';
 
 export const buildApp = () => {
   const app = express();
@@ -54,6 +55,7 @@ export const buildApp = () => {
   app.use('/api/admin', adminRoutes);
   app.use('/api/uploads', uploadRoutes);
   app.use('/api/payments', paymentRoutes);
+  app.use('/api/util', utilRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

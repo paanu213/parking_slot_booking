@@ -13,7 +13,8 @@ interface Amenity { id: string; name: string; icon: string; description?: string
 interface LocationImage { id: string; url: string; sortOrder: number }
 interface Slot {
   id: string; code: string; vehicleType: string;
-  hourlyPrice: number; status: 'ACTIVE' | 'INACTIVE';
+  hourlyPrice: number; monthlyPrice?: number | null;
+  status: 'ACTIVE' | 'INACTIVE';
 }
 interface Space {
   id: string; name: string; description?: string;
@@ -93,9 +94,13 @@ export const SpaceEditPage = () => {
   const [selectedAmenities, setSelectedAmenities] = useState<Set<string>>(new Set());
 
   // ── New slot form ──────────────────────────────────────────────────────────
-  const [newSlot, setNewSlot] = useState({ code: '', vehicleType: 'FOUR_WHEELER', hourlyPrice: '' });
+  const [newSlot, setNewSlot] = useState({
+    code: '', vehicleType: 'FOUR_WHEELER', hourlyPrice: '', monthlyPrice: '',
+  });
   const [editingSlot, setEditingSlot] = useState<string | null>(null);
-  const [slotEdit, setSlotEdit] = useState({ code: '', vehicleType: '', hourlyPrice: '' });
+  const [slotEdit, setSlotEdit] = useState({
+    code: '', vehicleType: '', hourlyPrice: '', monthlyPrice: '',
+  });
 
   // ── Image upload ───────────────────────────────────────────────────────────
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([]);
@@ -125,12 +130,11 @@ export const SpaceEditPage = () => {
     if (p.length !== 6 || p === pincodeRef.current) return;
     pincodeRef.current = p;
     setPincodeStatus('loading');
-    fetch(`https://api.postalpincode.in/pincode/${p}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data[0]?.Status === 'Success' && data[0].PostOffice?.length > 0) {
-          const po = data[0].PostOffice[0];
-          setForm((f) => ({ ...f, city: po.District ?? po.Block ?? po.Name, state: po.State }));
+    // Proxied through our backend (third-party API has frequent SSL cert issues)
+    api.get(`/util/pincode/${p}`)
+      .then(({ data }) => {
+        if (data?.city && data?.state) {
+          setForm((f) => ({ ...f, city: data.city, state: data.state }));
           setPincodeStatus('found');
         } else {
           setPincodeStatus('error');
@@ -193,24 +197,31 @@ export const SpaceEditPage = () => {
   });
 
   const addSlot = useMutation({
-    mutationFn: () => api.post(`/admin/locations/${id}/slots`, {
-      code: newSlot.code.trim(),
-      vehicleType: newSlot.vehicleType,
-      hourlyPrice: Number(newSlot.hourlyPrice),
-    }),
+    mutationFn: () => {
+      const mp = newSlot.monthlyPrice.trim();
+      return api.post(`/admin/locations/${id}/slots`, {
+        code:        newSlot.code.trim(),
+        vehicleType: newSlot.vehicleType,
+        hourlyPrice: Number(newSlot.hourlyPrice),
+        ...(mp !== '' && Number(mp) > 0 ? { monthlyPrice: Number(mp) } : {}),
+      });
+    },
     onSuccess: () => {
-      setNewSlot({ code: '', vehicleType: 'FOUR_WHEELER', hourlyPrice: '' });
+      setNewSlot({ code: '', vehicleType: 'FOUR_WHEELER', hourlyPrice: '', monthlyPrice: '' });
       invalidateSpace(); invalidateSpaces();
     },
   });
 
   const updateSlot = useMutation({
-    mutationFn: ({ slotId }: { slotId: string }) =>
-      api.patch(`/admin/slots/${slotId}`, {
-        code: slotEdit.code.trim(),
-        vehicleType: slotEdit.vehicleType,
-        hourlyPrice: Number(slotEdit.hourlyPrice),
-      }),
+    mutationFn: ({ slotId }: { slotId: string }) => {
+      const mp = slotEdit.monthlyPrice.trim();
+      return api.patch(`/admin/slots/${slotId}`, {
+        code:         slotEdit.code.trim(),
+        vehicleType:  slotEdit.vehicleType,
+        hourlyPrice:  Number(slotEdit.hourlyPrice),
+        monthlyPrice: mp === '' ? null : Number(mp),
+      });
+    },
     onSuccess: () => { setEditingSlot(null); invalidateSpace(); invalidateSpaces(); },
   });
 
@@ -480,7 +491,12 @@ export const SpaceEditPage = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold font-mono">{slot.code}</p>
-                    <p className="text-xs text-slate-400">{vt.label} · ₹{Number(slot.hourlyPrice).toLocaleString('en-IN')}/hr</p>
+                    <p className="text-xs text-slate-400">
+                      {vt.label} · ₹{Number(slot.hourlyPrice).toLocaleString('en-IN')}/hr
+                      {slot.monthlyPrice != null && Number(slot.monthlyPrice) > 0 && (
+                        <> · ₹{Number(slot.monthlyPrice).toLocaleString('en-IN')}/mo</>
+                      )}
+                    </p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
                     slot.status === 'ACTIVE'
@@ -495,7 +511,12 @@ export const SpaceEditPage = () => {
                       onClick={() => {
                         if (isEd) { setEditingSlot(null); return; }
                         setEditingSlot(slot.id);
-                        setSlotEdit({ code: slot.code, vehicleType: slot.vehicleType, hourlyPrice: String(slot.hourlyPrice) });
+                        setSlotEdit({
+                          code:         slot.code,
+                          vehicleType:  slot.vehicleType,
+                          hourlyPrice:  String(slot.hourlyPrice),
+                          monthlyPrice: slot.monthlyPrice != null ? String(slot.monthlyPrice) : '',
+                        });
                       }}
                     >
                       {isEd ? 'Cancel' : 'Edit'}
@@ -530,7 +551,7 @@ export const SpaceEditPage = () => {
                 {/* Inline edit */}
                 {isEd && (
                   <div className="border-t border-slate-100 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/40">
-                    <div className="grid gap-2 sm:grid-cols-3">
+                    <div className="grid gap-2 sm:grid-cols-4">
                       <div>
                         <label className="mb-1 block text-xs text-slate-500">Slot Code</label>
                         <input
@@ -561,7 +582,21 @@ export const SpaceEditPage = () => {
                           onChange={(e) => setSlotEdit((s) => ({ ...s, hourlyPrice: e.target.value }))}
                         />
                       </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-slate-500">Monthly (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Optional"
+                          className="input w-full text-sm"
+                          value={slotEdit.monthlyPrice}
+                          onChange={(e) => setSlotEdit((s) => ({ ...s, monthlyPrice: e.target.value }))}
+                        />
+                      </div>
                     </div>
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Monthly = 30-day subscription pass. Leave blank to disable monthly bookings for this slot.
+                    </p>
                     <div className="mt-2 flex gap-2">
                       <button
                         className="btn-primary text-xs"
@@ -584,7 +619,7 @@ export const SpaceEditPage = () => {
         {/* Add new slot */}
         <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 dark:border-slate-700">
           <p className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400">Add New Slot</p>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs text-slate-500">Slot Code *</label>
               <input
@@ -617,7 +652,21 @@ export const SpaceEditPage = () => {
                 onChange={(e) => setNewSlot((s) => ({ ...s, hourlyPrice: e.target.value }))}
               />
             </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Monthly Pass (₹)</label>
+              <input
+                type="number"
+                min="0"
+                className="input w-full text-sm"
+                placeholder="Optional"
+                value={newSlot.monthlyPrice}
+                onChange={(e) => setNewSlot((s) => ({ ...s, monthlyPrice: e.target.value }))}
+              />
+            </div>
           </div>
+          <p className="mt-2 text-[10px] text-slate-400">
+            Monthly Pass enables a 30-day subscription option for this slot. Leave blank for hourly-only.
+          </p>
           <button
             className="btn-primary mt-3 inline-flex items-center gap-1.5 text-sm"
             disabled={addSlot.isPending || !newSlot.code || !newSlot.hourlyPrice}

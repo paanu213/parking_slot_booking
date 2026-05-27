@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search, UserRound, ToggleLeft, ToggleRight,
-  CalendarCheck, Car, MapPin, ArrowUpDown,
+  CalendarCheck, Car, MapPin, ArrowUpDown, Pencil, X, Save,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -71,14 +72,219 @@ const Avatar = ({ name, guest }: { name: string; guest?: boolean }) => (
   </div>
 );
 
+// ── Edit Customer Modal ──────────────────────────────────────────────────────
+type EditTarget =
+  | { kind: 'registered'; data: RegisteredCustomer }
+  | { kind: 'guest';      data: GuestCustomer };
+
+const EditCustomerModal = ({
+  target, onClose, onSaved,
+}: {
+  target:  EditTarget;
+  onClose: () => void;
+  onSaved: () => void;
+}) => {
+  const qc = useQueryClient();
+  const isReg = target.kind === 'registered';
+
+  // Initial form values depend on the row kind
+  const [form, setForm] = useState(() =>
+    isReg
+      ? {
+          fullName: (target.data as RegisteredCustomer).fullName ?? '',
+          email:    (target.data as RegisteredCustomer).email    ?? '',
+          phone:    (target.data as RegisteredCustomer).phone    ?? '',
+        }
+      : {
+          guestName:          (target.data as GuestCustomer).name          ?? '',
+          guestPhone:         (target.data as GuestCustomer).phone         ?? '',
+          guestVehicleNumber: (target.data as GuestCustomer).vehicleNumber ?? '',
+          guestVehicleModel:  (target.data as GuestCustomer).vehicleModel  ?? '',
+        },
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (isReg) {
+        const reg = target.data as RegisteredCustomer;
+        const payload: Record<string, unknown> = {
+          fullName: (form as any).fullName?.trim(),
+          email:    (form as any).email?.trim(),
+          phone:    (form as any).phone?.trim() || null,
+        };
+        return (await api.patch(`/admin/customers/${reg.id}`, payload)).data;
+      } else {
+        const g = target.data as GuestCustomer;
+        const payload: Record<string, unknown> = {
+          currentPhone:       g.phone,
+          guestName:          (form as any).guestName?.trim(),
+          guestPhone:         (form as any).guestPhone?.trim(),
+          guestVehicleNumber: (form as any).guestVehicleNumber?.trim() || null,
+          guestVehicleModel:  (form as any).guestVehicleModel?.trim()  || null,
+        };
+        return (await api.patch(`/admin/customers/guest`, payload)).data;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-customers'] });
+      qc.invalidateQueries({ queryKey: ['admin-bookings'] });
+      onSaved();
+      onClose();
+    },
+  });
+
+  const set = (key: string, val: string) => setForm((f) => ({ ...f, [key]: val } as any));
+
+  const errorMsg =
+    (save.error as any)?.response?.data?.error?.message ??
+    (save.error as any)?.response?.data?.message ??
+    (save.isError ? 'Failed to save changes' : null);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+        {/* Header */}
+        <div className="mb-5 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900/30">
+              <Pencil className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold">
+                Edit {isReg ? 'Registered Customer' : 'Walk-in Guest'}
+              </h2>
+              <p className="text-xs text-slate-500">
+                {isReg
+                  ? 'Update the customer\'s account details.'
+                  : 'Updates apply to all of this guest\'s past direct bookings.'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid gap-3">
+          {isReg ? (
+            <>
+              <Field label="Full Name *">
+                <input
+                  className="input w-full"
+                  value={(form as any).fullName}
+                  onChange={(e) => set('fullName', e.target.value)}
+                />
+              </Field>
+              <Field label="Email *">
+                <input
+                  type="email"
+                  className="input w-full"
+                  value={(form as any).email}
+                  onChange={(e) => set('email', e.target.value)}
+                />
+              </Field>
+              <Field label="Phone">
+                <input
+                  className="input w-full"
+                  placeholder="Optional"
+                  value={(form as any).phone}
+                  onChange={(e) => set('phone', e.target.value)}
+                />
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Guest Name *">
+                <input
+                  className="input w-full"
+                  value={(form as any).guestName}
+                  onChange={(e) => set('guestName', e.target.value)}
+                />
+              </Field>
+              <Field label="Phone *">
+                <input
+                  className="input w-full"
+                  value={(form as any).guestPhone}
+                  onChange={(e) => set('guestPhone', e.target.value)}
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Vehicle Number">
+                  <input
+                    className="input w-full"
+                    placeholder="e.g. TS09AB1234"
+                    value={(form as any).guestVehicleNumber}
+                    onChange={(e) => set('guestVehicleNumber', e.target.value)}
+                  />
+                </Field>
+                <Field label="Vehicle Model">
+                  <input
+                    className="input w-full"
+                    placeholder="e.g. Honda City"
+                    value={(form as any).guestVehicleModel}
+                    onChange={(e) => set('guestVehicleModel', e.target.value)}
+                  />
+                </Field>
+              </div>
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-800/40 dark:bg-amber-900/20 dark:text-amber-300">
+                Changes apply to every direct booking that currently has this guest's phone number ({(target.data as GuestCustomer).phone}).
+              </p>
+            </>
+          )}
+
+          {errorMsg && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800/50 dark:bg-red-900/20 dark:text-red-300">
+              {errorMsg}
+            </p>
+          )}
+
+          <div className="mt-1 flex gap-3">
+            <button type="button" onClick={onClose} disabled={save.isPending} className="btn-ghost flex-1">
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => save.mutate()}
+              disabled={save.isPending}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {save.isPending ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div>
+    <label className="mb-1 block text-xs font-medium text-slate-500">{label}</label>
+    {children}
+  </div>
+);
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export const CustomersPage = () => {
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const [search,    setSearch]    = useState('');
   const [apiSearch, setApiSearch] = useState('');
   const [filter,    setFilter]    = useState<CustomerFilter>('ALL');
   const [sort,      setSort]      = useState<SortKey>('newest');
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
   const handleSearch = (val: string) => {
     setSearch(val);
@@ -279,13 +485,19 @@ export const CustomersPage = () => {
                       <tr key={`reg-${c.id}`}>
                         {/* Customer */}
                         <td>
-                          <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => navigate(`/customers/${c.id}?name=${encodeURIComponent(c.fullName ?? '')}`)}
+                            className="flex items-center gap-3 text-left transition group"
+                            title="View customer details"
+                          >
                             <Avatar name={c.fullName} />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium">{c.fullName || '—'}</p>
+                              <p className="text-sm font-medium group-hover:text-brand-600 group-hover:underline dark:group-hover:text-brand-400">
+                                {c.fullName || '—'}
+                              </p>
                               <p className="text-xs text-slate-400">{c.email}</p>
                             </div>
-                          </div>
+                          </button>
                         </td>
                         {/* Type */}
                         <td>
@@ -314,21 +526,30 @@ export const CustomersPage = () => {
                             {c.status === 'ACTIVE' ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        {/* Toggle */}
+                        {/* Actions: edit + status toggle */}
                         <td>
-                          <button
-                            onClick={() => {
-                              if (confirm(`${c.status === 'ACTIVE' ? 'Deactivate' : 'Activate'} account for ${c.fullName}?`))
-                                toggleStatus.mutate(c.id);
-                            }}
-                            disabled={toggleStatus.isPending}
-                            title={c.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-                            className="text-slate-400 transition hover:text-brand-600 disabled:opacity-50"
-                          >
-                            {c.status === 'ACTIVE'
-                              ? <ToggleRight className="h-5 w-5 text-emerald-500" />
-                              : <ToggleLeft className="h-5 w-5" />}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setEditTarget({ kind: 'registered', data: c })}
+                              title="Edit customer details"
+                              className="text-slate-400 transition hover:text-violet-600"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`${c.status === 'ACTIVE' ? 'Deactivate' : 'Activate'} account for ${c.fullName}?`))
+                                  toggleStatus.mutate(c.id);
+                              }}
+                              disabled={toggleStatus.isPending}
+                              title={c.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                              className="text-slate-400 transition hover:text-brand-600 disabled:opacity-50"
+                            >
+                              {c.status === 'ACTIVE'
+                                ? <ToggleRight className="h-5 w-5 text-emerald-500" />
+                                : <ToggleLeft className="h-5 w-5" />}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -340,12 +561,18 @@ export const CustomersPage = () => {
                     <tr key={`guest-${g.phone}`}>
                       {/* Customer */}
                       <td>
-                        <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => navigate(`/customers/guest/${encodeURIComponent(g.phone)}?name=${encodeURIComponent(g.name ?? '')}`)}
+                          className="flex items-center gap-3 text-left transition group"
+                          title="View guest details and booking history"
+                        >
                           <Avatar name={g.name} guest />
                           <div className="min-w-0">
-                            <p className="text-sm font-medium">{g.name || '—'}</p>
+                            <p className="text-sm font-medium group-hover:text-brand-600 group-hover:underline dark:group-hover:text-brand-400">
+                              {g.name || '—'}
+                            </p>
                           </div>
-                        </div>
+                        </button>
                       </td>
                       {/* Type */}
                       <td>
@@ -405,8 +632,16 @@ export const CustomersPage = () => {
                       <td className="text-xs text-slate-500">{fmtDate(g.lastSeen)}</td>
                       {/* Status — guests have no account status */}
                       <td><span className="text-xs text-slate-300">—</span></td>
-                      {/* No toggle for guests */}
-                      <td></td>
+                      {/* Edit action */}
+                      <td>
+                        <button
+                          onClick={() => setEditTarget({ kind: 'guest', data: g })}
+                          title="Edit guest details (applies to all their bookings)"
+                          className="text-slate-400 transition hover:text-violet-600"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -414,6 +649,15 @@ export const CustomersPage = () => {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Edit customer modal */}
+      {editTarget && (
+        <EditCustomerModal
+          target={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => setEditTarget(null)}
+        />
       )}
     </section>
   );

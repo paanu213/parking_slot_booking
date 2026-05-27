@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { BadRequest, Conflict, Forbidden, NotFound } from '../../lib/http.js';
+import { calculateBookingAmount } from '../../lib/pricing.js';
 import { deleteImageByUrl, storeImageBuffer } from '../../lib/images.js';
 import { imageUpload } from '../uploads/uploads.routes.js';
 
@@ -337,6 +338,7 @@ r.get('/bookings', async (req, res) => {
 });
 
 // Direct / offline booking created by vendor on behalf of a walk-in customer
+// Supports HOURLY (custom date range) or MONTHLY (30-day pass from startAt).
 const directBookingSchema = z
   .object({
     slotId: z.string().min(1),
@@ -344,16 +346,22 @@ const directBookingSchema = z
     guestPhone: z.string().min(7).max(20),
     guestVehicleNumber: z.string().max(20).optional(),
     guestVehicleModel: z.string().max(80).optional(),
+    bookingType: z.enum(['HOURLY', 'MONTHLY']).default('HOURLY'),
     startAt: z.coerce.date(),
-    endAt: z.coerce.date(),
+    endAt: z.coerce.date().optional(), // required for HOURLY; ignored for MONTHLY
     totalAmount: z.number().positive().optional(), // override; auto-calculated if omitted
   })
-  .refine((d) => d.endAt > d.startAt, { message: 'endAt must be after startAt' });
+  .refine(
+    (d) => d.bookingType === 'MONTHLY' || (d.endAt && d.endAt > d.startAt),
+    { message: 'endAt must be after startAt for hourly bookings' },
+  );
 
 r.post('/direct-bookings', validate(directBookingSchema), async (req, res, next) => {
   try {
-    const { slotId, guestName, guestPhone, guestVehicleNumber, guestVehicleModel, startAt, endAt, totalAmount } =
-      req.body as z.infer<typeof directBookingSchema>;
+    const {
+      slotId, guestName, guestPhone, guestVehicleNumber, guestVehicleModel,
+      bookingType, startAt, endAt, totalAmount,
+    } = req.body as z.infer<typeof directBookingSchema>;
 
     const booking = await prisma.$transaction(async (tx) => {
       // Lock slot row and verify ownership
@@ -366,19 +374,31 @@ r.post('/direct-bookings', validate(directBookingSchema), async (req, res, next)
       if (!slot || slot.status !== 'ACTIVE') throw BadRequest('Slot is not available');
       if (slot.location.vendor.userId !== req.user!.sub) throw Forbidden('Not your slot');
 
+      // Compute amount + effective window using the shared calculator.
+      let calc;
+      try {
+        calc = calculateBookingAmount({
+          bookingType,
+          hourlyPrice:  Number(slot.hourlyPrice),
+          monthlyPrice: slot.monthlyPrice != null ? Number(slot.monthlyPrice) : null,
+          startAt,
+          endAt,
+        });
+      } catch (e: any) {
+        throw BadRequest(e?.message ?? 'Could not calculate booking amount');
+      }
+
       const overlap = await tx.booking.findFirst({
         where: {
           slotId,
           status: { in: ['PENDING_PAYMENT', 'CONFIRMED'] },
-          startAt: { lt: endAt },
-          endAt: { gt: startAt },
+          startAt: { lt: calc.endAt },
+          endAt:   { gt: calc.startAt },
         },
       });
       if (overlap) throw Conflict('Slot already booked for this time window');
 
-      const hours = Math.max(1, Math.ceil((+endAt - +startAt) / 3_600_000));
-      const calculatedAmount = Number(slot.hourlyPrice) * hours;
-      const finalAmount = totalAmount ?? calculatedAmount;
+      const finalAmount = totalAmount ?? calc.amount;
 
       const { nanoid } = await import('nanoid');
       return tx.booking.create({
@@ -391,8 +411,9 @@ r.post('/direct-bookings', validate(directBookingSchema), async (req, res, next)
           guestPhone,
           guestVehicleNumber: guestVehicleNumber ?? null,
           guestVehicleModel:  guestVehicleModel  ?? null,
-          startAt,
-          endAt,
+          bookingType,
+          startAt: calc.startAt,
+          endAt:   calc.endAt,
           totalAmount: finalAmount,
           status: 'CONFIRMED',
         } as any,
@@ -405,20 +426,17 @@ r.post('/direct-bookings', validate(directBookingSchema), async (req, res, next)
   }
 });
 
-// --- Edit guest info on a direct booking (name, phone, vehicle, dates) ---
+// --- Edit guest info on a direct booking (name, phone, vehicle, dates, booking type) ---
 const editGuestSchema = z
   .object({
     guestName:          z.string().min(2).max(100).optional(),
     guestPhone:         z.string().min(7).max(20).optional(),
     guestVehicleNumber: z.string().max(20).optional(),
     guestVehicleModel:  z.string().max(80).optional(),
+    bookingType:        z.enum(['HOURLY', 'MONTHLY']).optional(),
     startAt:            z.coerce.date().optional(),
-    endAt:              z.coerce.date().optional(),
-  })
-  .refine(
-    (d) => !d.startAt || !d.endAt || d.endAt > d.startAt,
-    { message: 'End time must be after start time' },
-  );
+    endAt:              z.coerce.date().optional(), // ignored for MONTHLY
+  });
 
 r.patch('/bookings/:id/guest', validate(editGuestSchema), async (req, res, next) => {
   try {
@@ -432,22 +450,44 @@ r.patch('/bookings/:id/guest', validate(editGuestSchema), async (req, res, next)
       return next(Forbidden('You do not have access to this booking'));
     }
 
-    // If dates are being changed, recalculate totalAmount based on hourly rate
-    const { startAt, endAt, ...guestFields } = req.body;
-    const newStart = startAt ? new Date(startAt) : booking.startAt;
-    const newEnd   = endAt   ? new Date(endAt)   : booking.endAt;
-    if (newEnd <= newStart) return next(BadRequest('End time must be after start time'));
-    const hours = Math.max(1, Math.ceil((+newEnd - +newStart) / 3_600_000));
-    const recalcAmount = Number(booking.slot.hourlyPrice) * hours;
+    const { startAt, endAt, bookingType, ...guestFields } = req.body;
+
+    // Did anything pricing-relevant change?
+    const typeChanged  = bookingType && bookingType !== (booking as any).bookingType;
+    const datesChanged = !!(startAt || endAt);
+    const needsRecalc  = typeChanged || datesChanged;
+
+    let recalc: ReturnType<typeof calculateBookingAmount> | null = null;
+    if (needsRecalc) {
+      const effectiveType  = (bookingType ?? (booking as any).bookingType ?? 'HOURLY') as 'HOURLY' | 'MONTHLY';
+      const effectiveStart = startAt ? new Date(startAt) : booking.startAt;
+      const effectiveEnd   = effectiveType === 'MONTHLY'
+        ? null
+        : (endAt ? new Date(endAt) : booking.endAt);
+
+      try {
+        recalc = calculateBookingAmount({
+          bookingType:  effectiveType,
+          hourlyPrice:  Number(booking.slot.hourlyPrice),
+          monthlyPrice: booking.slot.monthlyPrice != null ? Number(booking.slot.monthlyPrice) : null,
+          startAt:      effectiveStart,
+          endAt:        effectiveEnd,
+        });
+      } catch (e: any) {
+        return next(BadRequest(e?.message ?? 'Could not recalculate booking amount'));
+      }
+    }
 
     const updated = await prisma.booking.update({
       where: { id: req.params.id },
       data: {
         ...guestFields,
-        ...(startAt ? { startAt: newStart } : {}),
-        ...(endAt   ? { endAt:   newEnd   } : {}),
-        // Recalculate amount only when at least one date changes
-        ...((startAt || endAt) ? { totalAmount: recalcAmount } : {}),
+        ...(bookingType ? { bookingType } : {}),
+        ...(recalc ? {
+          startAt:     recalc.startAt,
+          endAt:       recalc.endAt,
+          totalAmount: recalc.amount,
+        } : {}),
       },
     });
     res.json(updated);

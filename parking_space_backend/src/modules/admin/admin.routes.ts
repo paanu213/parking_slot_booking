@@ -4,7 +4,8 @@ import { prisma } from '../../lib/prisma.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { hashPassword } from '../../lib/password.js';
-import { BadRequest } from '../../lib/http.js';
+import { BadRequest, NotFound } from '../../lib/http.js';
+import { calculateBookingAmount } from '../../lib/pricing.js';
 import { storeIconBuffer, storeImageBuffer, deleteImageByUrl, storeDocumentBuffer, deleteDocumentByUrl } from '../../lib/images.js';
 import { imageUpload, docUpload } from '../uploads/uploads.routes.js';
 
@@ -118,10 +119,76 @@ r.get('/vendors', async (req, res) => {
   const status = (req.query.status as string | undefined) ?? undefined;
   const items = await prisma.vendor.findMany({
     where: status ? { status: status as any } : {},
-    include: { user: { select: { fullName: true, email: true, phone: true, status: true } } },
+    include: {
+      user: { select: { fullName: true, email: true, phone: true, status: true } },
+      // Lightweight location data — used by admin UI for state/city filters.
+      locations: { select: { state: true, city: true } },
+    },
     orderBy: { createdAt: 'desc' },
   });
   res.json({ items });
+});
+
+// Single vendor — full details (used by admin Vendor Details page)
+r.get('/vendors/:id', async (req, res, next) => {
+  try {
+    const vendor = await prisma.vendor.findUniqueOrThrow({
+      where: { id: req.params.id },
+      include: {
+        user: {
+          select: {
+            id: true, fullName: true, email: true, phone: true,
+            status: true, createdAt: true, emailVerified: true,
+          },
+        },
+        locations: {
+          include: {
+            images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+            slots:  {
+              select: {
+                id: true, code: true, vehicleType: true,
+                hourlyPrice: true, monthlyPrice: true, status: true,
+              },
+            },
+            amenities: { include: { amenity: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    // Aggregate booking + revenue stats across all the vendor's spaces
+    const locationIds = vendor.locations.map((l) => l.id);
+    const [bookingsTotal, bookingsConfirmed, revenue] = await Promise.all([
+      locationIds.length
+        ? prisma.booking.count({ where: { slot: { locationId: { in: locationIds } } } })
+        : 0,
+      locationIds.length
+        ? prisma.booking.count({
+            where: { slot: { locationId: { in: locationIds } }, status: 'CONFIRMED' },
+          })
+        : 0,
+      locationIds.length
+        ? prisma.booking.aggregate({
+            _sum: { totalAmount: true },
+            where: { slot: { locationId: { in: locationIds } }, status: 'CONFIRMED' },
+          })
+        : { _sum: { totalAmount: 0 } },
+    ]);
+
+    res.json({
+      vendor,
+      stats: {
+        spaces:            vendor.locations.length,
+        slots:             vendor.locations.reduce((sum, l) => sum + l.slots.length, 0),
+        bookingsTotal,
+        bookingsConfirmed,
+        revenue:           Number(revenue._sum.totalAmount ?? 0),
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 r.post('/vendors/:id/approve', async (req, res, next) => {
@@ -337,9 +404,15 @@ r.get('/spaces/:id', async (req, res, next) => {
 });
 
 r.get('/spaces', async (req, res) => {
-  const status = req.query.status as string | undefined;
+  const status   = req.query.status   as string | undefined;
+  const vendorId = req.query.vendorId as string | undefined;
+
+  const where: Record<string, unknown> = {};
+  if (status)   where.approvalStatus = status;
+  if (vendorId) where.vendorId       = vendorId;
+
   const items = await prisma.parkingLocation.findMany({
-    where: status ? { approvalStatus: status as any } : {},
+    where,
     include: {
       vendor: { include: { user: { select: { fullName: true, email: true } } } },
       images: { orderBy: { sortOrder: 'asc' }, take: 1 },
@@ -529,9 +602,10 @@ r.put('/locations/:id/amenities', async (req, res, next) => {
 
 // --- Admin slot management ---
 const adminSlotSchema = z.object({
-  code:        z.string().min(1),
-  vehicleType: z.enum(['TWO_WHEELER', 'FOUR_WHEELER', 'HEAVY']),
-  hourlyPrice: z.coerce.number().min(0),
+  code:         z.string().min(1),
+  vehicleType:  z.enum(['TWO_WHEELER', 'FOUR_WHEELER', 'HEAVY']),
+  hourlyPrice:  z.coerce.number().min(0),
+  monthlyPrice: z.coerce.number().min(0).optional(),
 });
 
 r.post('/locations/:id/slots', validate(adminSlotSchema), async (req, res, next) => {
@@ -579,10 +653,12 @@ r.patch('/slots/:id/status', async (req, res, next) => {
   }
 });
 
-// Edit slot details (code and/or hourly price)
+// Edit slot details (code, hourly price, monthly price, and/or vehicle type)
 const updateSlotSchema = z.object({
-  code:        z.string().min(1).optional(),
-  hourlyPrice: z.coerce.number().positive().optional(),
+  code:         z.string().min(1).optional(),
+  hourlyPrice:  z.coerce.number().positive().optional(),
+  monthlyPrice: z.coerce.number().min(0).nullable().optional(), // null clears subscription
+  vehicleType:  z.enum(['TWO_WHEELER', 'FOUR_WHEELER', 'HEAVY']).optional(),
 });
 
 r.patch('/slots/:id', validate(updateSlotSchema), async (req, res, next) => {
@@ -729,6 +805,81 @@ r.post('/bookings/:id/refund', validate(refundSchema), async (req, res, next) =>
 });
 
 // --- Cancel a booking (admin) ---
+// --- Admin: edit a direct booking's guest details, dates, and/or booking type ---
+const adminEditGuestSchema = z.object({
+  guestName:          z.string().min(2).max(100).optional(),
+  guestPhone:         z.string().min(7).max(20).optional(),
+  guestVehicleNumber: z.string().max(20).optional(),
+  guestVehicleModel:  z.string().max(80).optional(),
+  bookingType:        z.enum(['HOURLY', 'MONTHLY']).optional(),
+  startAt:            z.coerce.date().optional(),
+  endAt:              z.coerce.date().optional(), // ignored for MONTHLY
+});
+
+r.patch('/bookings/:id/guest', validate(adminEditGuestSchema), async (req, res, next) => {
+  try {
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      include: { slot: true },
+    });
+    if (!booking) return next(NotFound('Booking not found'));
+    if (!booking.isDirectBooking) return next(BadRequest('Only direct bookings can be edited'));
+
+    const { startAt, endAt, bookingType, ...guestFields } = req.body;
+
+    const typeChanged  = bookingType && bookingType !== (booking as any).bookingType;
+    const datesChanged = !!(startAt || endAt);
+    const needsRecalc  = typeChanged || datesChanged;
+
+    let recalc: ReturnType<typeof calculateBookingAmount> | null = null;
+    if (needsRecalc) {
+      const effectiveType  = (bookingType ?? (booking as any).bookingType ?? 'HOURLY') as 'HOURLY' | 'MONTHLY';
+      const effectiveStart = startAt ? new Date(startAt) : booking.startAt;
+      const effectiveEnd   = effectiveType === 'MONTHLY'
+        ? null
+        : (endAt ? new Date(endAt) : booking.endAt);
+
+      try {
+        recalc = calculateBookingAmount({
+          bookingType:  effectiveType,
+          hourlyPrice:  Number(booking.slot.hourlyPrice),
+          monthlyPrice: booking.slot.monthlyPrice != null ? Number(booking.slot.monthlyPrice) : null,
+          startAt:      effectiveStart,
+          endAt:        effectiveEnd,
+        });
+      } catch (e: any) {
+        return next(BadRequest(e?.message ?? 'Could not recalculate booking amount'));
+      }
+    }
+
+    const updated = await prisma.booking.update({
+      where: { id: req.params.id },
+      data: {
+        ...guestFields,
+        ...(bookingType ? { bookingType } : {}),
+        ...(recalc ? {
+          startAt:     recalc.startAt,
+          endAt:       recalc.endAt,
+          totalAmount: recalc.amount,
+        } : {}),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorId: req.user!.sub,
+        action:  'BOOKING_EDIT_GUEST',
+        entity:  'Booking',
+        entityId: updated.id,
+      },
+    });
+
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
 r.patch('/bookings/:id/cancel', async (req, res, next) => {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
@@ -863,6 +1014,215 @@ r.get('/customers', async (req, res, next) => {
     }));
 
     res.json({ registered, guests });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Customer details (with full booking history) ---
+
+// Shared shape: include slot + location + vendor + payment summary
+const customerBookingInclude = {
+  slot: {
+    include: {
+      location: {
+        select: {
+          id: true, name: true, city: true, state: true,
+          vendor: { select: { businessName: true } },
+        },
+      },
+    },
+  },
+  payments: {
+    select: {
+      id: true, status: true, amount: true, provider: true, createdAt: true,
+    },
+  },
+} as const;
+
+// Registered customer (by User.id)
+r.get('/customers/:id', async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true, fullName: true, email: true, phone: true,
+        status: true, emailVerified: true, createdAt: true, updatedAt: true,
+        role: true, provider: true,
+      },
+    });
+    if (!user) return next(NotFound(`No customer found with id ${req.params.id}`));
+    if (user.role !== 'CUSTOMER') return next(BadRequest('User is not a customer'));
+
+    const bookings = await prisma.booking.findMany({
+      where: { userId: user.id },
+      include: customerBookingInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Aggregate stats
+    const confirmed = bookings.filter((b) => b.status === 'CONFIRMED' || b.status === 'COMPLETED');
+    const totalSpent = confirmed.reduce((sum, b) => sum + Number(b.totalAmount), 0);
+
+    res.json({
+      customer: user,
+      bookings,
+      stats: {
+        bookingsTotal:     bookings.length,
+        bookingsConfirmed: confirmed.length,
+        bookingsCancelled: bookings.filter((b) => b.status === 'CANCELLED').length,
+        totalSpent,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Walk-in guest (by phone — guests don't have accounts)
+r.get('/customers/guest/:phone', async (req, res, next) => {
+  try {
+    const phone = String(req.params.phone);
+    const bookings = await prisma.booking.findMany({
+      where: { isDirectBooking: true, guestPhone: phone },
+      include: customerBookingInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (bookings.length === 0) {
+      return next(NotFound('No bookings found for that guest phone'));
+    }
+
+    // Most recent booking has the latest snapshot of name/vehicle info
+    const latest = bookings[0];
+    const confirmed = bookings.filter((b) => b.status === 'CONFIRMED' || b.status === 'COMPLETED');
+    const totalSpent = confirmed.reduce((sum, b) => sum + Number(b.totalAmount), 0);
+
+    // Unique vehicles seen across all bookings
+    const vehicles = new Map<string, { number: string; model: string | null }>();
+    bookings.forEach((b) => {
+      if (b.guestVehicleNumber) {
+        vehicles.set(b.guestVehicleNumber, {
+          number: b.guestVehicleNumber,
+          model:  b.guestVehicleModel ?? null,
+        });
+      }
+    });
+
+    // Unique locations visited
+    const locations = new Set<string>();
+    bookings.forEach((b) => { if (b.slot?.location?.name) locations.add(b.slot.location.name); });
+
+    res.json({
+      customer: {
+        name:           latest.guestName,
+        phone:          latest.guestPhone,
+        vehicleNumber:  latest.guestVehicleNumber,
+        vehicleModel:   latest.guestVehicleModel,
+        firstSeen:      bookings[bookings.length - 1].createdAt,
+        lastSeen:       latest.createdAt,
+      },
+      bookings,
+      stats: {
+        bookingsTotal:     bookings.length,
+        bookingsConfirmed: confirmed.length,
+        bookingsCancelled: bookings.filter((b) => b.status === 'CANCELLED').length,
+        totalSpent,
+        vehicles:          [...vehicles.values()],
+        locations:         [...locations],
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Edit a registered customer's profile (admin can change name / email / phone)
+const updateRegisteredCustomerSchema = z.object({
+  fullName: z.string().min(2).max(80).optional(),
+  email:    z.string().email().optional(),
+  phone:    z.string().min(7).max(20).nullable().optional(),
+});
+
+r.patch('/customers/:id', validate(updateRegisteredCustomerSchema), async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (user.role !== 'CUSTOMER') return next(BadRequest('User is not a customer'));
+
+    // Email & phone are @unique — guard against collisions for a friendlier message
+    if (req.body.email && req.body.email !== user.email) {
+      const existing = await prisma.user.findUnique({ where: { email: req.body.email } });
+      if (existing && existing.id !== user.id) {
+        return next(BadRequest('Another account already uses that email'));
+      }
+    }
+    if (req.body.phone && req.body.phone !== user.phone) {
+      const existing = await prisma.user.findUnique({ where: { phone: req.body.phone } });
+      if (existing && existing.id !== user.id) {
+        return next(BadRequest('Another account already uses that phone'));
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: req.params.id },
+      data:  req.body,
+      select: { id: true, fullName: true, email: true, phone: true, status: true, createdAt: true },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'CUSTOMER_EDIT', entity: 'User', entityId: updated.id },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Edit a walk-in guest's details across all their direct bookings (matched by current phone).
+// Guests don't have an account — they're aggregated from Booking rows by guestPhone, so we
+// update every direct booking that currently belongs to that guest in one shot.
+const updateGuestCustomerSchema = z.object({
+  /** Current phone — used to identify the guest's booking set */
+  currentPhone:       z.string().min(7).max(20),
+  guestName:          z.string().min(1).max(100).optional(),
+  guestPhone:         z.string().min(7).max(20).optional(),
+  guestVehicleNumber: z.string().max(20).nullable().optional(),
+  guestVehicleModel:  z.string().max(80).nullable().optional(),
+});
+
+r.patch('/customers/guest', validate(updateGuestCustomerSchema), async (req, res, next) => {
+  try {
+    const { currentPhone, ...patch } = req.body as z.infer<typeof updateGuestCustomerSchema>;
+
+    const data: Record<string, unknown> = {};
+    if (patch.guestName          !== undefined) data.guestName          = patch.guestName;
+    if (patch.guestPhone         !== undefined) data.guestPhone         = patch.guestPhone;
+    if (patch.guestVehicleNumber !== undefined) data.guestVehicleNumber = patch.guestVehicleNumber;
+    if (patch.guestVehicleModel  !== undefined) data.guestVehicleModel  = patch.guestVehicleModel;
+
+    if (Object.keys(data).length === 0) {
+      return next(BadRequest('No fields to update'));
+    }
+
+    const result = await prisma.booking.updateMany({
+      where: { isDirectBooking: true, guestPhone: currentPhone },
+      data,
+    });
+
+    if (result.count === 0) {
+      return next(NotFound('No bookings found for that guest phone'));
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        actorId:  req.user!.sub,
+        action:   'GUEST_EDIT',
+        entity:   'Booking',
+        entityId: currentPhone,
+        metadata: JSON.stringify({ updated: result.count, fields: Object.keys(data) }),
+      },
+    });
+
+    res.json({ updated: result.count });
   } catch (e) {
     next(e);
   }

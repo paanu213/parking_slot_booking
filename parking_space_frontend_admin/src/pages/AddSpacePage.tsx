@@ -44,10 +44,11 @@ interface SpaceFormValues {
 }
 
 interface SlotDraft {
-  uid:          string;
-  vehicleType:  'TWO_WHEELER' | 'FOUR_WHEELER' | 'HEAVY';
-  code:         string;
-  hourlyPrice:  number;
+  uid:           string;
+  vehicleType:   'TWO_WHEELER' | 'FOUR_WHEELER' | 'HEAVY';
+  code:          string;
+  hourlyPrice:   number;
+  monthlyPrice?: number | null;
 }
 
 interface Amenity {
@@ -182,13 +183,13 @@ const Step1 = ({
     if (p.length !== 6 || p === lastPin.current) return;
     lastPin.current = p;
     setPincodeState('loading');
-    fetch(`https://api.postalpincode.in/pincode/${p}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data[0]?.Status === 'Success' && data[0].PostOffice?.length > 0) {
-          const po = data[0].PostOffice[0];
-          setValue('city',  po.District ?? po.Block ?? po.Name, { shouldDirty: true });
-          setValue('state', po.State,                           { shouldDirty: true });
+    // Proxied through our backend — the third-party API has frequent SSL
+    // certificate expirations that break direct browser fetch() calls.
+    api.get(`/util/pincode/${p}`)
+      .then(({ data }) => {
+        if (data?.city && data?.state) {
+          setValue('city',  data.city,  { shouldDirty: true });
+          setValue('state', data.state, { shouldDirty: true });
           setPincodeState('found');
         } else {
           setPincodeState('error');
@@ -370,17 +371,25 @@ const Step2 = ({
   onNext:       () => void;
 }) => {
   const [vehicleType, setVehicleType] = useState<SlotDraft['vehicleType']>('FOUR_WHEELER');
-  const [code,  setCode]  = useState('');
-  const [price, setPrice] = useState('');
-  const [err,   setErr]   = useState('');
+  const [code,    setCode]    = useState('');
+  const [price,   setPrice]   = useState('');
+  const [monthly, setMonthly] = useState('');
+  const [err,     setErr]     = useState('');
 
   const addSlot = () => {
     const trimmedCode = code.trim().toUpperCase();
     if (!trimmedCode)                       { setErr('Slot code is required'); return; }
     if (!price || Number(price) <= 0)       { setErr('Enter a valid hourly price (must be > 0)'); return; }
+    if (monthly && Number(monthly) < 0)     { setErr('Monthly price cannot be negative'); return; }
     if (slots.some((s) => s.code === trimmedCode)) { setErr(`Slot "${trimmedCode}" already exists`); return; }
-    onAddSlot({ uid: Math.random().toString(36).slice(2), vehicleType, code: trimmedCode, hourlyPrice: Number(price) });
-    setCode(''); setPrice(''); setErr('');
+    onAddSlot({
+      uid:          Math.random().toString(36).slice(2),
+      vehicleType,
+      code:         trimmedCode,
+      hourlyPrice:  Number(price),
+      monthlyPrice: monthly ? Number(monthly) : null,
+    });
+    setCode(''); setPrice(''); setMonthly(''); setErr('');
   };
 
   return (
@@ -412,8 +421,8 @@ const Step2 = ({
           </div>
         </div>
 
-        {/* Code + price */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Code + prices */}
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Slot Code <span className="text-red-500">*</span></label>
             <input className="input w-full" placeholder="e.g. A1, B2" value={code}
@@ -426,7 +435,16 @@ const Step2 = ({
               onChange={(e) => { setPrice(e.target.value); setErr(''); }}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSlot())} />
           </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">Monthly Pass (₹)</label>
+            <input className="input w-full" type="number" step="any" min="0" placeholder="Optional" value={monthly}
+              onChange={(e) => { setMonthly(e.target.value); setErr(''); }}
+              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSlot())} />
+          </div>
         </div>
+        <p className="text-[10px] text-slate-400">
+          Monthly Pass enables a 30-day subscription option for this slot. Leave blank for hourly-only.
+        </p>
 
         {err && <p className="text-xs text-red-500">{err}</p>}
 
@@ -451,7 +469,12 @@ const Step2 = ({
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-bold">{s.code}</p>
-                    <p className="text-xs text-slate-400">{vt.label} · ₹{s.hourlyPrice}/hr</p>
+                    <p className="text-xs text-slate-400">
+                      {vt.label} · ₹{s.hourlyPrice}/hr
+                      {s.monthlyPrice != null && s.monthlyPrice > 0 && (
+                        <> · ₹{s.monthlyPrice}/mo</>
+                      )}
+                    </p>
                   </div>
                   <button type="button" onClick={() => onRemoveSlot(s.uid)}
                     className="shrink-0 text-slate-400 transition hover:text-red-500">
@@ -779,6 +802,9 @@ export const AddSpacePage = () => {
           code:         slot.code,
           vehicleType:  slot.vehicleType,
           hourlyPrice:  slot.hourlyPrice,
+          ...(slot.monthlyPrice && slot.monthlyPrice > 0
+              ? { monthlyPrice: slot.monthlyPrice }
+              : {}),
         });
       }
 
