@@ -5,22 +5,27 @@ import { prisma } from '../../lib/prisma.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { BadRequest, Conflict, NotFound } from '../../lib/http.js';
+import { calculateBookingAmount } from '../../lib/pricing.js';
 
 const r = Router();
 r.use(requireAuth);
 
 const createSchema = z
   .object({
-    slotId: z.string().min(1),
-    startAt: z.coerce.date(),
-    endAt: z.coerce.date(),
+    slotId:      z.string().min(1),
+    bookingType: z.enum(['HOURLY', 'MONTHLY']).default('HOURLY'),
+    startAt:     z.coerce.date(),
+    endAt:       z.coerce.date().optional(),
   })
-  .refine((d) => d.endAt > d.startAt, { message: 'endAt must be after startAt' });
+  .refine(
+    (d) => d.bookingType === 'MONTHLY' || (d.endAt && d.endAt > d.startAt),
+    { message: 'endAt must be after startAt for hourly bookings' },
+  );
 
 // Create a booking with DB-level slot lock to prevent double-booking
 r.post('/', validate(createSchema), async (req, res, next) => {
   try {
-    const { slotId, startAt, endAt } = req.body as z.infer<typeof createSchema>;
+    const { slotId, bookingType, startAt, endAt } = req.body as z.infer<typeof createSchema>;
     const userId = req.user!.sub;
 
     const booking = await prisma.$transaction(async (tx) => {
@@ -30,28 +35,40 @@ r.post('/', validate(createSchema), async (req, res, next) => {
       const slot = await tx.slot.findUnique({ where: { id: slotId } });
       if (!slot || slot.status !== 'ACTIVE') throw NotFound('Slot unavailable');
 
+      let calc;
+      try {
+        calc = calculateBookingAmount({
+          bookingType,
+          hourlyPrice:  Number(slot.hourlyPrice),
+          monthlyPrice: slot.monthlyPrice != null ? Number(slot.monthlyPrice) : null,
+          startAt,
+          endAt,
+        });
+      } catch (e: any) {
+        throw BadRequest(e?.message ?? 'Could not calculate booking amount');
+      }
+
       const overlap = await tx.booking.findFirst({
         where: {
           slotId,
           status: { in: ['PENDING_PAYMENT', 'CONFIRMED'] },
-          startAt: { lt: endAt },
-          endAt: { gt: startAt },
+          startAt: { lt: calc.endAt },
+          endAt:   { gt: calc.startAt },
         },
       });
       if (overlap) throw Conflict('Slot already booked for this window');
 
-      const hours = Math.max(1, Math.ceil((+endAt - +startAt) / 3600_000));
-      const totalAmount = Number(slot.hourlyPrice) * hours;
-      if (!Number.isFinite(totalAmount) || totalAmount <= 0) throw BadRequest('Invalid amount');
+      if (!Number.isFinite(calc.amount) || calc.amount <= 0) throw BadRequest('Invalid amount');
 
       return tx.booking.create({
         data: {
-          reference: `PS-${nanoid(10).toUpperCase()}`,
+          reference:   `PS-${nanoid(10).toUpperCase()}`,
           userId,
           slotId,
-          startAt,
-          endAt,
-          totalAmount,
+          bookingType,
+          startAt:     calc.startAt,
+          endAt:       calc.endAt,
+          totalAmount: calc.amount,
         },
       });
     });

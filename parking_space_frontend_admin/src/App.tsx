@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { BrowserRouter, Route, Routes, Navigate, Link, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -25,7 +25,10 @@ import { AddVendorPage } from '@/pages/AddVendorPage';
 import { AddSpacePage } from '@/pages/AddSpacePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { KebabMenu, MenuItem, MenuDivider } from '@/components/KebabMenu';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { CustomersPage } from '@/pages/CustomersPage';
+import { CustomerDetailsPage } from '@/pages/CustomerDetailsPage';
+import { VendorDetailsPage } from '@/pages/VendorDetailsPage';
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SUB_ADMIN'];
 
@@ -976,6 +979,8 @@ const Vendors = () => {
   const [editVendorId,      setEditVendorId]      = useState<string | null>(null);
   const [profileRejectId,   setProfileRejectId]   = useState<string | null>(null);
   const [profileRejectNote, setProfileRejectNote] = useState('');
+  const [stateFilter,       setStateFilter]       = useState<string | null>(null);
+  const [cityFilter,        setCityFilter]        = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['vendors', tab],
@@ -1016,8 +1021,48 @@ const Vendors = () => {
     onSuccess: () => { invalidate(); setProfileRejectId(null); setProfileRejectNote(''); },
   });
 
-  const vendors: any[]  = data?.items ?? [];
-  const editVendorData  = vendors.find((v) => v.id === editVendorId) ?? null;
+  const allVendors: any[] = data?.items ?? [];
+
+  // ── State / city filter options (derived from vendors' parking locations) ──
+  const stateOptions = useMemo(() => {
+    const set = new Set<string>();
+    allVendors.forEach((v) =>
+      (v.locations ?? []).forEach((l: any) => l?.state && set.add(l.state)),
+    );
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [allVendors]);
+
+  const cityOptions = useMemo(() => {
+    const set = new Set<string>();
+    allVendors.forEach((v) =>
+      (v.locations ?? []).forEach((l: any) => {
+        if (!l?.city) return;
+        if (stateFilter && l.state !== stateFilter) return;
+        set.add(l.city);
+      }),
+    );
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [allVendors, stateFilter]);
+
+  // ── Filter vendors by state/city (a vendor matches if any of their spaces match) ──
+  const vendors = useMemo(() => {
+    if (!stateFilter && !cityFilter) return allVendors;
+    return allVendors.filter((v) =>
+      (v.locations ?? []).some((l: any) => {
+        if (stateFilter && l.state !== stateFilter) return false;
+        if (cityFilter  && l.city  !== cityFilter)  return false;
+        return true;
+      }),
+    );
+  }, [allVendors, stateFilter, cityFilter]);
+
+  const editVendorData = allVendors.find((v) => v.id === editVendorId) ?? null;
+  const hasLocationFilter = stateFilter !== null || cityFilter !== null;
+
+  // If state changes, clear city if the city isn't valid in the new state
+  useEffect(() => {
+    if (cityFilter && !cityOptions.includes(cityFilter)) setCityFilter(null);
+  }, [cityFilter, cityOptions]);
 
   return (
     <>
@@ -1036,29 +1081,74 @@ const Vendors = () => {
           </button>
         </div>
 
-        {/* Filter tabs */}
-        <div className="mt-4 flex w-fit gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
-          {VENDOR_TABS.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => setTab(t.value)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                tab === t.value
-                  ? 'bg-white shadow text-slate-900 dark:bg-slate-800 dark:text-slate-100'
-                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* Filters row — status tabs + state/city search */}
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {/* Status tabs */}
+          <div className="flex w-fit gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
+            {VENDOR_TABS.map((t) => (
+              <button
+                key={t.value}
+                onClick={() => setTab(t.value)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  tab === t.value
+                    ? 'bg-white shadow text-slate-900 dark:bg-slate-800 dark:text-slate-100'
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Spacer + searchable state/city filters */}
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <SearchableSelect
+              value={stateFilter}
+              onChange={(v) => { setStateFilter(v); setCityFilter(null); }}
+              options={stateOptions}
+              placeholder="All states"
+              icon={<MapPin className="h-3.5 w-3.5" />}
+              width="w-44"
+            />
+            <SearchableSelect
+              value={cityFilter}
+              onChange={setCityFilter}
+              options={cityOptions}
+              placeholder={stateFilter ? 'All cities' : 'All cities'}
+              emptyLabel={stateFilter ? `No cities in ${stateFilter}` : 'No cities'}
+              icon={<Building2 className="h-3.5 w-3.5" />}
+              width="w-44"
+              disabled={cityOptions.length === 0}
+            />
+            {hasLocationFilter && (
+              <button
+                onClick={() => { setStateFilter(null); setCityFilter(null); }}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="h-3 w-3" />
+                Clear filters
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Active filter summary */}
+        {hasLocationFilter && (
+          <p className="mt-2 text-xs text-slate-500">
+            Showing {vendors.length} of {allVendors.length} vendors
+            {stateFilter && ` in ${stateFilter}`}
+            {cityFilter  && `, ${cityFilter}`}
+          </p>
+        )}
 
         <div className="mt-4 space-y-3">
           {isLoading ? (
             <>{[1, 2, 3].map((i) => <div key={i} className="skeleton h-20 rounded-xl" />)}</>
           ) : vendors.length === 0 ? (
             <div className="card p-10 text-center text-sm text-slate-400">
-              No vendors found for this filter.
+              {hasLocationFilter
+                ? `No vendors with spaces in ${cityFilter ?? stateFilter ?? 'this location'}.`
+                : 'No vendors found for this filter.'}
             </div>
           ) : (
             vendors.map((v: any) => {
@@ -1080,7 +1170,12 @@ const Vendors = () => {
                       </div>
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold">{v.businessName}</p>
+                          <button
+                            onClick={() => navigate(`/vendors/${v.id}`)}
+                            className="font-semibold text-slate-800 hover:text-brand-600 hover:underline dark:text-slate-100 dark:hover:text-brand-400"
+                          >
+                            {v.businessName}
+                          </button>
                           <StatusBadge status={v.status} map={VENDOR_STATUS_CLS} />
                           {hasPendingProfile && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
@@ -1130,6 +1225,14 @@ const Vendors = () => {
                           </button>
                         </>
                       )}
+
+                      <button
+                        onClick={() => navigate(`/vendors/${v.id}`)}
+                        className="btn-ghost text-xs"
+                        title="View vendor details and spaces"
+                      >
+                        View
+                      </button>
 
                       <KebabMenu>
                         <MenuItem onClick={() => setEditVendorId(v.id)}>Edit Details</MenuItem>
@@ -1609,7 +1712,10 @@ export default function App() {
                     <Route path="/" element={<Overview />} />
                     <Route path="/vendors" element={<Vendors />} />
                     <Route path="/vendors/add" element={<AddVendorPage />} />
+                    <Route path="/vendors/:id" element={<VendorDetailsPage />} />
                     <Route path="/customers" element={<CustomersPage />} />
+                    <Route path="/customers/:id" element={<CustomerDetailsPage />} />
+                    <Route path="/customers/guest/:phone" element={<CustomerDetailsPage />} />
                     <Route path="/spaces" element={<SpacesPage />} />
                     <Route path="/spaces/add" element={<AddSpacePage />} />
                     <Route path="/spaces/:id/edit" element={<SpaceEditPage />} />

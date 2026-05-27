@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Clock, CheckCircle2, XCircle, MapPin, Layers, Plus,
   Bike, Car, Truck, ChevronDown, ChevronUp, Pencil, ToggleLeft, ToggleRight,
+  ArrowLeft, Building2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { KebabMenu, MenuItem } from '@/components/KebabMenu';
@@ -17,6 +18,7 @@ interface Slot {
   code: string;
   vehicleType: string;
   hourlyPrice: number;
+  monthlyPrice?: number | null;
   status: SlotStatus;
 }
 
@@ -68,6 +70,15 @@ const VT_MAP: Record<string, { Icon: typeof Car; label: string }> = {
   CAR:          { Icon: Car,   label: '4-Wheeler' },
 };
 
+// Editable vehicle types — legacy 'CAR' rows get saved as 'FOUR_WHEELER'.
+const VT_OPTIONS = [
+  { value: 'TWO_WHEELER',  label: '2-Wheeler', Icon: Bike  },
+  { value: 'FOUR_WHEELER', label: '4-Wheeler', Icon: Car   },
+  { value: 'HEAVY',        label: 'Heavy',     Icon: Truck },
+] as const;
+
+const normalizeVT = (v: string) => (v === 'CAR' ? 'FOUR_WHEELER' : v);
+
 // KebabMenu is imported from @/components/KebabMenu — portal-based, always on top.
 
 // ── Slot management row ───────────────────────────────────────────────────────
@@ -80,23 +91,27 @@ const SlotRow = ({
 }: {
   slot: Slot;
   onToggleStatus: () => void;
-  onSaveEdit: (code: string, hourlyPrice: string) => void;
+  onSaveEdit: (code: string, hourlyPrice: string, monthlyPrice: string, vehicleType: string) => void;
   isToggling: boolean;
   isSaving: boolean;
 }) => {
-  const [editing, setEditing] = useState(false);
-  const [code, setCode] = useState(slot.code);
-  const [price, setPrice] = useState(String(slot.hourlyPrice));
+  const [editing, setEditing]         = useState(false);
+  const [code, setCode]               = useState(slot.code);
+  const [price, setPrice]             = useState(String(slot.hourlyPrice));
+  const [monthly, setMonthly]         = useState(slot.monthlyPrice != null ? String(slot.monthlyPrice) : '');
+  const [vehicleType, setVehicleType] = useState(normalizeVT(slot.vehicleType));
   const vt = VT_MAP[slot.vehicleType] ?? { Icon: Car, label: slot.vehicleType };
 
   const handleSave = () => {
-    onSaveEdit(code.trim(), price);
+    onSaveEdit(code.trim(), price, monthly, vehicleType);
     setEditing(false);
   };
 
   const handleCancel = () => {
     setCode(slot.code);
     setPrice(String(slot.hourlyPrice));
+    setMonthly(slot.monthlyPrice != null ? String(slot.monthlyPrice) : '');
+    setVehicleType(normalizeVT(slot.vehicleType));
     setEditing(false);
   };
 
@@ -111,7 +126,12 @@ const SlotRow = ({
         {/* Code + price */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold font-mono">{slot.code}</p>
-          <p className="text-xs text-slate-400">{vt.label} · ₹{Number(slot.hourlyPrice).toLocaleString('en-IN')}/hr</p>
+          <p className="text-xs text-slate-400">
+            {vt.label} · ₹{Number(slot.hourlyPrice).toLocaleString('en-IN')}/hr
+            {slot.monthlyPrice != null && Number(slot.monthlyPrice) > 0 && (
+              <> · ₹{Number(slot.monthlyPrice).toLocaleString('en-IN')}/mo</>
+            )}
+          </p>
         </div>
 
         {/* Status badge */}
@@ -147,9 +167,33 @@ const SlotRow = ({
 
       {/* Inline edit form */}
       {editing && (
-        <div className="border-t border-slate-100 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/40">
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
+        <div className="border-t border-slate-100 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/40">
+          {/* Vehicle type picker (segmented) */}
+          <label className="mb-1 block text-xs text-slate-500">Vehicle Type</label>
+          <div className="mb-3 inline-flex gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
+            {VT_OPTIONS.map((opt) => {
+              const active = vehicleType === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setVehicleType(opt.value)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                    active
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <opt.Icon className="h-3.5 w-3.5" />
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Code + prices + actions */}
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[160px] flex-1">
               <label className="mb-1 block text-xs text-slate-500">Slot Code</label>
               <input
                 className="input w-full text-sm"
@@ -167,6 +211,17 @@ const SlotRow = ({
                 onChange={(e) => setPrice(e.target.value)}
               />
             </div>
+            <div className="w-32">
+              <label className="mb-1 block text-xs text-slate-500">Monthly (₹)</label>
+              <input
+                type="number"
+                min="0"
+                placeholder="Optional"
+                className="input w-full text-sm"
+                value={monthly}
+                onChange={(e) => setMonthly(e.target.value)}
+              />
+            </div>
             <button
               className="btn-primary text-xs disabled:opacity-50"
               disabled={isSaving}
@@ -178,6 +233,9 @@ const SlotRow = ({
               Cancel
             </button>
           </div>
+          <p className="mt-1 text-[10px] text-slate-400">
+            Monthly = 30-day subscription pass. Leave blank to disable monthly bookings for this slot.
+          </p>
         </div>
       )}
     </div>
@@ -188,6 +246,11 @@ const SlotRow = ({
 export const SpacesPage = () => {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const vendorId   = searchParams.get('vendorId')   ?? undefined;
+  const vendorName = searchParams.get('vendorName') ?? undefined;
+  const isVendorScoped = Boolean(vendorId);
+
   const [tab, setTab]               = useState<ApprovalStatus | 'ALL'>('ALL');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote]   = useState('');
@@ -196,9 +259,13 @@ export const SpacesPage = () => {
 
   // ── Queries & mutations ─────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-spaces', tab],
-    queryFn: async () =>
-      (await api.get('/admin/spaces', { params: tab !== 'ALL' ? { status: tab } : {} })).data,
+    queryKey: ['admin-spaces', tab, vendorId],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (tab !== 'ALL') params.status   = tab;
+      if (vendorId)      params.vendorId = vendorId;
+      return (await api.get('/admin/spaces', { params })).data;
+    },
   });
 
   const approve = useMutation({
@@ -237,8 +304,10 @@ export const SpacesPage = () => {
   });
 
   const updateSlot = useMutation({
-    mutationFn: ({ id, code, hourlyPrice }: { id: string; code: string; hourlyPrice: number }) =>
-      api.patch(`/admin/slots/${id}`, { code, hourlyPrice }),
+    mutationFn: ({ id, code, hourlyPrice, monthlyPrice, vehicleType }: {
+      id: string; code: string; hourlyPrice: number;
+      monthlyPrice: number | null; vehicleType: string;
+    }) => api.patch(`/admin/slots/${id}`, { code, hourlyPrice, monthlyPrice, vehicleType }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-spaces'] }),
   });
 
@@ -258,14 +327,41 @@ export const SpacesPage = () => {
     <section className="p-6">
       {/* Page header */}
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Parking Spaces</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Review, approve, and manage all parking locations and their slots.
-          </p>
+        <div className="min-w-0 flex-1">
+          {isVendorScoped && (
+            <button
+              onClick={() => navigate('/vendors')}
+              className="mb-2 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Back to Vendors
+            </button>
+          )}
+          <h1 className="text-2xl font-bold">
+            {isVendorScoped ? 'Vendor Spaces' : 'Parking Spaces'}
+          </h1>
+          {isVendorScoped ? (
+            <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-slate-500">
+              <Building2 className="h-4 w-4 text-brand-500" />
+              Showing spaces for{' '}
+              <span className="font-medium text-slate-700 dark:text-slate-200">
+                {vendorName ?? 'this vendor'}
+              </span>
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-slate-500">
+              Review, approve, and manage all parking locations and their slots.
+            </p>
+          )}
         </div>
         <button
-          onClick={() => navigate('/spaces/add')}
+          onClick={() =>
+            navigate(
+              isVendorScoped
+                ? `/spaces/add?vendorId=${vendorId}&vendorName=${encodeURIComponent(vendorName ?? '')}`
+                : '/spaces/add',
+            )
+          }
           className="btn-primary flex shrink-0 items-center gap-2"
         >
           <Plus className="h-4 w-4" />
@@ -450,9 +546,16 @@ export const SpacesPage = () => {
                               status: slot.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
                             })
                           }
-                          onSaveEdit={(code, hourlyPrice) =>
-                            updateSlot.mutate({ id: slot.id, code, hourlyPrice: Number(hourlyPrice) })
-                          }
+                          onSaveEdit={(code, hourlyPrice, monthlyPrice, vehicleType) => {
+                            const mp = monthlyPrice.trim();
+                            updateSlot.mutate({
+                              id: slot.id,
+                              code,
+                              hourlyPrice: Number(hourlyPrice),
+                              monthlyPrice: mp === '' ? null : Number(mp),
+                              vehicleType,
+                            });
+                          }}
                         />
                       ))}
                     </div>

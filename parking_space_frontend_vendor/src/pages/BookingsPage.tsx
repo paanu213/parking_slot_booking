@@ -1,10 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { CheckCircle2, XCircle, User, Ban, X, MoreVertical, Pencil, Plus } from 'lucide-react';
+import { CheckCircle2, XCircle, User, Ban, X, MoreVertical, Pencil, Plus, Clock, CalendarRange } from 'lucide-react';
 import { api } from '@/lib/api';
+import { calculateBookingAmount, formatINR, MONTHLY_PASS_DAYS, type BookingType } from '@/lib/pricing';
 
-interface Slot { id: string; code: string; hourlyPrice: number; }
+interface Slot {
+  id: string;
+  code: string;
+  hourlyPrice: number;
+  monthlyPrice?: number | null;
+}
 interface Space { id: string; name: string; slots: Slot[]; }
 interface Booking {
   id: string;
@@ -13,6 +19,7 @@ interface Booking {
   endAt: string;
   totalAmount: number;
   status: string;
+  bookingType?: BookingType;
   cancelReason?: string | null;
   isDirectBooking?: boolean;
   guestName?: string;
@@ -20,18 +27,19 @@ interface Booking {
   guestVehicleNumber?: string;
   guestVehicleModel?: string;
   user?: { fullName: string; email: string } | null;
-  slot?: { code: string; hourlyPrice?: number; location?: { name: string } };
+  slot?: { code: string; hourlyPrice?: number; monthlyPrice?: number | null; location?: { name: string } };
 }
 
 interface DirectBookingForm {
-  spaceId: string;
-  slotId: string;
-  guestName: string;
-  guestPhone: string;
+  spaceId:     string;
+  slotId:      string;
+  bookingType: BookingType;
+  guestName:   string;
+  guestPhone:  string;
   guestVehicleNumber?: string;
-  guestVehicleModel?: string;
-  startAt: string;
-  endAt: string;
+  guestVehicleModel?:  string;
+  startAt:     string;
+  endAt?:      string;  // only used for HOURLY
 }
 
 interface EditGuestForm {
@@ -39,8 +47,9 @@ interface EditGuestForm {
   guestPhone: string;
   guestVehicleNumber: string;
   guestVehicleModel: string;
+  bookingType: BookingType;
   startAt: string;
-  endAt: string;
+  endAt?: string;  // only for HOURLY
 }
 
 const STATUS_CLS: Record<string, string> = {
@@ -61,6 +70,13 @@ const toDatetimeLocal = (iso: string) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+/** Convert an ISO date string to the value format expected by <input type="date"> (YYYY-MM-DD) */
+const toDateOnly = (iso: string) => {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 const canCancel = (status: string) => ['CONFIRMED', 'PENDING_PAYMENT'].includes(status);
 
 // ── Direct Booking Slide-over Modal ───────────────────────────────────────────
@@ -77,7 +93,7 @@ const DirectBookingModal = ({
   const [formSuccess, setFormSuccess] = useState(false);
 
   const createDirectBooking = useMutation({
-    mutationFn: (input: Omit<DirectBookingForm, 'spaceId'>) =>
+    mutationFn: (input: any) =>
       api.post('/vendor/direct-bookings', input).then((r) => r.data),
     onSuccess: () => {
       setFormError(null);
@@ -151,8 +167,7 @@ const DirectBookingModal = ({
               spaces={spaces}
               submitting={createDirectBooking.isPending}
               onSubmit={(values) => {
-                const { spaceId: _space, ...rest } = values;
-                createDirectBooking.mutate(rest);
+                createDirectBooking.mutate(values);
               }}
             />
           )}
@@ -268,30 +283,64 @@ const EditGuestModal = ({
   onSave:    (data: EditGuestForm) => void;
   isPending: boolean;
 }) => {
-  const { register, handleSubmit, watch } = useForm<EditGuestForm>({
+  const initialType: BookingType = (booking.bookingType ?? 'HOURLY') as BookingType;
+  const { register, handleSubmit, watch, setValue } = useForm<EditGuestForm>({
     defaultValues: {
       guestName:          booking.guestName          ?? '',
       guestPhone:         booking.guestPhone         ?? '',
       guestVehicleNumber: booking.guestVehicleNumber ?? '',
       guestVehicleModel:  booking.guestVehicleModel  ?? '',
-      startAt:            toDatetimeLocal(booking.startAt),
+      bookingType:        initialType,
+      startAt:            initialType === 'MONTHLY' ? toDateOnly(booking.startAt) : toDatetimeLocal(booking.startAt),
       endAt:              toDatetimeLocal(booking.endAt),
     },
   });
 
-  const startAt = watch('startAt');
-  const endAt   = watch('endAt');
+  const bookingType = watch('bookingType') ?? 'HOURLY';
+  const startAt     = watch('startAt');
+  const endAt       = watch('endAt');
 
-  // Live amount preview
-  const hourlyRate = (booking as any).slot?.hourlyPrice ?? null;
-  const liveAmount = (() => {
-    if (!startAt || !endAt || !hourlyRate) return null;
-    const s = new Date(startAt).getTime();
-    const e = new Date(endAt).getTime();
-    if (e <= s) return null;
-    const hours = Math.max(1, Math.ceil((e - s) / 3_600_000));
-    return { hours, amount: Number(hourlyRate) * hours };
-  })();
+  // Slot pricing info
+  const hourlyRate  = booking.slot?.hourlyPrice ?? null;
+  const monthlyRate = booking.slot?.monthlyPrice ?? null;
+  const monthlyAvailable = !!(monthlyRate && Number(monthlyRate) > 0);
+
+  // Force HOURLY if user tries to pick MONTHLY but slot has no monthly price
+  useEffect(() => {
+    if (bookingType === 'MONTHLY' && !monthlyAvailable) {
+      setValue('bookingType', 'HOURLY');
+    }
+  }, [bookingType, monthlyAvailable, setValue]);
+
+  // When type switches, convert the start input value between datetime-local and date formats
+  const lastTypeRef = useRef<BookingType>(initialType);
+  useEffect(() => {
+    if (bookingType === lastTypeRef.current) return;
+    if (startAt) {
+      if (bookingType === 'MONTHLY') {
+        // datetime-local "YYYY-MM-DDTHH:mm" → "YYYY-MM-DD"
+        setValue('startAt', startAt.slice(0, 10));
+      } else {
+        // date "YYYY-MM-DD" → "YYYY-MM-DDT00:00" (only if it's date-only)
+        if (startAt.length === 10) setValue('startAt', `${startAt}T00:00`);
+      }
+    }
+    lastTypeRef.current = bookingType;
+  }, [bookingType, startAt, setValue]);
+
+  // Live amount preview via the shared calculator
+  let preview: ReturnType<typeof calculateBookingAmount> | null = null;
+  if (startAt && hourlyRate != null) {
+    try {
+      preview = calculateBookingAmount({
+        bookingType,
+        hourlyPrice:  Number(hourlyRate),
+        monthlyPrice: monthlyRate ?? null,
+        startAt,
+        endAt: bookingType === 'HOURLY' ? endAt : null,
+      });
+    } catch { preview = null; }
+  }
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !isPending) onClose(); };
@@ -352,36 +401,92 @@ const EditGuestModal = ({
           {/* Divider */}
           <div className="flex items-center gap-3 py-1">
             <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Booking Window</span>
+            <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+              Booking Type & {bookingType === 'MONTHLY' ? 'Start Date' : 'Window'}
+            </span>
             <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
           </div>
 
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Start Date & Time *</label>
-              <input className="input w-full" type="datetime-local" required {...register('startAt')} />
+          {/* Booking type toggle */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">Booking Type *</label>
+            <div className="inline-flex w-full gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+              <button
+                type="button"
+                onClick={() => setValue('bookingType', 'HOURLY')}
+                className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition ${
+                  bookingType === 'HOURLY'
+                    ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-500'
+                }`}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Hourly
+              </button>
+              <button
+                type="button"
+                disabled={!monthlyAvailable}
+                onClick={() => monthlyAvailable && setValue('bookingType', 'MONTHLY')}
+                title={monthlyAvailable ? 'Monthly 30-day pass' : 'Monthly pricing not configured for this slot'}
+                className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                  bookingType === 'MONTHLY'
+                    ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-500'
+                }`}
+              >
+                <CalendarRange className="h-3.5 w-3.5" />
+                Monthly Pass (30 days)
+              </button>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">End Date & Time *</label>
-              <input className="input w-full" type="datetime-local" required {...register('endAt')} />
-            </div>
+            {!monthlyAvailable && (
+              <p className="mt-1 text-[10px] text-slate-400">
+                Monthly subscription not configured for this slot.
+              </p>
+            )}
           </div>
 
+          {/* Dates — switch between datetime range vs single start date */}
+          {bookingType === 'MONTHLY' ? (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">Pass Start Date *</label>
+              <input className="input w-full" type="date" required {...register('startAt')} />
+              {preview && (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Pass valid until{' '}
+                  <span className="font-medium">
+                    {preview.endAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span> ({MONTHLY_PASS_DAYS} days)
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">Start Date & Time *</label>
+                <input className="input w-full" type="datetime-local" required {...register('startAt')} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">End Date & Time *</label>
+                <input className="input w-full" type="datetime-local" required {...register('endAt')} />
+              </div>
+            </div>
+          )}
+
           {/* Live amount preview */}
-          {liveAmount ? (
+          {preview ? (
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-800/50">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">
-                  {liveAmount.hours} hr{liveAmount.hours !== 1 ? 's' : ''}
-                  {hourlyRate ? ` × ₹${Number(hourlyRate).toLocaleString('en-IN')}/hr` : ''}
+                  {preview.bookingType === 'MONTHLY'
+                    ? `1 month pass (${MONTHLY_PASS_DAYS} days)`
+                    : `${preview.units} ${preview.unitLabel}${hourlyRate ? ` × ₹${Number(hourlyRate).toLocaleString('en-IN')}/hr` : ''}`}
                 </span>
-                <span className="text-lg font-bold">₹{liveAmount.amount.toLocaleString('en-IN')}</span>
+                <span className="text-lg font-bold">{formatINR(preview.amount)}</span>
               </div>
               <p className="mt-1 text-xs text-slate-400">Total amount will be recalculated automatically.</p>
             </div>
           ) : (
-            startAt && endAt && new Date(endAt) <= new Date(startAt) && (
+            bookingType === 'HOURLY' && startAt && endAt && new Date(endAt) <= new Date(startAt) && (
               <p className="text-xs text-red-500">End time must be after start time.</p>
             )
           )}
@@ -393,7 +498,7 @@ const EditGuestModal = ({
             </button>
             <button
               type="submit"
-              disabled={isPending}
+              disabled={isPending || !preview}
               className="flex-1 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50"
             >
               {isPending ? 'Saving…' : 'Save Changes'}
@@ -503,8 +608,13 @@ export const BookingsPage = () => {
   });
 
   const editGuest = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: EditGuestForm }) =>
-      api.patch(`/vendor/bookings/${id}/guest`, data).then((r) => r.data),
+    mutationFn: ({ id, data }: { id: string; data: EditGuestForm }) => {
+      // Strip endAt when booking is monthly — backend ignores it anyway, but
+      // sending the wrong shape would just confuse the validator.
+      const payload: any = { ...data };
+      if (data.bookingType === 'MONTHLY') delete payload.endAt;
+      return api.patch(`/vendor/bookings/${id}/guest`, payload).then((r) => r.data);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['vendor-bookings'] });
       setEditTarget(null);
@@ -727,21 +837,59 @@ const DirectBookingFormFields = ({
   submitting: boolean;
   onSubmit:   (v: DirectBookingForm) => void;
 }) => {
-  const { register, handleSubmit, watch, setValue, reset } = useForm<DirectBookingForm>();
+  const { register, handleSubmit, watch, setValue, reset } = useForm<DirectBookingForm>({
+    defaultValues: { bookingType: 'HOURLY' },
+  });
   const selectedSpaceId = watch('spaceId');
   const selectedSlotId  = watch('slotId');
+  const bookingType     = watch('bookingType') ?? 'HOURLY';
   const startAt         = watch('startAt');
   const endAt           = watch('endAt');
 
   const selectedSpace = spaces.find((s) => s.id === selectedSpaceId);
   const activeSlots   = selectedSpace?.slots.filter((s: any) => s.status === 'ACTIVE') ?? [];
   const selectedSlot  = activeSlots.find((s) => s.id === selectedSlotId);
+  const monthlyAvailable = !!(selectedSlot?.monthlyPrice && Number(selectedSlot.monthlyPrice) > 0);
 
   useEffect(() => { setValue('slotId', ''); }, [selectedSpaceId, setValue]);
 
+  // If user switched to a slot without monthly pricing, force HOURLY.
+  useEffect(() => {
+    if (bookingType === 'MONTHLY' && selectedSlot && !monthlyAvailable) {
+      setValue('bookingType', 'HOURLY');
+    }
+  }, [bookingType, monthlyAvailable, selectedSlot, setValue]);
+
+  // Compute live preview using the shared calculator
+  let preview: ReturnType<typeof calculateBookingAmount> | null = null;
+  if (selectedSlot && startAt) {
+    try {
+      preview = calculateBookingAmount({
+        bookingType,
+        hourlyPrice:  Number(selectedSlot.hourlyPrice),
+        monthlyPrice: selectedSlot.monthlyPrice ?? null,
+        startAt,
+        endAt: bookingType === 'HOURLY' ? endAt : null,
+      });
+    } catch { preview = null; }
+  }
+
   return (
     <form
-      onSubmit={handleSubmit((v) => { onSubmit(v); reset(); })}
+      onSubmit={handleSubmit((v) => {
+        const payload: any = {
+          slotId:             v.slotId,
+          bookingType:        v.bookingType,
+          guestName:          v.guestName,
+          guestPhone:         v.guestPhone,
+          guestVehicleNumber: v.guestVehicleNumber || undefined,
+          guestVehicleModel:  v.guestVehicleModel  || undefined,
+          startAt:            v.startAt,
+        };
+        if (v.bookingType === 'HOURLY') payload.endAt = v.endAt;
+        onSubmit(payload);
+        reset({ bookingType: 'HOURLY' } as any);
+      })}
       className="grid gap-4"
     >
       {/* Space & Slot */}
@@ -760,11 +908,56 @@ const DirectBookingFormFields = ({
           <select className="input w-full" required disabled={!selectedSpaceId} {...register('slotId')}>
             <option value="">Select a slot…</option>
             {activeSlots.map((s) => (
-              <option key={s.id} value={s.id}>{s.code} — ₹{s.hourlyPrice}/hr</option>
+              <option key={s.id} value={s.id}>
+                {s.code} — ₹{s.hourlyPrice}/hr
+                {s.monthlyPrice && Number(s.monthlyPrice) > 0
+                  ? ` · ₹${s.monthlyPrice}/mo`
+                  : ''}
+              </option>
             ))}
           </select>
         </div>
       </div>
+
+      {/* Booking type selector */}
+      {selectedSlot && (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500">Booking Type *</label>
+          <div className="inline-flex w-full gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+            <button
+              type="button"
+              onClick={() => setValue('bookingType', 'HOURLY')}
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition ${
+                bookingType === 'HOURLY'
+                  ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white'
+                  : 'text-slate-500'
+              }`}
+            >
+              <Clock className="h-3.5 w-3.5" />
+              Hourly
+            </button>
+            <button
+              type="button"
+              disabled={!monthlyAvailable}
+              onClick={() => monthlyAvailable && setValue('bookingType', 'MONTHLY')}
+              title={monthlyAvailable ? 'Monthly 30-day pass' : 'Monthly pricing not configured for this slot'}
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                bookingType === 'MONTHLY'
+                  ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white'
+                  : 'text-slate-500'
+              }`}
+            >
+              <CalendarRange className="h-3.5 w-3.5" />
+              Monthly Pass (30 days)
+            </button>
+          </div>
+          {!monthlyAvailable && selectedSlot && (
+            <p className="mt-1 text-[10px] text-slate-400">
+              This slot has no monthly subscription configured. Ask admin/vendor to set a monthly price to enable it.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Divider */}
       <div className="flex items-center gap-3">
@@ -800,42 +993,51 @@ const DirectBookingFormFields = ({
       {/* Divider */}
       <div className="flex items-center gap-3">
         <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-        <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Booking Window</span>
+        <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+          {bookingType === 'MONTHLY' ? 'Pass Start Date' : 'Booking Window'}
+        </span>
         <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
       </div>
 
-      {/* Start & End */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Date inputs */}
+      {bookingType === 'MONTHLY' ? (
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">Start *</label>
-          <input className="input w-full" type="datetime-local" required {...register('startAt')} />
+          <label className="mb-1 block text-xs font-medium text-slate-500">Start Date *</label>
+          <input className="input w-full" type="date" required {...register('startAt')} />
+          {preview && (
+            <p className="mt-1 text-[11px] text-slate-500">
+              Pass valid until <span className="font-medium">{preview.endAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span> ({MONTHLY_PASS_DAYS} days)
+            </p>
+          )}
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">End *</label>
-          <input className="input w-full" type="datetime-local" required {...register('endAt')} />
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">Start *</label>
+            <input className="input w-full" type="datetime-local" required {...register('startAt')} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">End *</label>
+            <input className="input w-full" type="datetime-local" required {...register('endAt')} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Live amount preview */}
-      {selectedSlot && startAt && endAt && (() => {
-        const start = new Date(startAt).getTime();
-        const end   = new Date(endAt).getTime();
-        if (end <= start) return null;
-        const hours  = Math.max(1, Math.ceil((end - start) / 3_600_000));
-        const amount = Number(selectedSlot.hourlyPrice) * hours;
-        return (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/50">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500">
-                {hours} hr{hours !== 1 ? 's' : ''} × ₹{Number(selectedSlot.hourlyPrice).toLocaleString('en-IN')}/hr
-              </span>
-              <span className="text-xl font-bold">₹{amount.toLocaleString('en-IN')}</span>
-            </div>
+      {preview && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/50">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-slate-500">
+              {preview.bookingType === 'MONTHLY'
+                ? `1 month pass (${MONTHLY_PASS_DAYS} days)`
+                : `${preview.units} ${preview.unitLabel} × ₹${Number(selectedSlot!.hourlyPrice).toLocaleString('en-IN')}/hr`}
+            </span>
+            <span className="text-xl font-bold">{formatINR(preview.amount)}</span>
           </div>
-        );
-      })()}
+        </div>
+      )}
 
-      <button className="btn-primary w-full py-3" disabled={submitting}>
+      <button className="btn-primary w-full py-3" disabled={submitting || !preview}>
         {submitting ? 'Creating…' : 'Create Booking'}
       </button>
     </form>

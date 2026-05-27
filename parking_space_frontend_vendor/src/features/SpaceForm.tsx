@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { CheckCircle2, Loader2, MapPin } from 'lucide-react';
+import { api } from '@/lib/api';
 
 export interface SpaceFormValues {
   name: string;
@@ -59,26 +60,19 @@ export const SpaceForm = ({
     setAreas([]);
     setValue('area', '', { shouldDirty: true });
 
-    const applyPostOfficeData = (offices: any[]) => {
-      const po = offices[0];
-      setValue('city',  po.District ?? po.Block ?? po.Name, { shouldDirty: true });
-      setValue('state', po.State, { shouldDirty: true });
-      setAreas(offices.map((o: any) => o.Name));
-      setPincodeState('found');
-    };
-
-    // Primary: postalpincode.in
-    fetch(`https://api.postalpincode.in/pincode/${p}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data[0]?.Status === 'Success' && data[0].PostOffice?.length > 0) {
-          applyPostOfficeData(data[0].PostOffice);
-        } else {
-          throw new Error('not found');
-        }
+    // Backend proxy (avoids the third-party API's frequent SSL cert issues).
+    // Falls back to zippopotam.us if our proxy is unreachable.
+    api.get(`/util/pincode/${p}`)
+      .then(({ data }) => {
+        if (!data?.city || !data?.state) throw new Error('not found');
+        setValue('city',  data.city,  { shouldDirty: true });
+        setValue('state', data.state, { shouldDirty: true });
+        const places = Array.isArray(data.places) ? data.places : [];
+        setAreas(places.length ? places.map((p: any) => p.name) : [data.area].filter(Boolean));
+        setPincodeState('found');
       })
       .catch(() => {
-        // Fallback: zippopotam.us
+        // Fallback: zippopotam.us (used only if our backend is unreachable)
         fetch(`https://api.zippopotam.us/in/${p}`)
           .then((r) => { if (!r.ok) throw new Error('not found'); return r.json(); })
           .then((data) => {

@@ -58,6 +58,11 @@ enum BookingStatus {
   FAILED
 }
 
+enum BookingType {
+  HOURLY
+  MONTHLY
+}
+
 enum PaymentStatus {
   CREATED
   PAID
@@ -219,6 +224,7 @@ model Booking {
   endAt              DateTime
   totalAmount        Decimal       @db.Decimal(10, 2)
   currency           String        @default("INR")
+  bookingType        BookingType   @default(HOURLY)
   status             BookingStatus @default(PENDING_PAYMENT)
   cancelReason       String?       @db.Text
   isDirectBooking    Boolean       @default(false)

@@ -35,6 +35,7 @@ interface SlotDraft {
   vehicleType: VehicleType;
   code: string;
   hourlyPrice: number;
+  monthlyPrice?: number | null;
 }
 
 // ── Stepper indicator ─────────────────────────────────────────────────────────
@@ -142,26 +143,19 @@ const Step1 = ({
     setAreas([]);
     setValue('area', '', { shouldDirty: true });
 
-    const applyPostOfficeData = (offices: any[]) => {
-      const po = offices[0];
-      setValue('city',  po.District ?? po.Block ?? po.Name, { shouldDirty: true });
-      setValue('state', po.State, { shouldDirty: true });
-      setAreas(offices.map((o: any) => o.Name));
-      setPincodeState('found');
-    };
-
-    // Primary: postalpincode.in
-    fetch(`https://api.postalpincode.in/pincode/${p}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data[0]?.Status === 'Success' && data[0].PostOffice?.length > 0) {
-          applyPostOfficeData(data[0].PostOffice);
-        } else {
-          throw new Error('not found');
-        }
+    // Backend proxy (avoids the third-party API's frequent SSL cert issues).
+    // Falls back to zippopotam.us if our proxy is unreachable.
+    api.get(`/util/pincode/${p}`)
+      .then(({ data }) => {
+        if (!data?.city || !data?.state) throw new Error('not found');
+        setValue('city',  data.city,  { shouldDirty: true });
+        setValue('state', data.state, { shouldDirty: true });
+        const places = Array.isArray(data.places) ? data.places : [];
+        setAreas(places.length ? places.map((p: any) => p.name) : [data.area].filter(Boolean));
+        setPincodeState('found');
       })
       .catch(() => {
-        // Fallback: zippopotam.us
+        // Fallback: zippopotam.us (used only if our backend is unreachable)
         fetch(`https://api.zippopotam.us/in/${p}`)
           .then((r) => { if (!r.ok) throw new Error('not found'); return r.json(); })
           .then((data) => {
@@ -420,9 +414,10 @@ const Step2 = ({
   onNext: () => void;
 }) => {
   const [vehicleType, setVehicleType] = useState<VehicleType>('FOUR_WHEELER');
-  const [code, setCode] = useState('');
-  const [price, setPrice] = useState('');
-  const [err, setErr] = useState('');
+  const [code, setCode]       = useState('');
+  const [price, setPrice]     = useState('');
+  const [monthly, setMonthly] = useState('');
+  const [err, setErr]         = useState('');
 
   const addSlot = () => {
     const trimmedCode = code.trim().toUpperCase();
@@ -434,18 +429,24 @@ const Step2 = ({
       setErr('Enter a valid hourly price (must be > 0)');
       return;
     }
+    if (monthly && Number(monthly) < 0) {
+      setErr('Monthly price cannot be negative');
+      return;
+    }
     if (slots.some((s) => s.code === trimmedCode)) {
       setErr(`Slot "${trimmedCode}" already exists`);
       return;
     }
     onAddSlot({
-      uid: Math.random().toString(36).slice(2),
+      uid:          Math.random().toString(36).slice(2),
       vehicleType,
-      code: trimmedCode,
-      hourlyPrice: Number(price),
+      code:         trimmedCode,
+      hourlyPrice:  Number(price),
+      monthlyPrice: monthly ? Number(monthly) : null,
     });
     setCode('');
     setPrice('');
+    setMonthly('');
     setErr('');
   };
 
@@ -500,8 +501,8 @@ const Step2 = ({
           </div>
         </div>
 
-        {/* Code + price */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Code + prices */}
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">Slot Code *</label>
             <input
@@ -533,7 +534,28 @@ const Step2 = ({
               onKeyDown={handleKey}
             />
           </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">
+              Monthly Pass (₹)
+            </label>
+            <input
+              className="input w-full"
+              type="number"
+              step="any"
+              min="0"
+              placeholder="Optional"
+              value={monthly}
+              onChange={(e) => {
+                setMonthly(e.target.value);
+                setErr('');
+              }}
+              onKeyDown={handleKey}
+            />
+          </div>
         </div>
+        <p className="text-[10px] text-slate-400">
+          Monthly Pass enables a 30-day subscription option for this slot. Leave blank for hourly-only.
+        </p>
 
         {err && <p className="text-xs text-red-500">{err}</p>}
 
@@ -567,6 +589,9 @@ const Step2 = ({
                     <p className="text-sm font-bold">{s.code}</p>
                     <p className="text-xs text-slate-400">
                       {vt.label} · ₹{s.hourlyPrice}/hr
+                      {s.monthlyPrice != null && s.monthlyPrice > 0 && (
+                        <> · ₹{s.monthlyPrice}/mo</>
+                      )}
                     </p>
                   </div>
                   <button
@@ -991,10 +1016,13 @@ export const AddParkingSpacePage = () => {
       // 3. Create each slot
       for (const slot of slots) {
         await api.post(`/vendor/locations/${locationId}/slots`, {
-          code: slot.code,
+          code:        slot.code,
           vehicleType: slot.vehicleType,
           hourlyPrice: slot.hourlyPrice,
-          dailyPrice: 0,
+          dailyPrice:  0,
+          ...(slot.monthlyPrice && slot.monthlyPrice > 0
+              ? { monthlyPrice: slot.monthlyPrice }
+              : {}),
         });
       }
 
