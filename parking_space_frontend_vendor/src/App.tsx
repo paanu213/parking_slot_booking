@@ -8,6 +8,7 @@ import { AppShell } from '@/components/AppShell';
 import { ParkingSpacesPage } from '@/pages/ParkingSpacesPage';
 import { AddParkingSpacePage } from '@/pages/AddParkingSpacePage';
 import { BookingsPage } from '@/pages/BookingsPage';
+import { SlotBookingsPage } from '@/pages/SlotBookingsPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
@@ -328,6 +329,7 @@ export default function App() {
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/spaces" element={<ParkingSpacesPage />} />
                     <Route path="/spaces/add" element={<AddParkingSpacePage />} />
+                    <Route path="/slots/:id/bookings" element={<SlotBookingsPage />} />
                     <Route path="/bookings" element={<BookingsPage />} />
                     <Route path="/profile" element={<ProfilePage />} />
                   </Routes>

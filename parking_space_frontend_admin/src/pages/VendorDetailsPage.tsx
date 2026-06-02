@@ -5,7 +5,7 @@ import {
   ArrowLeft, Building2, Mail, Phone, MapPin, ShieldCheck,
   Calendar, CalendarCheck, IndianRupee, Layers, Plus,
   CheckCircle2, Clock, XCircle, Pencil, ChevronDown, ChevronUp,
-  Bike, Car, Truck, ToggleLeft, ToggleRight, Sparkles, Save, X,
+  Bike, Car, Truck, ToggleLeft, ToggleRight, Sparkles, Save, X, Percent,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { KebabMenu, MenuItem } from '@/components/KebabMenu';
@@ -63,11 +63,12 @@ const fmtINR = (n?: number | null) =>
 
 // ── Slot row (inline edit + status toggle) ───────────────────────────────────
 const SlotRow = ({
-  slot, onToggleStatus, onSaveEdit, isToggling, isSaving,
+  slot, onToggleStatus, onSaveEdit, onViewBookings, isToggling, isSaving,
 }: {
   slot: any;
   onToggleStatus: () => void;
   onSaveEdit: (code: string, hourlyPrice: string, monthlyPrice: string, vehicleType: string) => void;
+  onViewBookings: () => void;
   isToggling: boolean;
   isSaving: boolean;
 }) => {
@@ -114,6 +115,14 @@ const SlotRow = ({
           {slot.status}
         </span>
         <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            title="View slot bookings"
+            onClick={onViewBookings}
+            className="flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+          >
+            <CalendarCheck className="h-3.5 w-3.5" />
+            Bookings
+          </button>
           <button
             title="Edit slot"
             onClick={() => setEditing((e) => !e)}
@@ -200,6 +209,7 @@ const SpaceCard = ({
   onEdit: (s: any) => void;
 }) => {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [slotsExpanded, setSlotsExpanded]         = useState(false);
   const [amenitiesExpanded, setAmenitiesExpanded] = useState(false);
   const [editingAmenities, setEditingAmenities]   = useState(false);
@@ -399,6 +409,9 @@ const SpaceCard = ({
                 slot={slot}
                 isToggling={toggleSlotStatus.isPending}
                 isSaving={updateSlot.isPending}
+                onViewBookings={() =>
+                  navigate(`/slots/${slot.id}/bookings?backTo=${encodeURIComponent(`/vendors/${space.vendorId}`)}`)
+                }
                 onToggleStatus={() =>
                   toggleSlotStatus.mutate({
                     id: slot.id,
@@ -608,6 +621,8 @@ export const VendorDetailsPage = () => {
   const v: any           = data.vendor;
   const stats            = data.stats ?? {};
   const locations: any[] = v.locations ?? [];
+  const commissionBySpace: any[] = data.commissionBySpace ?? [];
+  const bookings: any[]  = data.bookings ?? [];
   const statusCls        = VENDOR_STATUS_CLS[v.status] ?? VENDOR_STATUS_CLS.INACTIVE;
 
   return (
@@ -660,6 +675,54 @@ export const VendorDetailsPage = () => {
                   label="Revenue" value={fmtINR(stats.revenue)} />
       </div>
 
+      {/* ── Commission ── */}
+      <div className="card border-amber-200 bg-amber-50/40 p-5 dark:border-amber-900/40 dark:bg-amber-900/10">
+        <div className="mb-3 flex items-center gap-2">
+          <Percent className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          <h2 className="text-sm font-semibold">Commission Owed by this Vendor</h2>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatTile icon={<Percent className="h-4 w-4 text-amber-500" />}
+                    label="Total Commission" value={fmtINR(stats.commissionTotal ?? 0)} />
+          <StatTile icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+                    label="Received" value={fmtINR(stats.commissionPaid ?? 0)} />
+          <StatTile icon={<Clock className="h-4 w-4 text-red-500" />}
+                    label="Pending Collection" value={fmtINR(stats.commissionPending ?? 0)} />
+        </div>
+
+        {/* Per-space breakdown */}
+        {commissionBySpace.length > 0 && (
+          <div className="mt-4 overflow-x-auto rounded-lg border border-amber-100 bg-white dark:border-amber-900/30 dark:bg-slate-900">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Space</th>
+                  <th>Total</th>
+                  <th>Received</th>
+                  <th>Pending</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commissionBySpace.map((s) => (
+                  <tr key={s.locationId}>
+                    <td className="text-sm">
+                      <p className="font-medium">{s.name}</p>
+                      {s.city && <p className="text-xs text-slate-400">{s.city}</p>}
+                    </td>
+                    <td className="font-semibold">{fmtINR(s.total)}</td>
+                    <td className="text-emerald-600 dark:text-emerald-400">{fmtINR(s.paid)}</td>
+                    <td className={s.pending > 0 ? 'font-semibold text-red-600 dark:text-red-400' : 'text-slate-400'}>
+                      {fmtINR(s.pending)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* ── Vendor & owner details ── */}
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="card p-5">
@@ -687,12 +750,37 @@ export const VendorDetailsPage = () => {
                 }
               />
             )}
-            {v.status === 'APPROVED' && v.approvedAt && (
-              <DetailRow icon={<Calendar className="h-3.5 w-3.5" />} label="Approved on" value={fmtDate(v.approvedAt)} />
+            {/* ── Status timeline — joined / approved / rejected / deactivated ── */}
+            {/* "Joined" is already shown in the page header subtitle, no duplicate here. */}
+            {v.approvedAt && (
+              <DetailRow
+                icon={<CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
+                label="Approved on"
+                value={fmtDate(v.approvedAt)}
+              />
+            )}
+            {v.rejectedAt && (
+              <DetailRow
+                icon={<XCircle className="h-3.5 w-3.5 text-red-500" />}
+                label="Rejected on"
+                value={fmtDate(v.rejectedAt)}
+              />
+            )}
+            {v.deactivatedAt && (
+              <DetailRow
+                icon={<Clock className="h-3.5 w-3.5 text-slate-500" />}
+                label="Stopped on"
+                value={fmtDate(v.deactivatedAt)}
+              />
             )}
             {v.status === 'REJECTED' && v.rejectionNote && (
               <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800/50 dark:bg-red-900/20 dark:text-red-300">
                 <span className="font-medium">Rejection reason:</span> {v.rejectionNote}
+              </div>
+            )}
+            {v.status === 'INACTIVE' && v.deactivatedAt && (
+              <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300">
+                <span className="font-medium">Inactive:</span> this vendor stopped working with us on {fmtDate(v.deactivatedAt)}.
               </div>
             )}
           </dl>
@@ -744,6 +832,9 @@ export const VendorDetailsPage = () => {
         )}
       </div>
 
+      {/* ── Bookings under this vendor (most recent 50) ── */}
+      <VendorBookingsCard bookings={bookings} total={stats.bookingsTotal ?? 0} />
+
       {/* ── Edit space slide-over ── */}
       {editSpace && (
         <EditSpaceSlideOver
@@ -790,3 +881,99 @@ const DetailRow = ({
     </div>
   );
 };
+
+// ── Bookings under this vendor ────────────────────────────────────────────────
+const BOOKING_STATUS_CLS: Record<string, string> = {
+  CONFIRMED:       'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+  COMPLETED:       'bg-slate-100   text-slate-600   dark:bg-slate-800     dark:text-slate-400',
+  PENDING_PAYMENT: 'bg-amber-100   text-amber-800   dark:bg-amber-900/30  dark:text-amber-300',
+  CANCELLED:       'bg-red-100     text-red-800     dark:bg-red-900/30    dark:text-red-300',
+  FAILED:          'bg-red-100     text-red-800     dark:bg-red-900/30    dark:text-red-300',
+};
+
+const fmtDateTime = (d?: string | null) =>
+  d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+
+const VendorBookingsCard = ({ bookings, total }: { bookings: any[]; total: number }) => (
+  <div className="card">
+    <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800">
+      <h2 className="text-sm font-semibold">
+        Bookings <span className="text-slate-400">({bookings.length}{total > bookings.length ? ` of ${total}` : ''})</span>
+      </h2>
+      {total > bookings.length && (
+        <span className="text-xs text-slate-400">Showing most recent {bookings.length}</span>
+      )}
+    </div>
+
+    {bookings.length === 0 ? (
+      <div className="p-8 text-center text-sm text-slate-400">
+        No bookings yet for this vendor.
+      </div>
+    ) : (
+      <div className="overflow-x-auto">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Space · Slot</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Payment</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bookings.map((b) => {
+              const customerName = b.isDirectBooking
+                ? (b.guestName ?? 'Walk-in Guest')
+                : (b.user?.fullName ?? '—');
+              const customerSub = b.isDirectBooking
+                ? (b.guestPhone ?? 'Direct booking')
+                : (b.user?.email ?? '');
+              const payment = b.payments?.[0];
+              return (
+                <tr key={b.id}>
+                  <td>
+                    <p className="text-sm font-medium">{customerName}</p>
+                    <p className="text-xs text-slate-400">{customerSub}</p>
+                  </td>
+                  <td className="text-sm">
+                    {b.slot?.location?.name}
+                    <span className="ml-1 font-mono text-xs text-slate-400">· {b.slot?.code}</span>
+                    {b.slot?.location?.city && (
+                      <p className="text-xs text-slate-400">{b.slot.location.city}</p>
+                    )}
+                  </td>
+                  <td className="text-xs text-slate-500">{fmtDateTime(b.startAt)}</td>
+                  <td className="text-xs text-slate-500">{fmtDateTime(b.endAt)}</td>
+                  <td className="text-xs">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      {b.bookingType ?? 'HOURLY'}
+                    </span>
+                  </td>
+                  <td className="font-semibold">{fmtINR(Number(b.totalAmount))}</td>
+                  <td className="text-xs text-slate-500">
+                    {b.isDirectBooking
+                      ? (b.paymentMethod ?? 'Direct')
+                      : (payment?.status ?? '—')}
+                  </td>
+                  <td>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        BOOKING_STATUS_CLS[b.status] ?? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                      }`}
+                    >
+                      {b.status}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+);

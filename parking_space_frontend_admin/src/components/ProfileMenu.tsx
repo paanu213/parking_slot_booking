@@ -6,8 +6,6 @@ import {
   Settings,
   UserCircle2,
   ShieldCheck,
-  Activity,
-  LifeBuoy,
   Sun,
   Moon,
   Crown,
@@ -27,10 +25,8 @@ type MenuLink = {
 
 const LINKS: MenuLink[] = [
   { to: '/profile', label: 'My profile', icon: UserCircle2, description: 'Account info' },
+  { to: '/account', label: 'Account settings', icon: Settings, description: 'Password & security' },
   { to: '/admins', label: 'Team & roles', icon: ShieldCheck, description: 'Manage admins' },
-  { to: '/audit', label: 'Audit trail', icon: Activity, description: 'Recent actions' },
-  { to: '/settings', label: 'Settings', icon: Settings, description: 'Platform preferences' },
-  { to: '/help', label: 'Help & docs', icon: LifeBuoy },
 ];
 
 const roleLabel = (role?: string) => {

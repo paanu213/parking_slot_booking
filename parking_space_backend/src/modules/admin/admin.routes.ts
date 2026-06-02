@@ -6,6 +6,7 @@ import { validate } from '../../middleware/validate.js';
 import { hashPassword } from '../../lib/password.js';
 import { BadRequest, NotFound } from '../../lib/http.js';
 import { calculateBookingAmount } from '../../lib/pricing.js';
+import { getCommissionRate, setCommissionRate } from '../../lib/commission.js';
 import { storeIconBuffer, storeImageBuffer, deleteImageByUrl, storeDocumentBuffer, deleteDocumentByUrl } from '../../lib/images.js';
 import { imageUpload, docUpload } from '../uploads/uploads.routes.js';
 
@@ -159,7 +160,7 @@ r.get('/vendors/:id', async (req, res, next) => {
 
     // Aggregate booking + revenue stats across all the vendor's spaces
     const locationIds = vendor.locations.map((l) => l.id);
-    const [bookingsTotal, bookingsConfirmed, revenue] = await Promise.all([
+    const [bookingsTotal, bookingsConfirmed, bookingsCancelled, revenue, recentBookings] = await Promise.all([
       locationIds.length
         ? prisma.booking.count({ where: { slot: { locationId: { in: locationIds } } } })
         : 0,
@@ -169,12 +170,61 @@ r.get('/vendors/:id', async (req, res, next) => {
           })
         : 0,
       locationIds.length
+        ? prisma.booking.count({
+            where: { slot: { locationId: { in: locationIds } }, status: 'CANCELLED' },
+          })
+        : 0,
+      locationIds.length
         ? prisma.booking.aggregate({
             _sum: { totalAmount: true },
             where: { slot: { locationId: { in: locationIds } }, status: 'CONFIRMED' },
           })
         : { _sum: { totalAmount: 0 } },
+      locationIds.length
+        ? prisma.booking.findMany({
+            where: { slot: { locationId: { in: locationIds } } },
+            include: {
+              user: { select: { id: true, fullName: true, email: true, phone: true } },
+              slot: {
+                select: {
+                  id: true, code: true, vehicleType: true,
+                  location: { select: { id: true, name: true, city: true } },
+                },
+              },
+              payments: { select: { status: true, amount: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 50,
+          })
+        : [],
     ]);
+
+    // Commission generated per space (only CONFIRMED/COMPLETED count as owed)
+    const commissionRows = locationIds.length
+      ? await prisma.booking.findMany({
+          where: { slot: { locationId: { in: locationIds } }, status: { in: ['CONFIRMED', 'COMPLETED'] } },
+          select: {
+            commissionAmount: true,
+            commissionStatus: true,
+            slot: { select: { locationId: true } },
+          },
+        })
+      : [];
+
+    const commissionBySpace = new Map<string, { total: number; paid: number }>();
+    let commissionTotal = 0;
+    let commissionPaid  = 0;
+    for (const b of commissionRows) {
+      const amt = Number(b.commissionAmount);
+      commissionTotal += amt;
+      if (b.commissionStatus === 'PAID') commissionPaid += amt;
+      const locId = b.slot?.locationId;
+      if (!locId) continue;
+      const row = commissionBySpace.get(locId) ?? { total: 0, paid: 0 };
+      row.total += amt;
+      if (b.commissionStatus === 'PAID') row.paid += amt;
+      commissionBySpace.set(locId, row);
+    }
 
     res.json({
       vendor,
@@ -183,8 +233,26 @@ r.get('/vendors/:id', async (req, res, next) => {
         slots:             vendor.locations.reduce((sum, l) => sum + l.slots.length, 0),
         bookingsTotal,
         bookingsConfirmed,
+        bookingsCancelled,
         revenue:           Number(revenue._sum.totalAmount ?? 0),
+        commissionTotal,
+        commissionPaid,
+        commissionPending: commissionTotal - commissionPaid,
       },
+      // Per-space commission breakdown — keyed by location id
+      commissionBySpace: vendor.locations.map((l) => {
+        const row = commissionBySpace.get(l.id) ?? { total: 0, paid: 0 };
+        return {
+          locationId: l.id,
+          name:       l.name,
+          city:       l.city,
+          total:      row.total,
+          paid:       row.paid,
+          pending:    row.total - row.paid,
+        };
+      }),
+      // Most-recent bookings across this vendor's slots (up to 50, newest first)
+      bookings: recentBookings,
     });
   } catch (e) {
     next(e);
@@ -210,7 +278,12 @@ r.post('/vendors/:id/reject', async (req, res, next) => {
   try {
     const vendor = await prisma.vendor.update({
       where: { id: req.params.id },
-      data: { status: 'REJECTED', rejectionNote: req.body?.note ?? null },
+      data: {
+        status: 'REJECTED',
+        rejectionNote: req.body?.note ?? null,
+        rejectedAt: new Date(),
+        rejectedById: req.user!.sub,
+      },
     });
     await prisma.auditLog.create({
       data: { actorId: req.user!.sub, action: 'VENDOR_REJECT', entity: 'Vendor', entityId: vendor.id },
@@ -224,7 +297,20 @@ r.post('/vendors/:id/reject', async (req, res, next) => {
 r.patch('/vendors/:id/status', async (req, res, next) => {
   try {
     const status = req.body?.status === 'INACTIVE' ? 'INACTIVE' : 'APPROVED';
-    const vendor = await prisma.vendor.update({ where: { id: req.params.id }, data: { status } });
+    // Stamp deactivation timestamp when moving INACTIVE; clear it when reactivating.
+    const data =
+      status === 'INACTIVE'
+        ? { status, deactivatedAt: new Date(), deactivatedById: req.user!.sub }
+        : { status, deactivatedAt: null, deactivatedById: null };
+    const vendor = await prisma.vendor.update({ where: { id: req.params.id }, data });
+    await prisma.auditLog.create({
+      data: {
+        actorId: req.user!.sub,
+        action: status === 'INACTIVE' ? 'VENDOR_DEACTIVATE' : 'VENDOR_REACTIVATE',
+        entity: 'Vendor',
+        entityId: vendor.id,
+      },
+    });
     res.json(vendor);
   } catch (e) {
     next(e);
@@ -673,6 +759,47 @@ r.patch('/slots/:id', validate(updateSlotSchema), async (req, res, next) => {
   }
 });
 
+// All bookings for a single slot — past, present & future (slot-wise history)
+r.get('/slots/:id/bookings', async (req, res, next) => {
+  try {
+    const slot = await prisma.slot.findUnique({
+      where: { id: req.params.id },
+      include: {
+        location: {
+          select: {
+            id: true, name: true, city: true, state: true,
+            vendor: { select: { id: true, businessName: true } },
+          },
+        },
+      },
+    });
+    if (!slot) return next(NotFound('Slot not found'));
+
+    const bookings = await prisma.booking.findMany({
+      where: { slotId: slot.id },
+      include: {
+        user:     { select: { fullName: true, email: true, phone: true } },
+        payments: { select: { id: true, status: true, amount: true, provider: true, createdAt: true } },
+      },
+      orderBy: { startAt: 'desc' },
+    });
+
+    const revenueBookings = bookings.filter((b) => ['CONFIRMED', 'COMPLETED'].includes(b.status));
+    res.json({
+      slot,
+      bookings,
+      stats: {
+        total:     bookings.length,
+        confirmed: revenueBookings.length,
+        cancelled: bookings.filter((b) => b.status === 'CANCELLED').length,
+        revenue:   revenueBookings.reduce((sum, b) => sum + Number(b.totalAmount), 0),
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // --- Bookings & payments overview ---
 r.get('/bookings', async (_req, res) => {
   const items = await prisma.booking.findMany({
@@ -858,9 +985,11 @@ r.patch('/bookings/:id/guest', validate(adminEditGuestSchema), async (req, res, 
         ...guestFields,
         ...(bookingType ? { bookingType } : {}),
         ...(recalc ? {
-          startAt:     recalc.startAt,
-          endAt:       recalc.endAt,
-          totalAmount: recalc.amount,
+          startAt:          recalc.startAt,
+          endAt:            recalc.endAt,
+          totalAmount:      recalc.amount,
+          // Keep commission in sync with the new amount (using the booking's snapshot rate)
+          commissionAmount: Math.round(recalc.amount * Number(booking.commissionRate)) / 100,
         } : {}),
       },
     });
@@ -1361,6 +1490,78 @@ r.delete('/admins/:id', requireRole('SUPER_ADMIN'), async (req, res, next) => {
     if (target.id === req.user!.sub) return next(BadRequest('Cannot delete yourself'));
     await prisma.user.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ── Commission settings ───────────────────────────────────────────────────────
+r.get('/settings/commission', async (_req, res, next) => {
+  try {
+    const rate = await getCommissionRate();
+    res.json({ rate });
+  } catch (e) {
+    next(e);
+  }
+});
+
+const commissionRateSchema = z.object({ rate: z.coerce.number().min(0).max(100) });
+
+r.patch('/settings/commission', validate(commissionRateSchema), async (req, res, next) => {
+  try {
+    const rate = await setCommissionRate(Number(req.body.rate));
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'COMMISSION_RATE_UPDATE', entity: 'Setting', entityId: 'commission_rate', metadata: JSON.stringify({ rate }) },
+    });
+    res.json({ rate });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Mark a booking's commission as PAID or PENDING (vendor settled with the company)
+const commissionStatusSchema = z.object({ status: z.enum(['PAID', 'PENDING']) });
+
+r.patch('/bookings/:id/commission', validate(commissionStatusSchema), async (req, res, next) => {
+  try {
+    const status = req.body.status as 'PAID' | 'PENDING';
+    const updated = await prisma.booking.update({
+      where: { id: req.params.id },
+      data: {
+        commissionStatus: status,
+        commissionPaidAt: status === 'PAID' ? new Date() : null,
+      },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'COMMISSION_MARK', entity: 'Booking', entityId: updated.id, metadata: JSON.stringify({ status }) },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Commission overview for the admin dashboard / bookings page
+r.get('/commission/summary', async (_req, res, next) => {
+  try {
+    // Only CONFIRMED / COMPLETED bookings represent real revenue & owed commission.
+    const due = await prisma.booking.findMany({
+      where: { status: { in: ['CONFIRMED', 'COMPLETED'] } },
+      select: { commissionAmount: true, commissionStatus: true, totalAmount: true },
+    });
+    const totalCommission = due.reduce((s, b) => s + Number(b.commissionAmount), 0);
+    const paidCommission  = due.filter((b) => b.commissionStatus === 'PAID')
+      .reduce((s, b) => s + Number(b.commissionAmount), 0);
+    const grossRevenue    = due.reduce((s, b) => s + Number(b.totalAmount), 0);
+
+    res.json({
+      rate: await getCommissionRate(),
+      grossRevenue,
+      totalCommission,
+      paidCommission,
+      pendingCommission: totalCommission - paidCommission,
+      bookings: due.length,
+    });
   } catch (e) {
     next(e);
   }

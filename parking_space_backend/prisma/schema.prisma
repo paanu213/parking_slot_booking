@@ -63,6 +63,11 @@ enum BookingType {
   MONTHLY
 }
 
+enum CommissionStatus {
+  PENDING
+  PAID
+}
+
 enum PaymentStatus {
   CREATED
   PAID
@@ -118,7 +123,13 @@ model Vendor {
   status        VendorStatus  @default(PENDING)
   approvedAt    DateTime?
   approvedById  String?
+  // Set when an admin rejects the vendor. rejectionNote stores the reason shown to them.
+  rejectedAt    DateTime?
+  rejectedById  String?
   rejectionNote String?       @db.Text
+  // Set when an admin flips status to INACTIVE ("stopped working with us"). Cleared on reactivation.
+  deactivatedAt   DateTime?
+  deactivatedById String?
   payoutUpiId         String?
   aadharNumber        String?
   aadharDocUrl        String?
@@ -226,6 +237,12 @@ model Booking {
   currency           String        @default("INR")
   bookingType        BookingType   @default(HOURLY)
   status             BookingStatus @default(PENDING_PAYMENT)
+  // Commission owed by the vendor to the company on this booking.
+  // Rate + amount are snapshotted at creation so later rate changes don't rewrite history.
+  commissionRate     Decimal          @default(10) @db.Decimal(5, 2)
+  commissionAmount   Decimal          @default(0)  @db.Decimal(10, 2)
+  commissionStatus   CommissionStatus @default(PENDING)
+  commissionPaidAt   DateTime?
   cancelReason       String?       @db.Text
   isDirectBooking    Boolean       @default(false)
   guestName          String?
@@ -284,4 +301,11 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([actorId])
+}
+
+// Simple key/value store for admin-configurable settings (e.g. commission_rate).
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

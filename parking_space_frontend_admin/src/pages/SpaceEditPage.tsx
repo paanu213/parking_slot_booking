@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Save, MapPin, Loader2, CheckCircle2, Trash2,
-  Bike, Car, Truck, Plus, UploadCloud,
+  Bike, Car, Truck, Plus, UploadCloud, CalendarCheck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Dropzone } from '@/components/Dropzone';
@@ -506,6 +506,13 @@ export const SpaceEditPage = () => {
                     {slot.status}
                   </span>
                   <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      className="btn-ghost text-xs px-2 py-1 inline-flex items-center gap-1"
+                      onClick={() => navigate(`/slots/${slot.id}/bookings?backTo=${encodeURIComponent(`/spaces/${id}/edit`)}`)}
+                    >
+                      <CalendarCheck className="h-3.5 w-3.5" />
+                      Bookings
+                    </button>
                     <button
                       className="btn-ghost text-xs px-2 py-1"
                       onClick={() => {
