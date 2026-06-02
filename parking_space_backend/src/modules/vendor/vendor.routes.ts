@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { BadRequest, Conflict, Forbidden, NotFound } from '../../lib/http.js';
 import { calculateBookingAmount } from '../../lib/pricing.js';
+import { getCommissionRate, commissionFor } from '../../lib/commission.js';
 import { deleteImageByUrl, storeImageBuffer } from '../../lib/images.js';
 import { imageUpload } from '../uploads/uploads.routes.js';
 
@@ -232,6 +233,43 @@ r.patch('/slots/:slotId/status', async (req, res, next) => {
   }
 });
 
+// All bookings for one of the vendor's own slots — past, present & future
+r.get('/slots/:slotId/bookings', async (req, res, next) => {
+  try {
+    const owned = await ensureOwnSlot(req.user!.sub, req.params.slotId);
+
+    const slot = await prisma.slot.findUnique({
+      where: { id: owned.id },
+      include: {
+        location: { select: { id: true, name: true, city: true, state: true } },
+      },
+    });
+
+    const bookings = await prisma.booking.findMany({
+      where: { slotId: owned.id },
+      include: {
+        user:     { select: { fullName: true, email: true, phone: true } },
+        payments: { select: { id: true, status: true, amount: true, provider: true, createdAt: true } },
+      },
+      orderBy: { startAt: 'desc' },
+    });
+
+    const revenueBookings = bookings.filter((b) => ['CONFIRMED', 'COMPLETED'].includes(b.status));
+    res.json({
+      slot,
+      bookings,
+      stats: {
+        total:     bookings.length,
+        confirmed: revenueBookings.length,
+        cancelled: bookings.filter((b) => b.status === 'CANCELLED').length,
+        revenue:   revenueBookings.reduce((sum, b) => sum + Number(b.totalAmount), 0),
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 r.patch('/locations/:id/status', async (req, res, next) => {
   try {
     const loc = await ensureOwnLocation(req.user!.sub, req.params.id);
@@ -337,6 +375,51 @@ r.get('/bookings', async (req, res) => {
   res.json({ items });
 });
 
+// Commission the vendor owes the company — total, paid, pending (+ per-space breakdown)
+r.get('/commission/summary', async (req, res, next) => {
+  try {
+    const due = await prisma.booking.findMany({
+      where: {
+        status: { in: ['CONFIRMED', 'COMPLETED'] },
+        slot:   { location: { vendor: { userId: req.user!.sub } } },
+      },
+      select: {
+        commissionAmount: true,
+        commissionStatus: true,
+        totalAmount: true,
+        slot: { select: { location: { select: { id: true, name: true } } } },
+      },
+    });
+
+    const totalCommission = due.reduce((s, b) => s + Number(b.commissionAmount), 0);
+    const paidCommission  = due.filter((b) => b.commissionStatus === 'PAID')
+      .reduce((s, b) => s + Number(b.commissionAmount), 0);
+
+    // Per-space breakdown
+    const bySpace = new Map<string, { id: string; name: string; total: number; paid: number; bookings: number }>();
+    for (const b of due) {
+      const loc = b.slot?.location;
+      if (!loc) continue;
+      const row = bySpace.get(loc.id) ?? { id: loc.id, name: loc.name, total: 0, paid: 0, bookings: 0 };
+      row.total    += Number(b.commissionAmount);
+      row.bookings += 1;
+      if (b.commissionStatus === 'PAID') row.paid += Number(b.commissionAmount);
+      bySpace.set(loc.id, row);
+    }
+
+    res.json({
+      rate: await getCommissionRate(),
+      totalCommission,
+      paidCommission,
+      pendingCommission: totalCommission - paidCommission,
+      bookings: due.length,
+      spaces: [...bySpace.values()].map((s) => ({ ...s, pending: s.total - s.paid })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // Direct / offline booking created by vendor on behalf of a walk-in customer
 // Supports HOURLY (custom date range) or MONTHLY (30-day pass from startAt).
 const directBookingSchema = z
@@ -362,6 +445,7 @@ r.post('/direct-bookings', validate(directBookingSchema), async (req, res, next)
       slotId, guestName, guestPhone, guestVehicleNumber, guestVehicleModel,
       bookingType, startAt, endAt, totalAmount,
     } = req.body as z.infer<typeof directBookingSchema>;
+    const commissionRate = await getCommissionRate();
 
     const booking = await prisma.$transaction(async (tx) => {
       // Lock slot row and verify ownership
@@ -415,6 +499,8 @@ r.post('/direct-bookings', validate(directBookingSchema), async (req, res, next)
           startAt: calc.startAt,
           endAt:   calc.endAt,
           totalAmount: finalAmount,
+          commissionRate,
+          commissionAmount: commissionFor(finalAmount, commissionRate),
           status: 'CONFIRMED',
         } as any,
       });
@@ -484,9 +570,10 @@ r.patch('/bookings/:id/guest', validate(editGuestSchema), async (req, res, next)
         ...guestFields,
         ...(bookingType ? { bookingType } : {}),
         ...(recalc ? {
-          startAt:     recalc.startAt,
-          endAt:       recalc.endAt,
-          totalAmount: recalc.amount,
+          startAt:          recalc.startAt,
+          endAt:            recalc.endAt,
+          totalAmount:      recalc.amount,
+          commissionAmount: Math.round(recalc.amount * Number(booking.commissionRate)) / 100,
         } : {}),
       },
     });

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Sparkles, Bike, Car, Truck, Trash2 } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Sparkles, Bike, Car, Truck, Trash2, CalendarCheck } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AmenityIcon } from '@/components/AmenityIcon';
@@ -476,6 +476,13 @@ export const ParkingSpacesPage = () => {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
+                                      <button
+                                        className="btn-ghost text-xs inline-flex items-center gap-1"
+                                        onClick={() => navigate(`/slots/${slot.id}/bookings`)}
+                                      >
+                                        <CalendarCheck className="h-3.5 w-3.5" />
+                                        Bookings
+                                      </button>
                                       <button
                                         className="btn-ghost text-xs"
                                         onClick={() => setEditingSlotId(slot.id)}

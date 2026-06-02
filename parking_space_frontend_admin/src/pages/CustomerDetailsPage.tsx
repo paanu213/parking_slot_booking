@@ -1,12 +1,17 @@
+import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Mail, Phone, Calendar, CalendarCheck, IndianRupee,
   ShieldCheck, MapPin, Car, UserRound, UserCheck, Clock,
-  CheckCircle2, XCircle, CalendarRange, Globe,
+  CheckCircle2, XCircle, CalendarRange, Globe, Ban, Pencil,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatINR } from '@/lib/pricing';
+import { KebabMenu, MenuItem } from '@/components/KebabMenu';
+import {
+  CancelBookingModal, EditBookingModal, type EditBookingForm,
+} from '@/components/BookingModals';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmtDate = (d?: string | null) =>
@@ -31,6 +36,23 @@ const ACCOUNT_STATUS_CLS: Record<string, string> = {
   INACTIVE: 'bg-slate-200   text-slate-700   dark:bg-slate-700       dark:text-slate-300',
 };
 
+const canCancel = (status: string) => ['CONFIRMED', 'PENDING_PAYMENT'].includes(status);
+
+// Classify a booking's window relative to now (only meaningful for non-cancelled bookings).
+type Tense = 'UPCOMING' | 'ACTIVE' | 'PAST';
+const getTense = (startAt: string, endAt: string): Tense => {
+  const now = Date.now();
+  if (now < new Date(startAt).getTime()) return 'UPCOMING';
+  if (now > new Date(endAt).getTime())   return 'PAST';
+  return 'ACTIVE';
+};
+
+const TENSE_META: Record<Tense, { label: string; cls: string }> = {
+  UPCOMING: { label: 'Upcoming', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  ACTIVE:   { label: 'Active',   cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  PAST:     { label: 'Past',     cls: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' },
+};
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export const CustomerDetailsPage = () => {
   const { id, phone } = useParams<{ id?: string; phone?: string }>();
@@ -44,10 +66,37 @@ export const CustomerDetailsPage = () => {
     ? `/admin/customers/${id}`
     : `/admin/customers/guest/${encodeURIComponent(phone ?? '')}`;
 
+  const qc = useQueryClient();
+  const [cancelTarget, setCancelTarget] = useState<any | null>(null);
+  const [editTarget, setEditTarget]     = useState<any | null>(null);
+
   const { data, isLoading, error } = useQuery({
     queryKey,
     queryFn: async () => (await api.get(queryUrl)).data,
     enabled: Boolean(id || phone),
+  });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey });
+
+  const cancel = useMutation({
+    mutationFn: ({ id: bid, reason }: { id: string; reason: string }) =>
+      api.patch(`/admin/bookings/${bid}/cancel`, { reason: reason || undefined }),
+    onSuccess: () => { invalidate(); setCancelTarget(null); },
+    onError: (err: any) => {
+      alert(err?.response?.data?.error?.message ?? err?.response?.data?.message ?? 'Failed to cancel booking.');
+    },
+  });
+
+  const editBooking = useMutation({
+    mutationFn: ({ id: bid, data: form }: { id: string; data: EditBookingForm }) => {
+      const payload: any = { ...form };
+      if (form.bookingType === 'MONTHLY') delete payload.endAt;
+      return api.patch(`/admin/bookings/${bid}/guest`, payload).then((r) => r.data);
+    },
+    onSuccess: () => { invalidate(); setEditTarget(null); },
+    onError: (err: any) => {
+      alert(err?.response?.data?.error?.message ?? err?.response?.data?.message ?? 'Failed to save changes.');
+    },
   });
 
   // Optional: name hint passed via ?name=... so we can render something before fetch resolves
@@ -99,6 +148,28 @@ export const CustomerDetailsPage = () => {
   const c: any = data.customer;
   const stats  = data.stats ?? {};
   const bookings: any[] = data.bookings ?? [];
+
+  // Surface current/upcoming bookings first; cancelled & past fall to the bottom.
+  const tenseRank: Record<string, number> = { ACTIVE: 0, UPCOMING: 1, PAST: 2 };
+  const sortedBookings = [...bookings].sort((a, b) => {
+    const aCancel = a.status === 'CANCELLED' ? 1 : 0;
+    const bCancel = b.status === 'CANCELLED' ? 1 : 0;
+    if (aCancel !== bCancel) return aCancel - bCancel;
+    const ra = tenseRank[getTense(a.startAt, a.endAt)];
+    const rb = tenseRank[getTense(b.startAt, b.endAt)];
+    if (ra !== rb) return ra - rb;
+    // Within the same bucket: upcoming/active ascending, past descending
+    const at = new Date(a.startAt).getTime();
+    const bt = new Date(b.startAt).getTime();
+    return ra === 2 ? bt - at : at - bt;
+  });
+
+  const upcomingCount = bookings.filter(
+    (b) => b.status !== 'CANCELLED' && getTense(b.startAt, b.endAt) === 'UPCOMING',
+  ).length;
+  const activeCount = bookings.filter(
+    (b) => b.status !== 'CANCELLED' && getTense(b.startAt, b.endAt) === 'ACTIVE',
+  ).length;
 
   const displayName  = c.fullName ?? c.name ?? fallbackName ?? '—';
   const displayPhone = c.phone ?? '—';
@@ -257,12 +328,26 @@ export const CustomerDetailsPage = () => {
         </div>
       </div>
 
-      {/* ── Past bookings ── */}
+      {/* ── Bookings ── */}
       <div className="card overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 dark:border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800">
           <h2 className="text-sm font-semibold">
-            Past Bookings <span className="text-slate-400">({bookings.length})</span>
+            Bookings <span className="text-slate-400">({bookings.length})</span>
           </h2>
+          {(upcomingCount > 0 || activeCount > 0) && (
+            <div className="flex items-center gap-2 text-[11px]">
+              {activeCount > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                  {activeCount} active now
+                </span>
+              )}
+              {upcomingCount > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                  {upcomingCount} upcoming
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {bookings.length === 0 ? (
@@ -276,17 +361,22 @@ export const CustomerDetailsPage = () => {
                 <tr>
                   <th>Reference</th>
                   <th>Type</th>
+                  <th>When</th>
                   <th>Space · Slot</th>
                   <th>Vendor</th>
                   <th>Start</th>
                   <th>End</th>
                   <th>Amount</th>
                   <th>Status</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
-                {bookings.map((b) => {
-                  const isMonthly = b.bookingType === 'MONTHLY';
+                {sortedBookings.map((b) => {
+                  const isMonthly  = b.bookingType === 'MONTHLY';
+                  const tense      = getTense(b.startAt, b.endAt);
+                  const tenseMeta  = TENSE_META[tense];
+                  const showTense  = b.status !== 'CANCELLED';
                   return (
                     <tr key={b.id}>
                       <td className="font-mono text-xs text-slate-500">{b.reference}</td>
@@ -300,14 +390,20 @@ export const CustomerDetailsPage = () => {
                             ? <><CalendarRange className="h-2.5 w-2.5" /> Monthly</>
                             : <><Clock className="h-2.5 w-2.5" /> Hourly</>}
                         </span>
-                        {b.isDirectBooking && (
+                        {b.isDirectBooking ? (
                           <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
                             Walk-in
                           </span>
-                        )}
-                        {!b.isDirectBooking && (
+                        ) : (
                           <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                             <Globe className="h-2.5 w-2.5" /> Online
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {showTense && (
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${tenseMeta.cls}`}>
+                            {tenseMeta.label}
                           </span>
                         )}
                       </td>
@@ -334,6 +430,32 @@ export const CustomerDetailsPage = () => {
                           </p>
                         )}
                       </td>
+                      {/* Actions */}
+                      <td>
+                        {(b.isDirectBooking || canCancel(b.status)) ? (
+                          <KebabMenu>
+                            {b.isDirectBooking && (
+                              <MenuItem
+                                icon={<Pencil className="h-4 w-4" />}
+                                onClick={() => setEditTarget(b)}
+                              >
+                                Edit Booking
+                              </MenuItem>
+                            )}
+                            {canCancel(b.status) && (
+                              <MenuItem
+                                variant="danger"
+                                icon={<Ban className="h-4 w-4" />}
+                                onClick={() => setCancelTarget(b)}
+                              >
+                                Cancel Booking
+                              </MenuItem>
+                            )}
+                          </KebabMenu>
+                        ) : (
+                          <span className="inline-block h-8 w-8" />
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -342,6 +464,24 @@ export const CustomerDetailsPage = () => {
           </div>
         )}
       </div>
+
+      {/* ── Action modals ── */}
+      {cancelTarget && (
+        <CancelBookingModal
+          booking={cancelTarget}
+          onClose={() => !cancel.isPending && setCancelTarget(null)}
+          onConfirm={(reason) => cancel.mutate({ id: cancelTarget.id, reason })}
+          isPending={cancel.isPending}
+        />
+      )}
+      {editTarget && (
+        <EditBookingModal
+          booking={editTarget}
+          onClose={() => !editBooking.isPending && setEditTarget(null)}
+          onSave={(form) => editBooking.mutate({ id: editTarget.id, data: form })}
+          isPending={editBooking.isPending}
+        />
+      )}
     </section>
   );
 };

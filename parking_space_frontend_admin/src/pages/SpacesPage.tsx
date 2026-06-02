@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Clock, CheckCircle2, XCircle, MapPin, Layers, Plus,
   Bike, Car, Truck, ChevronDown, ChevronUp, Pencil, ToggleLeft, ToggleRight,
-  ArrowLeft, Building2,
+  ArrowLeft, Building2, CalendarCheck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { KebabMenu, MenuItem } from '@/components/KebabMenu';
@@ -86,12 +86,14 @@ const SlotRow = ({
   slot,
   onToggleStatus,
   onSaveEdit,
+  onViewBookings,
   isToggling,
   isSaving,
 }: {
   slot: Slot;
   onToggleStatus: () => void;
   onSaveEdit: (code: string, hourlyPrice: string, monthlyPrice: string, vehicleType: string) => void;
+  onViewBookings: () => void;
   isToggling: boolean;
   isSaving: boolean;
 }) => {
@@ -145,6 +147,14 @@ const SlotRow = ({
 
         {/* Actions */}
         <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            title="View slot bookings"
+            onClick={onViewBookings}
+            className="flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+          >
+            <CalendarCheck className="h-3.5 w-3.5" />
+            Bookings
+          </button>
           <button
             title="Edit slot"
             onClick={() => setEditing((e) => !e)}
@@ -540,6 +550,9 @@ export const SpacesPage = () => {
                           slot={slot}
                           isToggling={toggleSlotStatus.isPending}
                           isSaving={updateSlot.isPending}
+                          onViewBookings={() =>
+                            navigate(`/slots/${slot.id}/bookings?backTo=${encodeURIComponent(`/spaces${window.location.search}`)}`)
+                          }
                           onToggleStatus={() =>
                             toggleSlotStatus.mutate({
                               id: slot.id,

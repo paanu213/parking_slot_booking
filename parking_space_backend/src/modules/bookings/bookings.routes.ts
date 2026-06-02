@@ -6,6 +6,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { BadRequest, Conflict, NotFound } from '../../lib/http.js';
 import { calculateBookingAmount } from '../../lib/pricing.js';
+import { getCommissionRate, commissionFor } from '../../lib/commission.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -27,6 +28,7 @@ r.post('/', validate(createSchema), async (req, res, next) => {
   try {
     const { slotId, bookingType, startAt, endAt } = req.body as z.infer<typeof createSchema>;
     const userId = req.user!.sub;
+    const commissionRate = await getCommissionRate();
 
     const booking = await prisma.$transaction(async (tx) => {
       // Lock the slot row for the duration of the tx (MySQL InnoDB)
@@ -62,13 +64,15 @@ r.post('/', validate(createSchema), async (req, res, next) => {
 
       return tx.booking.create({
         data: {
-          reference:   `PS-${nanoid(10).toUpperCase()}`,
+          reference:        `PS-${nanoid(10).toUpperCase()}`,
           userId,
           slotId,
           bookingType,
-          startAt:     calc.startAt,
-          endAt:       calc.endAt,
-          totalAmount: calc.amount,
+          startAt:          calc.startAt,
+          endAt:            calc.endAt,
+          totalAmount:      calc.amount,
+          commissionRate,
+          commissionAmount: commissionFor(calc.amount, commissionRate),
         },
       });
     });

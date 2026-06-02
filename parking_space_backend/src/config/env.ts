@@ -16,6 +16,12 @@ const schema = z.object({
   API_BASE_URL: z.string().url().default('http://localhost:4000'),
   CORS_ORIGINS: z.string().default(''),
 
+  // Absolute URLs for each frontend SPA — used for OAuth post-login redirects.
+  // Must include scheme + host + port (no trailing slash). Defaults are dev ports.
+  FRONTEND_CUSTOMER_URL: z.string().url().default('http://localhost:5173'),
+  FRONTEND_VENDOR_URL:   z.string().url().default('http://localhost:5174'),
+  FRONTEND_ADMIN_URL:    z.string().url().default('http://localhost:5175'),
+
   DATABASE_URL: z.string().min(1),
 
   JWT_ACCESS_SECRET: z.string().min(16),

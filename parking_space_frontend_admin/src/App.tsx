@@ -10,7 +10,7 @@ import {
   Timer, Moon, Navigation, Car, Bike, Truck,
   CalendarCheck, Users, MapPin,
   TrendingUp, Activity, UploadCloud, FileText, AlertCircle,
-  XCircle, ChevronDown, CalendarRange,
+  XCircle, ChevronDown, CalendarRange, Search,
 } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -29,6 +29,9 @@ import { SearchableSelect } from '@/components/SearchableSelect';
 import { CustomersPage } from '@/pages/CustomersPage';
 import { CustomerDetailsPage } from '@/pages/CustomerDetailsPage';
 import { VendorDetailsPage } from '@/pages/VendorDetailsPage';
+import { SlotBookingsPage } from '@/pages/SlotBookingsPage';
+import { ProfilePage } from '@/pages/ProfilePage';
+import { AccountPage } from '@/pages/AccountPage';
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SUB_ADMIN'];
 
@@ -981,6 +984,7 @@ const Vendors = () => {
   const [profileRejectNote, setProfileRejectNote] = useState('');
   const [stateFilter,       setStateFilter]       = useState<string | null>(null);
   const [cityFilter,        setCityFilter]        = useState<string | null>(null);
+  const [search,            setSearch]            = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['vendors', tab],
@@ -1044,17 +1048,31 @@ const Vendors = () => {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [allVendors, stateFilter]);
 
-  // ── Filter vendors by state/city (a vendor matches if any of their spaces match) ──
+  // ── Filter vendors by search text + state/city (a vendor matches if any of their spaces match) ──
   const vendors = useMemo(() => {
-    if (!stateFilter && !cityFilter) return allVendors;
-    return allVendors.filter((v) =>
-      (v.locations ?? []).some((l: any) => {
-        if (stateFilter && l.state !== stateFilter) return false;
-        if (cityFilter  && l.city  !== cityFilter)  return false;
-        return true;
-      }),
-    );
-  }, [allVendors, stateFilter, cityFilter]);
+    const q = search.trim().toLowerCase();
+    return allVendors.filter((v) => {
+      // Location filter — vendor matches if any of their spaces match
+      const matchLocation =
+        (!stateFilter && !cityFilter) ||
+        (v.locations ?? []).some((l: any) => {
+          if (stateFilter && l.state !== stateFilter) return false;
+          if (cityFilter  && l.city  !== cityFilter)  return false;
+          return true;
+        });
+
+      // Text search — business name, owner name, email, phone
+      const matchSearch =
+        !q ||
+        (v.businessName ?? '').toLowerCase().includes(q) ||
+        (v.user?.fullName ?? '').toLowerCase().includes(q) ||
+        (v.user?.email ?? '').toLowerCase().includes(q) ||
+        (v.user?.phone ?? '').toLowerCase().includes(q) ||
+        (v.contactPhone ?? '').toLowerCase().includes(q);
+
+      return matchLocation && matchSearch;
+    });
+  }, [allVendors, stateFilter, cityFilter, search]);
 
   const editVendorData = allVendors.find((v) => v.id === editVendorId) ?? null;
   const hasLocationFilter = stateFilter !== null || cityFilter !== null;
@@ -1067,7 +1085,7 @@ const Vendors = () => {
   return (
     <>
       <section className="p-6">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Vendors</h1>
             <p className="mt-1 text-sm text-slate-500">Manage vendor accounts and approvals.</p>
@@ -1098,6 +1116,26 @@ const Vendors = () => {
                 {t.label}
               </button>
             ))}
+          </div>
+
+          {/* Search */}
+          <div className="relative w-64">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              className="input w-full pl-8 pr-8 text-sm"
+              placeholder="Search business, owner, email, phone…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                title="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Spacer + searchable state/city filters */}
@@ -1133,9 +1171,10 @@ const Vendors = () => {
         </div>
 
         {/* Active filter summary */}
-        {hasLocationFilter && (
+        {(hasLocationFilter || search.trim()) && (
           <p className="mt-2 text-xs text-slate-500">
             Showing {vendors.length} of {allVendors.length} vendors
+            {search.trim() && ` matching “${search.trim()}”`}
             {stateFilter && ` in ${stateFilter}`}
             {cityFilter  && `, ${cityFilter}`}
           </p>
@@ -1146,9 +1185,11 @@ const Vendors = () => {
             <>{[1, 2, 3].map((i) => <div key={i} className="skeleton h-20 rounded-xl" />)}</>
           ) : vendors.length === 0 ? (
             <div className="card p-10 text-center text-sm text-slate-400">
-              {hasLocationFilter
-                ? `No vendors with spaces in ${cityFilter ?? stateFilter ?? 'this location'}.`
-                : 'No vendors found for this filter.'}
+              {search.trim()
+                ? `No vendors match “${search.trim()}”.`
+                : hasLocationFilter
+                  ? `No vendors with spaces in ${cityFilter ?? stateFilter ?? 'this location'}.`
+                  : 'No vendors found for this filter.'}
             </div>
           ) : (
             vendors.map((v: any) => {
@@ -1717,6 +1758,9 @@ export default function App() {
                     <Route path="/customers/:id" element={<CustomerDetailsPage />} />
                     <Route path="/customers/guest/:phone" element={<CustomerDetailsPage />} />
                     <Route path="/spaces" element={<SpacesPage />} />
+                    <Route path="/slots/:id/bookings" element={<SlotBookingsPage />} />
+                    <Route path="/profile" element={<ProfilePage />} />
+                    <Route path="/account" element={<AccountPage />} />
                     <Route path="/spaces/add" element={<AddSpacePage />} />
                     <Route path="/spaces/:id/edit" element={<SpaceEditPage />} />
                     <Route path="/bookings" element={<BookingsPage />} />
