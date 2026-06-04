@@ -28,9 +28,14 @@ export const buildApp = () => {
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(
     cors({
+      // Allow our SPA origins (with credentials). For everything else — including
+      // top-level navigations like the Google OAuth callback redirect, which
+      // arrive with `Origin: https://accounts.google.com` — pass `false` instead
+      // of throwing. That skips CORS response headers (so cross-origin XHRs still
+      // can't read the response), but lets the request itself reach the handler.
       origin: (origin, cb) => {
         if (!origin || corsOrigins.includes(origin)) return cb(null, true);
-        cb(new Error('Not allowed by CORS'));
+        cb(null, false);
       },
       credentials: true,
     }),
