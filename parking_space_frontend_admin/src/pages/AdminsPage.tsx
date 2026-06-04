@@ -131,7 +131,7 @@ const CreateModal = ({
             <input
               type="email"
               className="input w-full"
-              placeholder="jane@example.com"
+              placeholder="jane@autosahay.com"
               required
               {...register('email')}
             />

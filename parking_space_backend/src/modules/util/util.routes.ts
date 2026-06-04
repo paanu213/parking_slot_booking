@@ -11,6 +11,9 @@
 
 import { Router } from 'express';
 import https from 'node:https';
+import { z } from 'zod';
+import { prisma } from '../../lib/prisma.js';
+import { validate } from '../../middleware/validate.js';
 
 const r = Router();
 
@@ -75,6 +78,55 @@ r.get('/pincode/:pincode', async (req, res) => {
     res.status(502).json({
       error: { code: 'PINCODE_LOOKUP_FAILED', message: 'Upstream pincode service unreachable' },
     });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Vendor lead capture — "List your space" prospect form on the customer site
+// ────────────────────────────────────────────────────────────────────────────
+
+const leadSchema = z.object({
+  businessName: z.string().trim().min(2).max(120),
+  fullName:     z.string().trim().min(2).max(80),
+  email:        z.string().trim().email().max(120),
+  phone:        z.string().trim().min(7).max(20),
+  city:         z.string().trim().min(2).max(60),
+  slotsApprox:  z.coerce.number().int().min(1).max(10_000).optional(),
+  notes:        z.string().trim().max(1000).optional(),
+});
+
+/**
+ * POST /api/util/vendor-leads
+ *
+ * Public endpoint — captured from the "List your space" landing page.
+ * No account is created here; the team reviews leads via the audit trail
+ * (action = 'VENDOR_LEAD_SUBMIT', entity = 'Lead') and reaches out manually.
+ */
+r.post('/vendor-leads', validate(leadSchema), async (req, res, next) => {
+  try {
+    const data = req.body as z.infer<typeof leadSchema>;
+    const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.ip;
+    await prisma.auditLog.create({
+      data: {
+        action:   'VENDOR_LEAD_SUBMIT',
+        entity:   'Lead',
+        entityId: data.email, // searchable on the email so dupes are easy to spot
+        ip,
+        metadata: JSON.stringify({
+          businessName: data.businessName,
+          fullName:     data.fullName,
+          email:        data.email,
+          phone:        data.phone,
+          city:         data.city,
+          slotsApprox:  data.slotsApprox ?? null,
+          notes:        data.notes ?? null,
+          userAgent:    req.headers['user-agent'] ?? null,
+        }),
+      },
+    });
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    next(e);
   }
 });
 

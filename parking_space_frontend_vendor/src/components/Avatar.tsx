@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
 
 const PALETTES = [
@@ -36,15 +37,24 @@ const dotMap = { sm: 'h-2 w-2 right-0 bottom-0', md: 'h-2.5 w-2.5 right-0 bottom
 
 export const Avatar = ({ name, src, size = 'md', status = null, className }: AvatarProps) => {
   const gradient = gradientFor(name ?? 'user');
+
+  // Fall back to initials if the supplied src fails to load (404, network, etc.)
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => {
+    setImgFailed(false);
+  }, [src]);
+  const showImage = Boolean(src) && !imgFailed;
+
   return (
     <span className={cn('relative inline-flex shrink-0', className)}>
-      {src ? (
+      {showImage ? (
         <img
-          src={src}
+          src={src!}
           alt={name ?? 'avatar'}
           className={cn(sizeMap[size], 'rounded-full object-cover ring-2 ring-white dark:ring-slate-900 shadow')}
           loading="lazy"
           decoding="async"
+          onError={() => setImgFailed(true)}
         />
       ) : (
         <span

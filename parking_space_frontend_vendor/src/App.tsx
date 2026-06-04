@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Route, Routes, Link, Navigate } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, Link, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Clock, CheckCircle2, Layers, CalendarCheck, CircleDot, Wallet, TrendingUp, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -295,6 +295,7 @@ const StatCard = ({
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
+  const loc = useLocation();
 
   if (loading) {
     return (
@@ -304,9 +305,16 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  // Preserve the page the user was trying to reach so the login flow can
+  // send them back there on success.
+  const loginUrl =
+    loc.pathname === '/login'
+      ? '/login'
+      : `/login?returnTo=${encodeURIComponent(loc.pathname + loc.search)}`;
+
+  if (!user) return <Navigate to={loginUrl} replace />;
   if (user.role !== 'VENDOR') {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={loginUrl} replace />;
   }
 
   return <>{children}</>;

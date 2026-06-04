@@ -3,21 +3,29 @@
 Automatic deploys happen on every push to `main`:
 | What | Where | How |
 |------|-------|-----|
-| Admin Panel | Hostinger subdomain (admin.yourdomain.com) | Build in CI → rsync |
-| Vendor Panel | Hostinger subdomain (vendor.yourdomain.com) | Build in CI → rsync |
+| Customer Site (staging) | Hostinger subdomain (test.autosahay.com) | Build in CI → rsync |
+| Admin Panel | Hostinger subdomain (admin.autosahay.com) | Build in CI → rsync |
+| Vendor Panel | Hostinger subdomain (vendor.autosahay.com) | Build in CI → rsync |
 | Backend API | Hostinger server (Node.js + PM2) | SSH → git pull → build → restart |
+
+> The apex domain `autosahay.com` already hosts a separate site, so the
+> customer SPA currently deploys to **`test.autosahay.com`** (staging). When
+> ready, point the apex (or `www.autosahay.com`) at this build by changing
+> `CUSTOMER_DEPLOY_PATH` to the new subdomain's `public_html` — no workflow
+> change required.
 
 ---
 
-## STEP 1 — Hostinger: Create subdomains
+## STEP 1 — Hostinger: Create domains / subdomains
 
-In **hPanel → Domains → Subdomains**, create:
+In **hPanel → Domains**, ensure each subdomain points at its own `public_html`:
 
-| Subdomain | Suggested document root |
-|-----------|------------------------|
-| `admin.yourdomain.com` | `/home/u.../domains/admin.yourdomain.com/public_html` |
-| `vendor.yourdomain.com` | `/home/u.../domains/vendor.yourdomain.com/public_html` |
-| `api.yourdomain.com` | (not a web folder — backend runs on a port) |
+| Domain | Suggested document root |
+|--------|------------------------|
+| `test.autosahay.com` (customer site — staging) | `/home/u.../domains/test.autosahay.com/public_html` |
+| `admin.autosahay.com` | `/home/u.../domains/admin.autosahay.com/public_html` |
+| `vendor.autosahay.com` | `/home/u.../domains/vendor.autosahay.com/public_html` |
+| `api.autosahay.com` | (not a web folder — backend runs on a port) |
 
 ---
 
@@ -87,17 +95,17 @@ Fill in the real values. Key fields for Hostinger:
 ```env
 NODE_ENV=production
 PORT=4000
-API_BASE_URL=https://api.yourdomain.com
+API_BASE_URL=https://api.autosahay.com
 
 # Your Hostinger MySQL database
 DATABASE_URL=mysql://u577205845_dbuser:password@srv1749.hstgr.io:3306/u577205845_dbname
 
 # Your domain (for cookies to work across subdomains)
-COOKIE_DOMAIN=yourdomain.com
+COOKIE_DOMAIN=autosahay.com
 COOKIE_SECURE=true
 
 # All three frontends allowed
-CORS_ORIGINS=https://admin.yourdomain.com,https://vendor.yourdomain.com,https://yourdomain.com
+CORS_ORIGINS=https://admin.autosahay.com,https://vendor.autosahay.com,https://autosahay.com
 
 # ... fill in R2, JWT secrets, Razorpay, etc.
 ```
@@ -138,10 +146,10 @@ npx pm2 logs parking-api --lines 50
 
 ## STEP 6 — Hostinger: Set up reverse proxy for the API
 
-In **hPanel → Node.js** or use `.htaccess` + proxy rules to forward `api.yourdomain.com` → `localhost:4000`.
+In **hPanel → Node.js** or use `.htaccess` + proxy rules to forward `api.autosahay.com` → `localhost:4000`.
 
 Or use Hostinger's built-in **Node.js App** feature (hPanel → Node.js):
-- Application URL: `api.yourdomain.com`
+- Application URL: `api.autosahay.com`
 - Application root: `/home/u.../parking-api/parking_space_backend`
 - Application startup file: `dist/server.js`
 - Node.js version: 20.x
@@ -160,9 +168,10 @@ Go to your repo → **Settings → Secrets and variables → Actions → New rep
 | `HOSTINGER_USER` | `u577205845` _(your SSH username)_ |
 | `HOSTINGER_SSH_KEY` | Contents of your **local** `~/.ssh/id_rsa` or `id_ed25519` _(the private key you use to SSH into Hostinger)_ |
 | `HOSTINGER_SSH_PORT` | `65002` |
-| `VITE_API_URL` | `https://api.yourdomain.com/api` |
-| `ADMIN_DEPLOY_PATH` | `/home/u577205845/domains/admin.yourdomain.com/public_html` |
-| `VENDOR_DEPLOY_PATH` | `/home/u577205845/domains/vendor.yourdomain.com/public_html` |
+| `VITE_API_URL` | `https://api.autosahay.com/api` |
+| `CUSTOMER_DEPLOY_PATH` | `/home/u577205845/domains/test.autosahay.com/public_html` |
+| `ADMIN_DEPLOY_PATH` | `/home/u577205845/domains/admin.autosahay.com/public_html` |
+| `VENDOR_DEPLOY_PATH` | `/home/u577205845/domains/vendor.autosahay.com/public_html` |
 | `BACKEND_DEPLOY_PATH` | `/home/u577205845/parking-api` |
 
 > **HOSTINGER_SSH_KEY** is your **local machine's private key** (the one that can SSH into Hostinger — copy the entire contents including `-----BEGIN...-----` and `-----END...-----` lines).  
@@ -192,12 +201,15 @@ This push will trigger the GitHub Actions workflow. Go to **Actions** tab in Git
 ```
 You push to main
        │
-       ├─► [CI Job 1] Build admin panel → rsync to admin.yourdomain.com
-       ├─► [CI Job 2] Build vendor panel → rsync to vendor.yourdomain.com
-       └─► [CI Job 3] SSH → git pull → npm build → prisma migrate → pm2 restart
+       ├─► [CI Job 1] Build admin panel    → rsync to admin.autosahay.com
+       ├─► [CI Job 2] Build vendor panel   → rsync to vendor.autosahay.com
+       ├─► [CI Job 3] Build customer site  → rsync to test.autosahay.com
+       └─► [Hostinger Node.js manager]     → git pull → npm build → prisma migrate deploy → restart
 ```
 
-All three jobs run in **parallel**, total deploy time ~2–3 minutes.
+All three CI jobs run in **parallel**, total deploy time ~2–3 minutes.
+Backend redeploys are handled by Hostinger's Node.js manager (linked to the
+same repo) and finish in the same window.
 
 ---
 
@@ -211,4 +223,4 @@ All three jobs run in **parallel**, total deploy time ~2–3 minutes.
 | 404 on page refresh | `.htaccess` must be in `public_html` — Vite copies `public/.htaccess` automatically |
 | CORS errors | Make sure `CORS_ORIGINS` in `.env` on server includes all frontend URLs |
 | Prisma binary error | Re-run `npx prisma generate` on the server — it must be built for Linux |
-| Cookie not sent | `COOKIE_DOMAIN` must be `.yourdomain.com` (with leading dot) and `COOKIE_SECURE=true` |
+| Cookie not sent | `COOKIE_DOMAIN` must be `.autosahay.com` (with leading dot) and `COOKIE_SECURE=true` |

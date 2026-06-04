@@ -1,21 +1,23 @@
 name: Deploy to Hostinger
 
 # Runs on every push to main.
-# Two independent jobs run in parallel:
-#   1. deploy-admin   → builds React SPA, rsyncs dist/ to admin subdomain
-#   2. deploy-vendor  → builds React SPA, rsyncs dist/ to vendor subdomain
+# Three independent jobs run in parallel:
+#   1. deploy-admin    → builds React SPA, rsyncs dist/ to admin subdomain
+#   2. deploy-vendor   → builds React SPA, rsyncs dist/ to vendor subdomain
+#   3. deploy-customer → builds React SPA, rsyncs dist/ to customer site
 #
 # Backend API is deployed automatically by Hostinger's Node.js manager
 # (connected directly to this GitHub repo — no SSH step needed).
 #
 # Required GitHub Secrets (Settings → Secrets → Actions):
-#   HOSTINGER_HOST      Hostinger server IP or hostname  (e.g. srv1749.hstgr.io)
-#   HOSTINGER_USER      SSH username                     (e.g. u577205845)
-#   HOSTINGER_SSH_KEY   Private SSH key content          (-----BEGIN ... KEY-----)
-#   HOSTINGER_SSH_PORT  SSH port — Hostinger default is  65002
-#   VITE_API_URL        Production API base URL          (https://api.autosahay.com/api)
-#   ADMIN_DEPLOY_PATH   Absolute path on server          (/home/u.../domains/autosahay.com/public_html/admin)
-#   VENDOR_DEPLOY_PATH  Absolute path on server          (/home/u.../domains/autosahay.com/public_html/vendor)
+#   HOSTINGER_HOST       Hostinger server IP or hostname  (e.g. srv1749.hstgr.io)
+#   HOSTINGER_USER       SSH username                     (e.g. u577205845)
+#   HOSTINGER_SSH_KEY    Private SSH key content          (-----BEGIN ... KEY-----)
+#   HOSTINGER_SSH_PORT   SSH port — Hostinger default is  65002
+#   VITE_API_URL         Production API base URL          (https://api.autosahay.com/api)
+#   ADMIN_DEPLOY_PATH    Absolute path on server          (/home/u.../domains/admin.autosahay.com/public_html)
+#   VENDOR_DEPLOY_PATH   Absolute path on server          (/home/u.../domains/vendor.autosahay.com/public_html)
+#   CUSTOMER_DEPLOY_PATH Absolute path on server          (/home/u.../domains/test.autosahay.com/public_html)
 
 on:
   push:
@@ -94,6 +96,43 @@ jobs:
           switches: -avzr --delete --checksum
           path: parking_space_frontend_vendor/dist/
           remote_path: ${{ secrets.VENDOR_DEPLOY_PATH }}
+          remote_host: ${{ secrets.HOSTINGER_HOST }}
+          remote_user: ${{ secrets.HOSTINGER_USER }}
+          remote_key:  ${{ secrets.HOSTINGER_SSH_KEY }}
+          remote_port: ${{ secrets.HOSTINGER_SSH_PORT }}
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 3 — Customer Site (static React build → rsync to apex / customer domain)
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy-customer:
+    name: Customer Site
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Build customer site
+        working-directory: parking_space_frontend
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: npm run build
+
+      - name: Deploy dist/ to Hostinger via rsync
+        uses: burnett01/rsync-deployments@7.0.1
+        with:
+          switches: -avzr --delete --checksum
+          path: parking_space_frontend/dist/
+          remote_path: ${{ secrets.CUSTOMER_DEPLOY_PATH }}
           remote_host: ${{ secrets.HOSTINGER_HOST }}
           remote_user: ${{ secrets.HOSTINGER_USER }}
           remote_key:  ${{ secrets.HOSTINGER_SSH_KEY }}

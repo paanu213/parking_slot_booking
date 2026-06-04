@@ -10,6 +10,7 @@ const r = Router();
 const searchSchema = z.object({
   q: z.string().trim().optional(),
   city: z.string().trim().optional(),
+  area: z.string().trim().optional(),
   lat: z.coerce.number().optional(),
   lng: z.coerce.number().optional(),
   radiusKm: z.coerce.number().min(0.5).max(50).default(5),
@@ -28,21 +29,32 @@ const publicLocationFilter: Prisma.ParkingLocationWhereInput = {
 
 // Public: list/search parking locations
 r.get('/', validate(searchSchema, 'query'), async (req, res) => {
-  const { q, city, page, pageSize } = req.query as unknown as z.infer<typeof searchSchema>;
+  const { q, city, area, page, pageSize } = req.query as unknown as z.infer<typeof searchSchema>;
   const where: Prisma.ParkingLocationWhereInput = {
     ...publicLocationFilter,
     ...(city ? { city: { equals: city } } : {}),
+    ...(area ? { area: { contains: area } } : {}),
     ...(q
       ? {
           OR: [
             { name: { contains: q } },
             { addressLine: { contains: q } },
             { city: { contains: q } },
+            { area: { contains: q } },
           ],
         }
       : {}),
   };
-  const [items, total] = await Promise.all([
+
+  // Distinct area list inside the *city* (ignoring the current area filter),
+  // so the SpacesPage area dropdown can show every option even after a pick.
+  const areasWhere: Prisma.ParkingLocationWhereInput = {
+    ...publicLocationFilter,
+    ...(city ? { city: { equals: city } } : {}),
+    area: { not: null },
+  };
+
+  const [items, total, areaRows] = await Promise.all([
     prisma.parkingLocation.findMany({
       where,
       include: {
@@ -54,8 +66,19 @@ r.get('/', validate(searchSchema, 'query'), async (req, res) => {
       orderBy: { createdAt: 'desc' },
     }),
     prisma.parkingLocation.count({ where }),
+    prisma.parkingLocation.findMany({
+      where: areasWhere,
+      select: { area: true },
+      distinct: ['area'],
+      orderBy: { area: 'asc' },
+    }),
   ]);
-  res.json({ items, total, page, pageSize });
+
+  const areas = areaRows
+    .map((r) => r.area)
+    .filter((a): a is string => Boolean(a && a.trim()));
+
+  res.json({ items, total, page, pageSize, areas });
 });
 
 // Public: location detail
@@ -65,7 +88,7 @@ r.get('/:id', async (req, res, next) => {
     include: {
       images: { orderBy: { sortOrder: 'asc' } },
       slots: { where: { status: 'ACTIVE' }, orderBy: { code: 'asc' } },
-      vendor: { select: { businessName: true } },
+      vendor: { select: { businessName: true, contactPhone: true } },
     },
   });
   if (!location) return next(NotFound('Location not found'));

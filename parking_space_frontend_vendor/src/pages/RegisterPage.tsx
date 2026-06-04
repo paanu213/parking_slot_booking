@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { Building2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/auth';
+import { BRAND_NAME, LOGO_URL } from '@/lib/config';
 
 interface Form {
   fullName: string;
@@ -44,10 +44,14 @@ export const RegisterPage = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 dark:bg-slate-950">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-md">
-            <Building2 className="h-6 w-6" />
-          </div>
+        <div className="mb-8 flex flex-col items-center gap-3">
+          <img
+            src={LOGO_URL}
+            alt={BRAND_NAME}
+            className="h-12 w-auto object-contain"
+            loading="eager"
+            decoding="async"
+          />
           <h1 className="text-2xl font-bold">Create Vendor Account</h1>
           <p className="text-center text-sm text-slate-500">
             Register to list your parking spaces on the platform
