@@ -25,5 +25,8 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   }
 
   logger.error({ err }, 'Unhandled error');
+  // Belt-and-braces: write directly to stderr so the error shows up even if
+  // the pino transport is misconfigured on the host. Cheap diagnostic.
+  console.error('[Unhandled error]', err);
   res.status(500).json({ error: { code: 'SERVER_ERROR', message: 'Internal server error' } });
 };
