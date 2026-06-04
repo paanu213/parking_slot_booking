@@ -115,14 +115,18 @@ const finishOAuthLogin = async (
 
   // Customer portal — auto-create on first sign-in.
   if (!user) {
+    // Most User string columns are VARCHAR(191) in MySQL; Google profile
+    // picture URLs can exceed that and blow up the INSERT, so guard the length.
+    const safeAvatarUrl =
+      profile.avatarUrl && profile.avatarUrl.length <= 190 ? profile.avatarUrl : null;
     user = await prisma.user.create({
       data: {
         email: profile.email,
-        fullName: profile.fullName,
+        fullName: profile.fullName.slice(0, 190),
         provider: profile.provider,
         providerId: profile.providerId,
         emailVerified: true,
-        avatarUrl: profile.avatarUrl,
+        avatarUrl: safeAvatarUrl,
         role: 'CUSTOMER',
       },
     });
