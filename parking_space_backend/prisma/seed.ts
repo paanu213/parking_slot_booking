@@ -4,7 +4,7 @@ import argon2 from 'argon2';
 const prisma = new PrismaClient();
 
 const run = async () => {
-  const email = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'superadmin@example.com';
+  const email = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'superadmin@autosahay.com';
   const password = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe!234';
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {

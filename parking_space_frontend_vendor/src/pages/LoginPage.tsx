@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { Building2, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/auth';
+import { BRAND_NAME, LOGO_URL } from '@/lib/config';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:4000/api';
 
@@ -28,12 +29,31 @@ export const LoginPage = () => {
   const nav = useNavigate();
   const [params] = useSearchParams();
   const setSession = useAuth((s) => s.setSession);
+  const { user, loading } = useAuth();
   const { register, handleSubmit, formState: { isSubmitting } } = useForm<Form>();
   const [error, setError] = useState<string | null>(() => {
     const code = params.get('error');
     return code ? (OAUTH_ERRORS[code] ?? 'Sign-in failed. Please try again.') : null;
   });
   const [showPassword, setShowPassword] = useState(false);
+
+  // Where to send the user after a successful sign-in. Honour ?returnTo if it
+  // points to a same-origin path; fall back to "/" otherwise. Reject `/login`
+  // and `/login?...` themselves so we never loop the user back here.
+  const safeReturnTo = (() => {
+    const raw = params.get('returnTo');
+    if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/';
+    if (raw === '/login' || raw.startsWith('/login?') || raw.startsWith('/login#')) return '/';
+    return raw;
+  })();
+
+  // Already-signed-in vendor landed on /login (browser back, manual URL, etc.)
+  // — bounce them straight to the destination instead of showing the form.
+  useEffect(() => {
+    if (!loading && user && user.role === 'VENDOR') {
+      nav(safeReturnTo, { replace: true });
+    }
+  }, [user, loading, safeReturnTo, nav]);
 
   const onSubmit = async (values: Form) => {
     setError(null);
@@ -45,7 +65,7 @@ export const LoginPage = () => {
         return;
       }
       setSession(user);
-      nav('/');
+      nav(safeReturnTo, { replace: true });
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Invalid email or password.');
     }
@@ -53,17 +73,21 @@ export const LoginPage = () => {
 
   const signInWithGoogle = () => {
     setError(null);
-    const returnTo = encodeURIComponent('/');
+    const returnTo = encodeURIComponent(safeReturnTo);
     window.location.href = `${API_BASE}/auth/google?portal=vendor&returnTo=${returnTo}`;
   };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-md">
-            <Building2 className="h-6 w-6" />
-          </div>
+        <div className="mb-8 flex flex-col items-center gap-3">
+          <img
+            src={LOGO_URL}
+            alt={BRAND_NAME}
+            className="h-12 w-auto object-contain"
+            loading="eager"
+            decoding="async"
+          />
           <h1 className="text-2xl font-bold">Vendor Portal</h1>
           <p className="text-sm text-slate-500">Sign in to manage your parking spaces</p>
         </div>

@@ -22,7 +22,7 @@ import { nanoid } from 'nanoid';
 const prisma = new PrismaClient();
 
 const DEFAULT_PASSWORD = 'Demo!2345';
-const DEMO_EMAIL_SUFFIX = '@partingslot.local';
+const DEMO_EMAIL_SUFFIX = '@autosahay.local';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -612,7 +612,7 @@ async function run() {
   console.log('\nDone.', counts);
 
   console.log(`\nAll demo logins use password: ${DEFAULT_PASSWORD}`);
-  console.log('  super admin (existing): superadmin@partingslot.local (ChangeMe!234)');
+  console.log('  super admin (existing): superadmin@autosahay.local (ChangeMe!234)');
   console.log('  admins:     admin.ops, admin.finance, subadmin.support, subadmin.qa' + DEMO_EMAIL_SUFFIX);
   console.log('  approved vendors: vendor.hitech, vendor.banjara, vendor.gachibowli' + DEMO_EMAIL_SUFFIX);
   console.log('  pending vendors:  vendor.jubilee, vendor.koramangala, vendor.powai' + DEMO_EMAIL_SUFFIX);

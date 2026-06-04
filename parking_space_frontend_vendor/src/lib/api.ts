@@ -44,7 +44,9 @@ api.interceptors.response.use(
     } catch (refreshError) {
       drainQueue(refreshError);
       if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+        // Preserve the page they were on so the login flow can send them back.
+        const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `/login?returnTo=${returnTo}`;
       }
       return Promise.reject(refreshError);
     } finally {

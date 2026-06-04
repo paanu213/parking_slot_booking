@@ -13,6 +13,7 @@ import {
 import { ProfileMenu } from '@/components/ProfileMenu';
 import { useTheme } from '@/store/theme';
 import { cn } from '@/lib/cn';
+import { BRAND_NAME, LOGO_URL } from '@/lib/config';
 
 const NAV: { to: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -45,11 +46,15 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-          <Link to="/" className="flex items-center gap-2 font-display text-base font-bold sm:text-lg">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm">
-              <Building2 className="h-4 w-4" />
-            </span>
-            <span className="hidden xs:inline">Vendor</span>
+          <Link to="/" className="flex items-center gap-2" aria-label={`${BRAND_NAME} Vendor Portal`}>
+            <img
+              src={LOGO_URL}
+              alt={BRAND_NAME}
+              className="h-8 w-auto object-contain"
+              loading="eager"
+              decoding="async"
+            />
+            <span className="hidden text-sm font-semibold text-slate-500 sm:inline">Vendor</span>
           </Link>
           <div className="flex-1" />
           {/* RIGHT: theme + profile */}

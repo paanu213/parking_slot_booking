@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { BrowserRouter, Route, Routes, Navigate, Link, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Sparkles, Check, CheckCircle2, X,
@@ -1719,6 +1719,7 @@ const AmenitiesPage = () => {
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
+  const loc = useLocation();
 
   if (loading) {
     return (
@@ -1728,10 +1729,17 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  // Preserve the page the user was trying to reach so the login flow can
+  // send them back there on success.
+  const loginUrl =
+    loc.pathname === '/login'
+      ? '/login'
+      : `/login?returnTo=${encodeURIComponent(loc.pathname + loc.search)}`;
+
+  if (!user) return <Navigate to={loginUrl} replace />;
 
   if (!ADMIN_ROLES.includes(user.role)) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={loginUrl} replace />;
   }
 
   return <>{children}</>;
