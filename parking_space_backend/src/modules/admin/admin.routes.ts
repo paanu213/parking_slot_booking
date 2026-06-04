@@ -296,7 +296,9 @@ r.post('/vendors/:id/reject', async (req, res, next) => {
 
 r.patch('/vendors/:id/status', async (req, res, next) => {
   try {
-    const status = req.body?.status === 'INACTIVE' ? 'INACTIVE' : 'APPROVED';
+    // Narrow to the literal union — without `as const`, TS widens to `string`
+    // and Prisma rejects it as not assignable to `VendorStatus`.
+    const status = (req.body?.status === 'INACTIVE' ? 'INACTIVE' : 'APPROVED') as 'INACTIVE' | 'APPROVED';
     // Stamp deactivation timestamp when moving INACTIVE; clear it when reactivating.
     const data =
       status === 'INACTIVE'
