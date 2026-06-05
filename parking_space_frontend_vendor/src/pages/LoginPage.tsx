@@ -74,7 +74,8 @@ export const LoginPage = () => {
   const signInWithGoogle = () => {
     setError(null);
     const returnTo = encodeURIComponent(safeReturnTo);
-    window.location.href = `${API_BASE}/auth/google?portal=vendor&returnTo=${returnTo}`;
+    const origin = encodeURIComponent(window.location.origin);
+    window.location.href = `${API_BASE}/auth/google?portal=vendor&returnTo=${returnTo}&origin=${origin}`;
   };
 
   return (
