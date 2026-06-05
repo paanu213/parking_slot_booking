@@ -17,7 +17,6 @@ import {
   BadgeCheck,
   Star,
   Share2,
-  Heart,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -39,6 +38,7 @@ import { PRICING } from '@/lib/config';
 import { useAuth } from '@/store/auth';
 import { CardSkeleton, Skeleton } from '@/components/Skeleton';
 import { Footer } from '@/components/Footer';
+import { SaveButton } from '@/components/SaveButton';
 import { toast } from '@/components/Toast';
 import { cn } from '@/lib/cn';
 
@@ -279,9 +279,10 @@ export const LocationDetailPage = () => {
             >
               <Navigation className="mr-2 h-4 w-4" /> Directions
             </a>
-            <button className="btn-ghost border border-slate-200 p-2 dark:border-slate-700" aria-label="Save">
-              <Heart className="h-4 w-4" />
-            </button>
+            <SaveButton
+              locationId={loc.id}
+              className="btn-ghost border border-slate-200 p-2 dark:border-slate-700"
+            />
             <button className="btn-ghost border border-slate-200 p-2 dark:border-slate-700" aria-label="Share">
               <Share2 className="h-4 w-4" />
             </button>

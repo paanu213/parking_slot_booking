@@ -12,7 +12,12 @@ import { RegisterPage } from '@/pages/RegisterPage';
 import { LocationDetailPage } from '@/pages/LocationDetailPage';
 import { CheckoutPage } from '@/pages/CheckoutPage';
 import { BookingsPage } from '@/pages/BookingsPage';
+import { ProfilePage } from '@/pages/ProfilePage';
+import { SettingsPage } from '@/pages/SettingsPage';
+import { HelpPage } from '@/pages/HelpPage';
+import { SavedSpacesPage } from '@/pages/SavedSpacesPage';
 import { useAuth } from '@/store/auth';
+import { useSaved } from '@/store/savedSpaces';
 import { api } from '@/lib/api';
 
 const qc = new QueryClient({
@@ -36,6 +41,27 @@ const HydrateSession = () => {
       .then((r) => setSession(r.data?.user ?? null))
       .catch(() => setSession(null));
   }, [setSession]);
+  return null;
+};
+
+/**
+ * Once the user is known to be signed in, fetch their saved-space IDs so the
+ * heart buttons across the app reflect the correct state immediately.
+ * Clears the set on sign-out.
+ */
+const HydrateSavedSpaces = () => {
+  const user = useAuth((s) => s.user);
+  const setIds = useSaved((s) => s.setIds);
+  useEffect(() => {
+    if (!user) {
+      setIds([]);
+      return;
+    }
+    api
+      .get('/customer/me/saved-spaces/ids')
+      .then((r) => setIds(r.data?.ids ?? []))
+      .catch(() => setIds([]));
+  }, [user, setIds]);
   return null;
 };
 
@@ -71,6 +97,7 @@ export default function App() {
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <HydrateSession />
+        <HydrateSavedSpaces />
         <ScrollToTop />
         <Header />
         <Routes>
@@ -82,6 +109,31 @@ export default function App() {
           <Route path="/locations/:id" element={<LocationDetailPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route
+            path="/profile"
+            element={
+              <Protected>
+                <ProfilePage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <Protected>
+                <SettingsPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/saved"
+            element={
+              <Protected>
+                <SavedSpacesPage />
+              </Protected>
+            }
+          />
           <Route
             path="/bookings"
             element={
