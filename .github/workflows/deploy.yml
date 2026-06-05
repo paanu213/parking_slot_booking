@@ -31,9 +31,6 @@ jobs:
     name: Admin Panel
     runs-on: ubuntu-latest
 
-    # Only re-deploy when relevant files change
-    # (remove the paths filter if you always want a full deploy on any push)
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,16 +50,46 @@ jobs:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: npm run build
 
-      - name: Deploy dist/ to Hostinger via rsync
-        uses: burnett01/rsync-deployments@7.0.1
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          switches: -avzr --delete --checksum
-          path: parking_space_frontend_admin/dist/
-          remote_path: ${{ secrets.ADMIN_DEPLOY_PATH }}
-          remote_host: ${{ secrets.HOSTINGER_HOST }}
-          remote_user: ${{ secrets.HOSTINGER_USER }}
-          remote_key:  ${{ secrets.HOSTINGER_SSH_KEY }}
-          remote_port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
+
+      - name: Add Hostinger host to known_hosts
+        env:
+          HOST: ${{ secrets.HOSTINGER_HOST }}
+          PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy dist/ to Hostinger via rsync (with retry)
+        env:
+          REMOTE_PATH: ${{ secrets.ADMIN_DEPLOY_PATH }}
+          REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
+          REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
+          REMOTE_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
+          LOCAL_PATH:  parking_space_frontend_admin/dist/
+        run: |
+          set -e
+          SSH_OPTS="-p $REMOTE_PORT -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
+          for attempt in 1 2 3; do
+            echo "── rsync attempt $attempt of 3 ──"
+            if rsync -avzr --delete --checksum \
+                -e "ssh $SSH_OPTS" \
+                "$LOCAL_PATH" \
+                "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"; then
+              echo "✔ rsync succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "✘ rsync failed on attempt $attempt"
+            if [ "$attempt" -lt 3 ]; then
+              echo "Waiting 30s before retry…"
+              sleep 30
+            fi
+          done
+          echo "All rsync attempts failed"
+          exit 1
 
   # ═══════════════════════════════════════════════════════════════════════════
   # JOB 2 — Vendor Panel (static React build → rsync to server)
@@ -90,16 +117,46 @@ jobs:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: npm run build
 
-      - name: Deploy dist/ to Hostinger via rsync
-        uses: burnett01/rsync-deployments@7.0.1
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          switches: -avzr --delete --checksum
-          path: parking_space_frontend_vendor/dist/
-          remote_path: ${{ secrets.VENDOR_DEPLOY_PATH }}
-          remote_host: ${{ secrets.HOSTINGER_HOST }}
-          remote_user: ${{ secrets.HOSTINGER_USER }}
-          remote_key:  ${{ secrets.HOSTINGER_SSH_KEY }}
-          remote_port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
+
+      - name: Add Hostinger host to known_hosts
+        env:
+          HOST: ${{ secrets.HOSTINGER_HOST }}
+          PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy dist/ to Hostinger via rsync (with retry)
+        env:
+          REMOTE_PATH: ${{ secrets.VENDOR_DEPLOY_PATH }}
+          REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
+          REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
+          REMOTE_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
+          LOCAL_PATH:  parking_space_frontend_vendor/dist/
+        run: |
+          set -e
+          SSH_OPTS="-p $REMOTE_PORT -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
+          for attempt in 1 2 3; do
+            echo "── rsync attempt $attempt of 3 ──"
+            if rsync -avzr --delete --checksum \
+                -e "ssh $SSH_OPTS" \
+                "$LOCAL_PATH" \
+                "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"; then
+              echo "✔ rsync succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "✘ rsync failed on attempt $attempt"
+            if [ "$attempt" -lt 3 ]; then
+              echo "Waiting 30s before retry…"
+              sleep 30
+            fi
+          done
+          echo "All rsync attempts failed"
+          exit 1
 
   # ═══════════════════════════════════════════════════════════════════════════
   # JOB 3 — Customer Site (static React build → rsync to apex / customer domain)
@@ -127,15 +184,45 @@ jobs:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: npm run build
 
-      - name: Deploy dist/ to Hostinger via rsync
-        uses: burnett01/rsync-deployments@7.0.1
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          switches: -avzr --delete --checksum
-          path: parking_space_frontend/dist/
-          remote_path: ${{ secrets.CUSTOMER_DEPLOY_PATH }}
-          remote_host: ${{ secrets.HOSTINGER_HOST }}
-          remote_user: ${{ secrets.HOSTINGER_USER }}
-          remote_key:  ${{ secrets.HOSTINGER_SSH_KEY }}
-          remote_port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
+
+      - name: Add Hostinger host to known_hosts
+        env:
+          HOST: ${{ secrets.HOSTINGER_HOST }}
+          PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy dist/ to Hostinger via rsync (with retry)
+        env:
+          REMOTE_PATH: ${{ secrets.CUSTOMER_DEPLOY_PATH }}
+          REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
+          REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
+          REMOTE_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
+          LOCAL_PATH:  parking_space_frontend/dist/
+        run: |
+          set -e
+          SSH_OPTS="-p $REMOTE_PORT -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
+          for attempt in 1 2 3; do
+            echo "── rsync attempt $attempt of 3 ──"
+            if rsync -avzr --delete --checksum \
+                -e "ssh $SSH_OPTS" \
+                "$LOCAL_PATH" \
+                "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"; then
+              echo "✔ rsync succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "✘ rsync failed on attempt $attempt"
+            if [ "$attempt" -lt 3 ]; then
+              echo "Waiting 30s before retry…"
+              sleep 30
+            fi
+          done
+          echo "All rsync attempts failed"
+          exit 1
 
   # Backend API is handled by Hostinger's Node.js manager — no CI job needed.
