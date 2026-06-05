@@ -2,12 +2,12 @@
 
 ## Branching & deploy model (READ FIRST)
 
-Two long-lived branches, two environments. **Code flows staging → main, never the
+Two long-lived branches, two environments. **Code flows stage → main, never the
 other way.**
 
 ```
    ┌─────────────┐   push    ┌──────────────────────┐
-   │  staging    │ ────────► │  Vercel (customer)   │  ← test here
+   │  stage    │ ────────► │  Vercel (customer)   │  ← test here
    │  (default   │           │  e.g. app.autosahay  │
    │   working   │           └──────────────────────┘
    │   branch)   │
@@ -21,16 +21,16 @@ other way.**
 ```
 
 **Rules:**
-1. All day-to-day code changes are committed and pushed to **`staging`**.
-2. Pushing `staging` triggers a **Vercel** deploy of the customer site for testing.
+1. All day-to-day code changes are committed and pushed to **`stage`**.
+2. Pushing `stage` triggers a **Vercel** deploy of the customer site for testing.
 3. **Nothing reaches production until a human explicitly says "merge to main."**
    No automatic or implied promotion — the instruction must be clear and explicit.
-4. Merging `staging → main` and pushing `main` triggers the **Hostinger** GitHub
+4. Merging `stage → main` and pushing `main` triggers the **Hostinger** GitHub
    Actions deploy (admin panel, vendor panel, backend API).
 
 | Branch | Deploys to | Trigger | Purpose |
 |--------|-----------|---------|---------|
-| `staging` | Vercel (customer SPA) | push to `staging` | Test changes safely |
+| `stage` | Vercel (customer SPA) | push to `stage` | Test changes safely |
 | `main` | Hostinger (admin + vendor + backend) | push to `main` (after explicit merge) | Production |
 
 ---
@@ -44,13 +44,13 @@ Automatic deploys happen on every push to `main`:
 | Vendor Panel | Hostinger subdomain (vendor.autosahay.com) | Build in CI → rsync |
 | Backend API | Hostinger server (Node.js + PM2) | SSH → git pull → build → restart |
 
-> The customer site is served from **Vercel** (deployed from the `staging`
+> The customer site is served from **Vercel** (deployed from the `stage`
 > branch), so it is no longer part of the Hostinger pipeline. The legacy
 > `deploy-customer` Hostinger job → `test.autosahay.com` can be kept as a
 > fallback or removed; it is harmless either way.
 
 > The apex domain `autosahay.com` already hosts a separate site, so the
-> customer SPA currently deploys to **`test.autosahay.com`** (staging). When
+> customer SPA currently deploys to **`test.autosahay.com`** (stage). When
 > ready, point the apex (or `www.autosahay.com`) at this build by changing
 > `CUSTOMER_DEPLOY_PATH` to the new subdomain's `public_html` — no workflow
 > change required.
@@ -63,7 +63,7 @@ In **hPanel → Domains**, ensure each subdomain points at its own `public_html`
 
 | Domain | Suggested document root |
 |--------|------------------------|
-| `test.autosahay.com` (customer site — staging) | `/home/u.../domains/test.autosahay.com/public_html` |
+| `test.autosahay.com` (customer site — stage) | `/home/u.../domains/test.autosahay.com/public_html` |
 | `admin.autosahay.com` | `/home/u.../domains/admin.autosahay.com/public_html` |
 | `vendor.autosahay.com` | `/home/u.../domains/vendor.autosahay.com/public_html` |
 | `api.autosahay.com` | (not a web folder — backend runs on a port) |
@@ -254,13 +254,13 @@ same repo) and finish in the same window.
 
 ---
 
-## Vercel — customer site (`staging` branch)
+## Vercel — customer site (`stage` branch)
 
 The customer SPA (`parking_space_frontend`) is deployed to Vercel. Configure it
 once in the Vercel dashboard:
 
 **Project → Settings → Git**
-- **Production Branch:** `staging`  ← so pushes to `staging` deploy to Vercel.
+- **Production Branch:** `stage`  ← so pushes to `stage` deploy to Vercel.
   (Pushes to `main` will only create harmless Vercel "preview" builds, or you
   can disable them under *Ignored Build Step*.)
 
