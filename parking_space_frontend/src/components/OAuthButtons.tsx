@@ -12,7 +12,8 @@ const PROVIDERS: { id: Provider; label: string }[] = [
 export const OAuthButtons = ({ className }: { className?: string }) => {
   const go = (provider: Provider) => {
     const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.href = `${API_URL}/auth/${provider}?portal=customer&returnTo=${returnTo}`;
+    const origin = encodeURIComponent(window.location.origin);
+    window.location.href = `${API_URL}/auth/${provider}?portal=customer&returnTo=${returnTo}&origin=${origin}`;
   };
 
   return (

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import crypto from 'node:crypto';
-import { env } from '../../config/env.js';
+import { env, corsOrigins } from '../../config/env.js';
 import { prisma } from '../../lib/prisma.js';
 import { issueTokens } from './auth.service.js';
 import { setAuthCookies } from './auth.controller.js';
@@ -41,29 +41,62 @@ const stateCookieOptions = () =>
   });
 
 /**
- * Round-trip three values through the OAuth state param:
- *   csrf  — random token also stored in a httpOnly cookie for verification.
+ * Round-trip four values through the OAuth state param (origin has no `|`, and
+ * returnTo is reconstructed from everything after the 3rd `|` so it may):
+ *   csrf   — random token also stored in a httpOnly cookie for verification.
  *   portal — which SPA initiated the flow (admin/vendor/customer).
+ *   origin — the SPA's own origin (e.g. https://test.autosahay.com). Used as the
+ *            post-login redirect base when it's an allowed CORS origin, so the
+ *            flow doesn't depend on the FRONTEND_*_URL env vars being set.
  *   returnTo — relative path inside that SPA to land on after login.
  */
-const encodeState = (csrf: string, portal: Portal, returnTo: string) =>
-  `${csrf}|${portal}|${returnTo}`;
+const encodeState = (csrf: string, portal: Portal, origin: string, returnTo: string) =>
+  `${csrf}|${portal}|${origin}|${returnTo}`;
 
 const decodeState = (state: string | undefined) => {
-  if (!state) return { csrf: '', portal: 'customer' as Portal, returnTo: '/' };
-  const [csrf = '', portalRaw = 'customer', returnTo = '/'] = state.split('|');
+  if (!state) return { csrf: '', portal: 'customer' as Portal, origin: '', returnTo: '/' };
+  const parts = state.split('|');
+  const csrf = parts[0] ?? '';
+  const portalRaw = parts[1] ?? 'customer';
+  const origin = parts[2] ?? '';
+  const returnTo = parts.slice(3).join('|') || '/';
   const portal: Portal = (PORTALS as readonly string[]).includes(portalRaw)
     ? (portalRaw as Portal)
     : 'customer';
-  return { csrf, portal, returnTo };
+  return { csrf, portal, origin, returnTo };
 };
 
-/** Build an absolute URL inside the portal's SPA, defending against open-redirect. */
-const portalRedirect = (
-  portal: Portal,
-  pathOrQuery: string,
-): string => {
-  const base = frontendBase(portal).replace(/\/$/, '');
+/**
+ * Only accept an origin we already trust (it's in CORS_ORIGINS).
+ * Accepts either a bare origin ("https://test.autosahay.com") or a full URL
+ * (e.g. a Referer header) — in the latter case we extract just the origin.
+ */
+const safeOriginOrEmpty = (value: unknown): string => {
+  if (typeof value !== 'string' || !value) return '';
+  let origin = value.replace(/\/$/, '');
+  if (origin.includes('/', 'https://'.length)) {
+    try {
+      origin = new URL(value).origin;
+    } catch {
+      return '';
+    }
+  }
+  return corsOrigins.includes(origin) ? origin : '';
+};
+
+/**
+ * Resolve the redirect base. Prefer the SPA's own (already-validated) origin so
+ * a missing FRONTEND_*_URL env var can't send the user to localhost. Fall back
+ * to the configured per-portal frontend URL.
+ */
+const resolveBase = (portal: Portal, origin: string): string => {
+  const validated = safeOriginOrEmpty(origin);
+  if (validated) return validated;
+  return frontendBase(portal).replace(/\/$/, '');
+};
+
+/** Build an absolute redirect URL, defending against open-redirect. */
+const buildRedirect = (base: string, pathOrQuery: string): string => {
   const safe = pathOrQuery.startsWith('/') ? pathOrQuery : `/${pathOrQuery}`;
   return `${base}${safe}`;
 };
@@ -79,7 +112,9 @@ const finishOAuthLogin = async (
     avatarUrl?: string;
   },
 ) => {
-  const { portal, returnTo } = decodeState(req.query.state as string | undefined);
+  const { portal, origin, returnTo } = decodeState(req.query.state as string | undefined);
+  const base = resolveBase(portal, origin);
+  const redirect = (path: string) => res.redirect(buildRedirect(base, path));
 
   // Always look up by provider identity first, then fall back to email.
   let user = await prisma.user.findFirst({
@@ -96,21 +131,21 @@ const finishOAuthLogin = async (
   if (portal === 'admin' || portal === 'vendor') {
     res.clearCookie(STATE_COOKIE, { ...stateCookieOptions(), maxAge: undefined });
     if (!user) {
-      return res.redirect(portalRedirect(portal, '/login?error=not_registered'));
+      return redirect('/login?error=not_registered');
     }
     const roleOk =
       portal === 'admin'
         ? ADMIN_ROLES.has(user.role)
         : user.role === 'VENDOR';
     if (!roleOk) {
-      return res.redirect(portalRedirect(portal, '/login?error=wrong_portal'));
+      return redirect('/login?error=wrong_portal');
     }
     if (user.status !== 'ACTIVE') {
-      return res.redirect(portalRedirect(portal, '/login?error=inactive'));
+      return redirect('/login?error=inactive');
     }
     const { accessToken, refreshToken } = await issueTokens(user);
     setAuthCookies(res, accessToken, refreshToken);
-    return res.redirect(portalRedirect(portal, returnTo));
+    return redirect(returnTo);
   }
 
   // Customer portal — auto-create on first sign-in.
@@ -140,7 +175,7 @@ const finishOAuthLogin = async (
   const { accessToken, refreshToken } = await issueTokens(user);
   setAuthCookies(res, accessToken, refreshToken);
   res.clearCookie(STATE_COOKIE, { ...stateCookieOptions(), maxAge: undefined });
-  return res.redirect(portalRedirect('customer', returnTo));
+  return redirect(returnTo);
 };
 
 /**
@@ -158,6 +193,7 @@ r.get('/google', (req, res, next) => {
   if (!env.GOOGLE_CLIENT_ID) return next(ServerError('Google OAuth not configured'));
   const csrf = buildState();
   const portal = portalFromQuery(req.query.portal);
+  const origin = safeOriginOrEmpty(req.query.origin ?? req.headers.referer);
   const rawReturn = (req.query.returnTo as string) ?? '/';
   // returnTo is appended to the portal's frontend base URL; restrict to relative paths only.
   const returnTo = rawReturn.startsWith('/') ? rawReturn : '/';
@@ -167,7 +203,7 @@ r.get('/google', (req, res, next) => {
     redirect_uri: `${env.API_BASE_URL}/api/auth/google/callback`,
     response_type: 'code',
     scope: 'openid email profile',
-    state: encodeState(csrf, portal, returnTo),
+    state: encodeState(csrf, portal, origin, returnTo),
     access_type: 'offline',
     prompt: 'consent',
   });
@@ -213,6 +249,7 @@ r.get('/facebook', (req, res, next) => {
   if (!env.FACEBOOK_APP_ID) return next(ServerError('Facebook OAuth not configured'));
   const csrf = buildState();
   const portal = portalFromQuery(req.query.portal);
+  const origin = safeOriginOrEmpty(req.query.origin ?? req.headers.referer);
   const rawReturn = (req.query.returnTo as string) ?? '/';
   const returnTo = rawReturn.startsWith('/') ? rawReturn : '/';
   res.cookie(STATE_COOKIE, csrf, stateCookieOptions());
@@ -221,7 +258,7 @@ r.get('/facebook', (req, res, next) => {
     redirect_uri: `${env.API_BASE_URL}/api/auth/facebook/callback`,
     response_type: 'code',
     scope: 'email public_profile',
-    state: encodeState(csrf, portal, returnTo),
+    state: encodeState(csrf, portal, origin, returnTo),
   });
   res.redirect(`https://www.facebook.com/v20.0/dialog/oauth?${params.toString()}`);
 });
