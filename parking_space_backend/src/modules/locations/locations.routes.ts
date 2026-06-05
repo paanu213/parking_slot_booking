@@ -28,57 +28,72 @@ const publicLocationFilter: Prisma.ParkingLocationWhereInput = {
 };
 
 // Public: list/search parking locations
-r.get('/', validate(searchSchema, 'query'), async (req, res) => {
-  const { q, city, area, page, pageSize } = req.query as unknown as z.infer<typeof searchSchema>;
-  const where: Prisma.ParkingLocationWhereInput = {
-    ...publicLocationFilter,
-    ...(city ? { city: { equals: city } } : {}),
-    ...(area ? { area: { contains: area } } : {}),
-    ...(q
-      ? {
-          OR: [
-            { name: { contains: q } },
-            { addressLine: { contains: q } },
-            { city: { contains: q } },
-            { area: { contains: q } },
-          ],
-        }
-      : {}),
-  };
+r.get('/', validate(searchSchema, 'query'), async (req, res, next) => {
+  try {
+    const { q, city, area, page, pageSize } = req.query as unknown as z.infer<typeof searchSchema>;
+    const where: Prisma.ParkingLocationWhereInput = {
+      ...publicLocationFilter,
+      ...(city ? { city: { equals: city } } : {}),
+      ...(area ? { area: { contains: area } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q } },
+              { addressLine: { contains: q } },
+              { city: { contains: q } },
+              { area: { contains: q } },
+            ],
+          }
+        : {}),
+    };
 
-  // Distinct area list inside the *city* (ignoring the current area filter),
-  // so the SpacesPage area dropdown can show every option even after a pick.
-  const areasWhere: Prisma.ParkingLocationWhereInput = {
-    ...publicLocationFilter,
-    ...(city ? { city: { equals: city } } : {}),
-    area: { not: null },
-  };
+    // Areas list — fetch within the current city scope (ignoring the area filter
+    // itself so picking an area doesn't shrink the dropdown). Wrapped in its own
+    // try/catch so a failure here can't take down the spaces grid: an empty
+    // areas list is acceptable, an empty `items` array is not.
+    const areasWhere: Prisma.ParkingLocationWhereInput = {
+      ...publicLocationFilter,
+      ...(city ? { city: { equals: city } } : {}),
+      area: { not: null },
+    };
 
-  const [items, total, areaRows] = await Promise.all([
-    prisma.parkingLocation.findMany({
-      where,
-      include: {
-        images: { take: 1, orderBy: { sortOrder: 'asc' } },
-        slots: { where: { status: 'ACTIVE' }, take: 1 },
-      },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.parkingLocation.count({ where }),
-    prisma.parkingLocation.findMany({
-      where: areasWhere,
-      select: { area: true },
-      distinct: ['area'],
-      orderBy: { area: 'asc' },
-    }),
-  ]);
+    const [items, total] = await Promise.all([
+      prisma.parkingLocation.findMany({
+        where,
+        include: {
+          images: { take: 1, orderBy: { sortOrder: 'asc' } },
+          slots: { where: { status: 'ACTIVE' }, take: 1 },
+        },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.parkingLocation.count({ where }),
+    ]);
 
-  const areas = areaRows
-    .map((r) => r.area)
-    .filter((a): a is string => Boolean(a && a.trim()));
+    // Dedup in JS instead of relying on Prisma `distinct + orderBy + select` —
+    // that combination has surfaced engine quirks on MySQL in the past.
+    let areas: string[] = [];
+    try {
+      const rows = await prisma.parkingLocation.findMany({
+        where: areasWhere,
+        select: { area: true },
+      });
+      areas = [
+        ...new Set(
+          rows
+            .map((r) => r.area)
+            .filter((a): a is string => Boolean(a && a.trim())),
+        ),
+      ].sort();
+    } catch {
+      areas = [];
+    }
 
-  res.json({ items, total, page, pageSize, areas });
+    res.json({ items, total, page, pageSize, areas });
+  } catch (e) {
+    next(e);
+  }
 });
 
 // Public: location detail
