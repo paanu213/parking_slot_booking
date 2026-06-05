@@ -94,8 +94,21 @@ model User {
   bookings      Booking[]
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]
+  savedSpaces   SavedSpace[]
 
   @@index([role, status])
+}
+
+model SavedSpace {
+  userId     String
+  locationId String
+  savedAt    DateTime @default(now())
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location ParkingLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, locationId])
+  @@index([userId])
 }
 
 model RefreshToken {
@@ -164,10 +177,11 @@ model ParkingLocation {
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
-  vendor    Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  slots     Slot[]
-  images    LocationImage[]
-  amenities ParkingLocationAmenity[]
+  vendor      Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  slots       Slot[]
+  images      LocationImage[]
+  amenities   ParkingLocationAmenity[]
+  savedByUsers SavedSpace[]
 
   @@index([city, isActive])
   @@index([latitude, longitude])

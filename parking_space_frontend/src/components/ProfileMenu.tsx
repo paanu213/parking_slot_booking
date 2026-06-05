@@ -8,6 +8,7 @@ import {
   UserCircle2,
   CalendarCheck,
   HelpCircle,
+  Heart,
   Sun,
   Moon,
   LogIn,
@@ -19,7 +20,6 @@ import { useAuth } from '@/store/auth';
 import { useTheme } from '@/store/theme';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { SUPPORT_EMAIL } from '@/lib/config';
 import { toast } from '@/components/Toast';
 
 type MenuLink = {
@@ -33,15 +33,10 @@ type MenuLink = {
 
 const LINKS: MenuLink[] = [
   { to: '/profile', label: 'My profile', icon: UserCircle2, description: 'Name, contact, preferences' },
+  { to: '/saved', label: 'Saved spaces', icon: Heart, description: 'Spaces you bookmarked' },
   { to: '/bookings', label: 'My bookings', icon: CalendarCheck, description: 'Upcoming and past' },
-  { to: '/settings', label: 'Settings', icon: Settings, description: 'Notifications & security' },
-  {
-    to: `mailto:${SUPPORT_EMAIL}`,
-    label: 'Help & support',
-    icon: HelpCircle,
-    description: `Email us at ${SUPPORT_EMAIL}`,
-    external: true,
-  },
+  { to: '/settings', label: 'Settings', icon: Settings, description: 'Appearance & security' },
+  { to: '/help', label: 'Help & support', icon: HelpCircle, description: 'FAQs and contact' },
 ];
 
 export const ProfileMenu = () => {

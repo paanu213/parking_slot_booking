@@ -23,6 +23,7 @@ import { api } from '@/lib/api';
 import { CardSkeleton } from '@/components/Skeleton';
 import { Footer } from '@/components/Footer';
 import { Select } from '@/components/Select';
+import { SaveButton } from '@/components/SaveButton';
 import { cn } from '@/lib/cn';
 import { VENDOR_URL } from '@/lib/config';
 
@@ -461,6 +462,12 @@ export const LocationCard = ({ loc }: { loc: Location }) => {
             <Car className="h-8 w-8" />
           </div>
         )}
+
+        {/* Top-right: save heart */}
+        <SaveButton
+          locationId={loc.id}
+          className="absolute right-3 top-3 h-8 w-8 rounded-full bg-white/90 text-slate-600 shadow backdrop-blur hover:text-rose-500 dark:bg-slate-900/80 dark:text-slate-300"
+        />
 
         {/* Top-left badges */}
         <div className="absolute left-3 top-3 flex gap-1.5">

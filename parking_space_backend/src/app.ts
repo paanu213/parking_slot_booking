@@ -16,6 +16,7 @@ import locationRoutes from './modules/locations/locations.routes.js';
 import bookingRoutes from './modules/bookings/bookings.routes.js';
 import vendorRoutes from './modules/vendor/vendor.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
+import customerRoutes from './modules/customer/customer.routes.js';
 import uploadRoutes from './modules/uploads/uploads.routes.js';
 import paymentRoutes from './modules/payments/payments.routes.js';
 import utilRoutes from './modules/util/util.routes.js';
@@ -58,6 +59,7 @@ export const buildApp = () => {
   app.use('/api/bookings', bookingRoutes);
   app.use('/api/vendor', vendorRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/customer/me', customerRoutes);
   app.use('/api/uploads', uploadRoutes);
   app.use('/api/payments', paymentRoutes);
   app.use('/api/util', utilRoutes);
