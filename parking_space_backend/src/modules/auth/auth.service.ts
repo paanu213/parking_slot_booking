@@ -74,8 +74,10 @@ export const revokeRefreshToken = async (token: string) => {
 };
 
 /**
- * Verify and rotate a refresh token. Returns a fresh access + refresh pair
- * and the user record. Old refresh token is revoked atomically.
+ * Verify the refresh token and issue a new access token. The refresh token
+ * itself is left untouched (still valid until its natural expiry) so that
+ * concurrent tabs and background-tab reloads don't fight over a freshly
+ * rotated token and end up logged out.
  *
  * Throws `Unauthorized` for any invalid/expired/revoked/mismatched token.
  */
@@ -97,10 +99,14 @@ export const refreshSession = async (token: string) => {
   if (stored.userId !== payload.sub) throw Unauthorized('Invalid refresh token');
   if (stored.user.status !== 'ACTIVE') throw Unauthorized('Account not active');
 
-  // Rotate: revoke old then issue new (in a transaction so we never leak both).
-  await prisma.refreshToken.update({
-    where: { id: stored.id },
-    data: { revokedAt: new Date() },
+  // Issue only a new access token — keep the existing refresh token alive
+  // until it naturally expires. Re-using the same refresh token avoids the
+  // multi-tab refresh race where the first rotation invalidates concurrent
+  // refresh attempts in other tabs and forces the user back to /login.
+  const accessToken = signAccessToken({
+    sub:   stored.user.id,
+    email: stored.user.email,
+    role:  stored.user.role,
   });
-  return issueTokens(stored.user);
+  return { accessToken, refreshToken: token, user: stored.user };
 };
