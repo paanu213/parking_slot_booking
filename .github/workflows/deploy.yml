@@ -1,13 +1,15 @@
 name: Deploy to Hostinger
 
-# Runs on every push to main.
-# Three independent jobs run in parallel:
-#   1. deploy-admin    → builds React SPA, rsyncs dist/ to admin subdomain
-#   2. deploy-vendor   → builds React SPA, rsyncs dist/ to vendor subdomain
-#   3. deploy-customer → builds React SPA, rsyncs dist/ to customer site
+# Runs on every push to `main` (production).
 #
-# Backend API is deployed automatically by Hostinger's Node.js manager
-# (connected directly to this GitHub repo — no SSH step needed).
+# Hostinger hosts ONLY the production customer site + the backend API now —
+# admin and vendor panels moved to Vercel to take load off Hostinger.
+#
+#   • deploy-customer → builds the customer SPA, rsyncs dist/ to Hostinger
+#   • Backend API     → deployed by Hostinger's Node.js manager (no CI step)
+#
+# Admin / vendor (prod + all stage) and the stage customer site are deployed
+# by Vercel from the `stage` / `main` branches — see DEPLOY.md.
 #
 # Required GitHub Secrets (Settings → Secrets → Actions):
 #   HOSTINGER_HOST       Hostinger server IP or hostname  (e.g. srv1749.hstgr.io)
@@ -15,9 +17,7 @@ name: Deploy to Hostinger
 #   HOSTINGER_SSH_KEY    Private SSH key content          (-----BEGIN ... KEY-----)
 #   HOSTINGER_SSH_PORT   SSH port — Hostinger default is  65002
 #   VITE_API_URL         Production API base URL          (https://api.autosahay.com/api)
-#   ADMIN_DEPLOY_PATH    Absolute path on server          (/home/u.../domains/admin.autosahay.com/public_html)
-#   VENDOR_DEPLOY_PATH   Absolute path on server          (/home/u.../domains/vendor.autosahay.com/public_html)
-#   CUSTOMER_DEPLOY_PATH Absolute path on server          (/home/u.../domains/test.autosahay.com/public_html)
+#   CUSTOMER_DEPLOY_PATH Absolute path on server          (/home/u.../domains/<customer-domain>/public_html)
 
 on:
   push:
@@ -25,141 +25,7 @@ on:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 1 — Admin Panel (static React build → rsync to server)
-  # ═══════════════════════════════════════════════════════════════════════════
-  deploy-admin:
-    name: Admin Panel
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install workspace dependencies
-        run: npm ci
-
-      - name: Build admin panel
-        working-directory: parking_space_frontend_admin
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-        run: npm run build
-
-      - name: Setup SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
-
-      - name: Add Hostinger host to known_hosts
-        env:
-          HOST: ${{ secrets.HOSTINGER_HOST }}
-          PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Deploy dist/ to Hostinger via rsync (with retry)
-        env:
-          REMOTE_PATH: ${{ secrets.ADMIN_DEPLOY_PATH }}
-          REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
-          REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
-          REMOTE_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
-          LOCAL_PATH:  parking_space_frontend_admin/dist/
-        run: |
-          set -e
-          SSH_OPTS="-p $REMOTE_PORT -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
-          for attempt in 1 2 3; do
-            echo "── rsync attempt $attempt of 3 ──"
-            if rsync -avzr --delete --checksum \
-                -e "ssh $SSH_OPTS" \
-                "$LOCAL_PATH" \
-                "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"; then
-              echo "✔ rsync succeeded on attempt $attempt"
-              exit 0
-            fi
-            echo "✘ rsync failed on attempt $attempt"
-            if [ "$attempt" -lt 3 ]; then
-              echo "Waiting 30s before retry…"
-              sleep 30
-            fi
-          done
-          echo "All rsync attempts failed"
-          exit 1
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 2 — Vendor Panel (static React build → rsync to server)
-  # ═══════════════════════════════════════════════════════════════════════════
-  deploy-vendor:
-    name: Vendor Panel
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install workspace dependencies
-        run: npm ci
-
-      - name: Build vendor panel
-        working-directory: parking_space_frontend_vendor
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-        run: npm run build
-
-      - name: Setup SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
-
-      - name: Add Hostinger host to known_hosts
-        env:
-          HOST: ${{ secrets.HOSTINGER_HOST }}
-          PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Deploy dist/ to Hostinger via rsync (with retry)
-        env:
-          REMOTE_PATH: ${{ secrets.VENDOR_DEPLOY_PATH }}
-          REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
-          REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
-          REMOTE_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
-          LOCAL_PATH:  parking_space_frontend_vendor/dist/
-        run: |
-          set -e
-          SSH_OPTS="-p $REMOTE_PORT -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
-          for attempt in 1 2 3; do
-            echo "── rsync attempt $attempt of 3 ──"
-            if rsync -avzr --delete --checksum \
-                -e "ssh $SSH_OPTS" \
-                "$LOCAL_PATH" \
-                "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"; then
-              echo "✔ rsync succeeded on attempt $attempt"
-              exit 0
-            fi
-            echo "✘ rsync failed on attempt $attempt"
-            if [ "$attempt" -lt 3 ]; then
-              echo "Waiting 30s before retry…"
-              sleep 30
-            fi
-          done
-          echo "All rsync attempts failed"
-          exit 1
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 3 — Customer Site (static React build → rsync to apex / customer domain)
+  # Customer Site (static React build → rsync to Hostinger)
   # ═══════════════════════════════════════════════════════════════════════════
   deploy-customer:
     name: Customer Site
