@@ -1,59 +1,65 @@
 # Deployment Guide — Hostinger Cloud + Vercel + GitHub Actions
 
-## Branching & deploy model (READ FIRST)
+## Architecture & deploy model (READ FIRST)
 
-Two long-lived branches, two environments. **Code flows stage → main, never the
-other way.**
+To keep Hostinger's process load low, **Hostinger runs only the production
+customer site + the backend API.** Everything else (admin, vendor, and all
+three stage apps) is hosted on **Vercel**.
+
+### Who hosts what
+
+| App | Stage (test) | Production (live) |
+|-----|--------------|-------------------|
+| **Customer** | Vercel (`stage` branch) | **Hostinger** (`main` branch, GitHub Actions rsync) |
+| **Admin**    | Vercel (`stage` branch) | **Vercel** (`main` branch) |
+| **Vendor**   | Vercel (`stage` branch) | **Vercel** (`main` branch) |
+| **Backend API** | — (shared `api.autosahay.com`) | **Hostinger** (Node.js manager, `main`) |
+
+> There is one shared backend (`api.autosahay.com`) for every frontend, prod
+> and stage. Stage frontends point at the same prod API — keep that in mind when
+> testing anything that writes data.
+
+### Branching: `stage` → `main`
+
+**Code flows stage → main, never the other way.**
 
 ```
-   ┌─────────────┐   push    ┌──────────────────────┐
-   │  stage    │ ────────► │  Vercel (customer)   │  ← test here
-   │  (default   │           │  e.g. app.autosahay  │
-   │   working   │           └──────────────────────┘
-   │   branch)   │
-   └──────┬──────┘
-          │  merge ONLY when the human explicitly says "merge to main"
-          ▼
-   ┌─────────────┐   push    ┌──────────────────────┐
-   │    main     │ ────────► │  Hostinger           │  ← production
-   │ (production)│           │  admin / vendor / API│
-   └─────────────┘           └──────────────────────┘
+                 push                          push
+   ┌─────────┐  ──────►  Vercel (all STAGE)   ┌────────┐  ──────►  Vercel  (prod admin + vendor)
+   │  stage  │           stage admin/vendor/  │  main  │           Hostinger (prod customer + API)
+   │ (work)  │           customer  ← test     │ (prod) │
+   └────┬────┘                                └────────┘
+        │   merge ONLY when the human explicitly says "merge to main"
+        └───────────────────────────────────────►
 ```
 
 **Rules:**
 1. All day-to-day code changes are committed and pushed to **`stage`**.
-2. Pushing `stage` triggers a **Vercel** deploy of the customer site for testing.
+2. Pushing `stage` triggers **Vercel** deploys of the stage admin/vendor/customer
+   apps for testing.
 3. **Nothing reaches production until a human explicitly says "merge to main."**
    No automatic or implied promotion — the instruction must be clear and explicit.
-4. Merging `stage → main` and pushing `main` triggers the **Hostinger** GitHub
-   Actions deploy (admin panel, vendor panel, backend API).
+4. Pushing `main` deploys production: Vercel rebuilds prod admin + vendor, the
+   GitHub Actions workflow rsyncs the customer SPA to Hostinger, and Hostinger's
+   Node.js manager rebuilds the backend.
 
-| Branch | Deploys to | Trigger | Purpose |
-|--------|-----------|---------|---------|
-| `stage` | Vercel (customer SPA) | push to `stage` | Test changes safely |
-| `main` | Hostinger (admin + vendor + backend) | push to `main` (after explicit merge) | Production |
+| Branch | Deploys to |
+|--------|-----------|
+| `stage` | Vercel: stage admin + stage vendor + stage customer |
+| `main` | Vercel: prod admin + prod vendor · Hostinger: prod customer + backend API |
 
 ---
 
-## Hostinger — production (`main` branch)
+## Hostinger — production customer site + backend (`main` branch)
 
-Automatic deploys happen on every push to `main`:
+On every push to `main`:
 | What | Where | How |
 |------|-------|-----|
-| Admin Panel | Hostinger subdomain (admin.autosahay.com) | Build in CI → rsync |
-| Vendor Panel | Hostinger subdomain (vendor.autosahay.com) | Build in CI → rsync |
-| Backend API | Hostinger server (Node.js + PM2) | SSH → git pull → build → restart |
+| Customer Site | Hostinger (customer domain) | GitHub Actions build → rsync |
+| Backend API | Hostinger server (Node.js manager) | git pull → build → `prisma migrate deploy` → restart |
 
-> The customer site is served from **Vercel** (deployed from the `stage`
-> branch), so it is no longer part of the Hostinger pipeline. The legacy
-> `deploy-customer` Hostinger job → `test.autosahay.com` can be kept as a
-> fallback or removed; it is harmless either way.
-
-> The apex domain `autosahay.com` already hosts a separate site, so the
-> customer SPA currently deploys to **`test.autosahay.com`** (stage). When
-> ready, point the apex (or `www.autosahay.com`) at this build by changing
-> `CUSTOMER_DEPLOY_PATH` to the new subdomain's `public_html` — no workflow
-> change required.
+> Admin and vendor panels are **no longer deployed to Hostinger** — they run on
+> Vercel. The GitHub Actions workflow only deploys the customer SPA.
 
 ---
 
@@ -210,10 +216,10 @@ Go to your repo → **Settings → Secrets and variables → Actions → New rep
 | `HOSTINGER_SSH_KEY` | Contents of your **local** `~/.ssh/id_rsa` or `id_ed25519` _(the private key you use to SSH into Hostinger)_ |
 | `HOSTINGER_SSH_PORT` | `65002` |
 | `VITE_API_URL` | `https://api.autosahay.com/api` |
-| `CUSTOMER_DEPLOY_PATH` | `/home/u577205845/domains/test.autosahay.com/public_html` |
-| `ADMIN_DEPLOY_PATH` | `/home/u577205845/domains/admin.autosahay.com/public_html` |
-| `VENDOR_DEPLOY_PATH` | `/home/u577205845/domains/vendor.autosahay.com/public_html` |
-| `BACKEND_DEPLOY_PATH` | `/home/u577205845/parking-api` |
+| `CUSTOMER_DEPLOY_PATH` | `/home/u577205845/domains/<customer-domain>/public_html` |
+
+> Admin/vendor `*_DEPLOY_PATH` secrets are no longer used — those panels are on
+> Vercel now. Only `CUSTOMER_DEPLOY_PATH` is needed for the Hostinger workflow.
 
 > **HOSTINGER_SSH_KEY** is your **local machine's private key** (the one that can SSH into Hostinger — copy the entire contents including `-----BEGIN...-----` and `-----END...-----` lines).  
 > To get it: `cat ~/.ssh/id_ed25519` (or `id_rsa`)
@@ -242,57 +248,78 @@ This push will trigger the GitHub Actions workflow. Go to **Actions** tab in Git
 ```
 You push to main
        │
-       ├─► [CI Job 1] Build admin panel    → rsync to admin.autosahay.com
-       ├─► [CI Job 2] Build vendor panel   → rsync to vendor.autosahay.com
-       ├─► [CI Job 3] Build customer site  → rsync to test.autosahay.com
-       └─► [Hostinger Node.js manager]     → git pull → npm build → prisma migrate deploy → restart
-```
+       ├─► [GitHub Actions] Build customer site → rsync to Hostinger
+       ├─► [Hostinger Node.js manager] git pull → build → prisma migrate deploy → restart API
+       └─► [Vercel] rebuild prod admin + prod vendor projects
 
-All three CI jobs run in **parallel**, total deploy time ~2–3 minutes.
-Backend redeploys are handled by Hostinger's Node.js manager (linked to the
-same repo) and finish in the same window.
+You push to stage
+       │
+       └─► [Vercel] rebuild stage admin + stage vendor + stage customer projects
+```
 
 ---
 
-## Vercel — customer site (`stage` branch)
+## Vercel — admin + vendor (prod & stage) + stage customer
 
-The customer SPA (`parking_space_frontend`) is deployed to Vercel. Configure it
-once in the Vercel dashboard:
+Create **one Vercel project per app per environment**. They all point at the same
+GitHub repo and differ only by **Root Directory** + **Production Branch** + **Domain**.
 
-**Project → Settings → Git**
-- **Production Branch:** `stage`  ← so pushes to `stage` deploy to Vercel.
-  (Pushes to `main` will only create harmless Vercel "preview" builds, or you
-  can disable them under *Ignored Build Step*.)
+| Vercel project | Root Directory | Production Branch | Suggested domain |
+|----------------|----------------|-------------------|------------------|
+| prod admin     | `parking_space_frontend_admin`  | `main`  | `admin.autosahay.com` |
+| prod vendor    | `parking_space_frontend_vendor` | `main`  | `vendor.autosahay.com` |
+| stage admin    | `parking_space_frontend_admin`  | `stage` | `stageadmin.autosahay.com` |
+| stage vendor   | `parking_space_frontend_vendor` | `stage` | `stagevendor.autosahay.com` |
+| stage customer | `parking_space_frontend`        | `stage` | `stagecustomer.autosahay.com` |
 
-**Project → Settings → Build & Development**
-- **Root Directory:** `parking_space_frontend`
-- This is an npm-workspace monorepo and the customer app imports `@ps/types`,
-  so Vercel must install from the repo root. Enable *"Include files outside the
-  root directory"* (or set the install command to run at the workspace root) so
-  the shared packages resolve during build.
+> Production **customer** is **not** on Vercel — it's on Hostinger (`main`).
+
+For **every** project, set the same basics:
+
+**Settings → Git → Production Branch** — `main` or `stage` per the table.
+(Other branches make harmless "preview" builds; disable via *Ignored Build Step*
+if you want.)
+
+**Settings → Build & Development**
+- **Root Directory:** the app folder per the table.
+- Enable **"Include files outside the root directory"** — this is an npm-workspace
+  monorepo and each SPA imports `@ps/types` / `@ps/ui`, so Vercel must install
+  from the repo root for the shared packages to resolve.
 - Framework preset: **Vite** (build `npm run build`, output `dist`).
+- Each app already has a `vercel.json` with the SPA fallback rewrite, so deep
+  links like `/login` work.
 
-**Project → Settings → Environment Variables**
+**Settings → Environment Variables** (all projects)
 | Name | Value |
 |------|-------|
 | `VITE_API_URL` | `https://api.autosahay.com/api` |
 
+> The customer project also reads `VITE_VENDOR_URL` (footer "Partner portal"
+> link) — set it to the prod vendor URL, `https://vendor.autosahay.com`.
 > Env-var changes only take effect on the **next deploy** — redeploy after adding.
 
-**Custom domain (important for auth):** add an `autosahay.com` subdomain
-(e.g. `app.autosahay.com`) under **Settings → Domains**. The auth cookies are
-`Domain=.autosahay.com; SameSite=Lax`, so the customer site must be served from
-an `autosahay.com` subdomain to be *same-site* with `api.autosahay.com` —
-otherwise the browser won't send the session cookie and login won't stick.
-A bare `*.vercel.app` URL is cross-site and will break authenticated requests.
+### Domains must be `autosahay.com` subdomains (auth requirement)
 
-**After setting the Vercel domain, update the Hostinger backend `.env`:**
+Auth cookies are `Domain=.autosahay.com; SameSite=Lax`, so every frontend must be
+served from an `autosahay.com` subdomain to be *same-site* with
+`api.autosahay.com`. A bare `*.vercel.app` URL is cross-site → the browser won't
+send the session cookie → login silently fails. Add each domain under
+**Settings → Domains** and point its DNS (CNAME) at Vercel.
+
+### Backend must allow every origin
+
+After the domains exist, set the Hostinger backend `.env` to list **all** of them
+(prod + stage), then restart the backend:
+
 ```
-CORS_ORIGINS=https://admin.autosahay.com,https://vendor.autosahay.com,https://app.autosahay.com
-FRONTEND_CUSTOMER_URL=https://app.autosahay.com
+CORS_ORIGINS=https://admin.autosahay.com,https://vendor.autosahay.com,https://<customer-domain>,https://stageadmin.autosahay.com,https://stagevendor.autosahay.com,https://stagecustomer.autosahay.com
+FRONTEND_CUSTOMER_URL=https://<customer-domain>
+FRONTEND_ADMIN_URL=https://admin.autosahay.com
+FRONTEND_VENDOR_URL=https://vendor.autosahay.com
 ```
-…and add `https://app.autosahay.com` to the Google OAuth *Authorized JavaScript
-origins*. Restart the backend.
+
+Also add **every** origin above to the Google OAuth **Authorized JavaScript
+origins** (the OAuth redirect validates the SPA's origin against `CORS_ORIGINS`).
 
 ---
 
