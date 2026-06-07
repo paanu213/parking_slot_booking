@@ -93,11 +93,31 @@ top-level card. Example of the correct split:
 
 Shared packages: `@ps/types` (Zod schemas), `@ps/ui` (shared components).
 
+### Prisma schema changes — use **migrations**, never `db push`
+
+This project tracks the DB with versioned migrations in `parking_space_backend/prisma/migrations`.
+**Do not run `prisma db push`** — it mutates the schema without recording history, which
+desyncs the migrations table and later makes `migrate deploy` fail with **P3018
+("table already exists")**. That exact drift happened on 2026-06-07.
+
 After any **Prisma schema change**:
-1. Stop the backend server (releases the DLL lock on Windows).
-2. `npx prisma db push`
-3. `npx prisma generate`
-4. Restart the backend.
+1. Stop the backend server (releases the query-engine DLL lock on Windows).
+2. **Author a migration** under `prisma/migrations/<timestamp>_<name>/migration.sql`
+   (UTF-8, **no BOM**). For additive columns this is plain `ALTER TABLE … ADD COLUMN …`
+   matching Prisma's MySQL output: strings `VARCHAR(191) NULL`, enums `ENUM('A','B')`,
+   datetimes `DATETIME(3)`. Keep changes **additive + nullable/defaulted** for zero-downtime.
+3. Apply it: `npx prisma migrate deploy` (production-safe — only runs committed migrations,
+   never resets). The local `DATABASE_URL` points at the **live Hostinger DB**, so this is
+   real production — review the SQL first.
+4. `npx prisma generate` (regenerates the client; needs the backend stopped on Windows).
+5. Restart the backend.
+
+**Two-track flow:** the migration file rides `stage` → tested → merged to `main`; `migrate deploy`
+is the command that applies it in each environment.
+
+**If you ever hit P3018** (a table/column already exists because of a past `db push`), baseline it —
+mark the offending migration as already-applied *without* re-running its SQL:
+`npx prisma migrate resolve --applied <migration_name>`, then re-run `migrate deploy`.
 
 ---
 
