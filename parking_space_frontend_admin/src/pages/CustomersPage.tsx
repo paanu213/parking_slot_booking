@@ -196,9 +196,12 @@ const EditCustomerModal = ({
               <Field label="Phone">
                 <input
                   className="input w-full"
-                  placeholder="Optional"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="10-digit mobile"
                   value={(form as any).phone}
-                  onChange={(e) => set('phone', e.target.value)}
+                  onChange={(e) => set('phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
                 />
               </Field>
             </>
@@ -214,8 +217,12 @@ const EditCustomerModal = ({
               <Field label="Phone *">
                 <input
                   className="input w-full"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="10-digit mobile"
                   value={(form as any).guestPhone}
-                  onChange={(e) => set('guestPhone', e.target.value)}
+                  onChange={(e) => set('guestPhone', e.target.value.replace(/\D/g, '').slice(0, 10))}
                 />
               </Field>
               <div className="grid grid-cols-2 gap-3">

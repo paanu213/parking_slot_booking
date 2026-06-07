@@ -135,6 +135,13 @@ export const AddVendorPage = () => {
       setErrors((err) => ({ ...err, [key]: undefined }));
     };
 
+  // Phone fields: digits only, capped at 10.
+  const setPhone = (key: keyof VendorForm) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setForm((f) => ({ ...f, [key]: e.target.value.replace(/\D/g, '').slice(0, 10) }));
+      setErrors((err) => ({ ...err, [key]: undefined }));
+    };
+
   // ── Upload doc mutation ────────────────────────────────────────────────────
   const uploadDoc = useMutation({
     mutationFn: (file: File) => {
@@ -252,10 +259,13 @@ export const AddVendorPage = () => {
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   className={`input w-full pl-9 ${errors.contactPhone ? 'border-red-400 focus:ring-red-400' : ''}`}
-                  placeholder="Business phone number"
+                  placeholder="10-digit mobile"
                   value={form.contactPhone}
-                  onChange={set('contactPhone')}
+                  onChange={setPhone('contactPhone')}
                 />
               </div>
             </Field>
@@ -295,10 +305,13 @@ export const AddVendorPage = () => {
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   className="input w-full pl-9"
                   placeholder="Personal phone (optional)"
                   value={form.phone}
-                  onChange={set('phone')}
+                  onChange={setPhone('phone')}
                 />
               </div>
             </Field>

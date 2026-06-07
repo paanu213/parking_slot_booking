@@ -85,8 +85,13 @@ export const RegisterPage = () => {
           <input
             className={cn('input mt-1', errors.phone && 'border-rose-500 focus:border-rose-500')}
             autoComplete="tel"
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
             aria-invalid={!!errors.phone}
-            {...register('phone')}
+            {...register('phone', {
+              onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); },
+            })}
           />
         </Field>
         <Field

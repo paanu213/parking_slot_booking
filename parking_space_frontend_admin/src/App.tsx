@@ -21,6 +21,7 @@ import { PaymentsPage } from '@/pages/PaymentsPage';
 import { AdminsPage } from '@/pages/AdminsPage';
 import { SpacesPage } from '@/pages/SpacesPage';
 import { SpaceEditPage } from '@/pages/SpaceEditPage';
+import SpaceDetailsPage from '@/pages/SpaceDetailsPage';
 import { AddVendorPage } from '@/pages/AddVendorPage';
 import { AddSpacePage } from '@/pages/AddSpacePage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -866,6 +867,13 @@ const EditVendorModal = ({
       setErr('');
     };
 
+  // Phone fields: digits only, capped at 10.
+  const setPhone = (key: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setForm((f) => ({ ...f, [key]: e.target.value.replace(/\D/g, '').slice(0, 10) }));
+      setErr('');
+    };
+
   const SectionLabel = ({ children }: { children: React.ReactNode }) => (
     <p className="mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:border-slate-800">
       {children}
@@ -903,8 +911,8 @@ const EditVendorModal = ({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-500">Business Contact Phone</label>
-                  <input className="input w-full" placeholder="Business phone"
-                    value={form.contactPhone} onChange={set('contactPhone')} />
+                  <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile"
+                    value={form.contactPhone} onChange={setPhone('contactPhone')} />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-500">Business Address</label>
@@ -927,8 +935,8 @@ const EditVendorModal = ({
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-500">Personal Phone</label>
-                  <input className="input w-full" placeholder="Personal phone (optional)"
-                    value={form.phone} onChange={set('phone')} />
+                  <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="Personal phone (optional)"
+                    value={form.phone} onChange={setPhone('phone')} />
                 </div>
               </div>
               <div>
@@ -1770,6 +1778,7 @@ export default function App() {
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/account" element={<AccountPage />} />
                     <Route path="/spaces/add" element={<AddSpacePage />} />
+                    <Route path="/spaces/:id" element={<SpaceDetailsPage />} />
                     <Route path="/spaces/:id/edit" element={<SpaceEditPage />} />
                     <Route path="/bookings" element={<BookingsPage />} />
                     <Route path="/payments" element={<PaymentsPage />} />

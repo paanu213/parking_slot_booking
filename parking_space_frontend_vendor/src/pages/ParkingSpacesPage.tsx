@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Sparkles, Bike, Car, Truck, Trash2, CalendarCheck } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Sparkles, Bike, Car, Truck, Trash2, CalendarCheck, MapPin } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AmenityIcon } from '@/components/AmenityIcon';
@@ -29,6 +29,7 @@ interface Slot {
   code: string;
   vehicleType: string;
   hourlyPrice: number;
+  monthlyPrice?: number | null;
   status: 'ACTIVE' | 'INACTIVE';
 }
 
@@ -42,6 +43,8 @@ interface ParkingSpace {
   id: string;
   name: string;
   addressLine: string;
+  landmark?: string | null;
+  area?: string | null;
   city: string;
   state: string;
   pincode: string;
@@ -61,6 +64,7 @@ interface SlotFormValues {
   code: string;
   vehicleType: string;
   hourlyPrice: number;
+  monthlyPrice?: number | null;
 }
 
 const STATUS_META: Record<ApprovalStatus, { label: string; cls: string; icon: React.ReactNode }> = {
@@ -303,7 +307,7 @@ export const ParkingSpacesPage = () => {
                         : 'Update Submission'}
                     </p>
                     <SpaceForm
-                      defaultValues={space}
+                      defaultValues={{ ...space, landmark: space.landmark ?? undefined, area: space.area ?? undefined }}
                       onSubmit={(v) => updateSpace.mutate({ id: space.id, input: v })}
                       submitting={updateSpace.isPending}
                       submitLabel={
@@ -314,9 +318,27 @@ export const ParkingSpacesPage = () => {
                   </div>
                 )}
 
-                {/* Expanded: images + amenities + slots */}
+                {/* Expanded: details + images + amenities + slots */}
                 {isExpanded && (
                   <div className="space-y-6 border-t border-slate-200 p-4 dark:border-slate-800">
+                    {/* Full captured details (everything except the raw maps link) */}
+                    <div>
+                      <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
+                        <MapPin className="h-4 w-4 text-brand-500" /> Space Details
+                      </h4>
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+                        <SpaceDetail label="Address" value={space.addressLine} className="col-span-2 sm:col-span-3" />
+                        {space.landmark && <SpaceDetail label="Landmark" value={space.landmark} className="col-span-2 sm:col-span-3" />}
+                        {space.area && <SpaceDetail label="Area" value={space.area} />}
+                        <SpaceDetail label="City" value={space.city} />
+                        <SpaceDetail label="State" value={space.state} />
+                        <SpaceDetail label="Pincode" value={space.pincode} mono />
+                        <SpaceDetail label="Latitude" value={Number(space.latitude).toFixed(6)} mono />
+                        <SpaceDetail label="Longitude" value={Number(space.longitude).toFixed(6)} mono />
+                        {space.description && <SpaceDetail label="Description" value={space.description} className="col-span-2 sm:col-span-3" />}
+                      </dl>
+                    </div>
+
                     <LocationImages locationId={space.id} images={space.images ?? []} />
 
                     {/* Amenities */}
@@ -472,6 +494,9 @@ export const ParkingSpacesPage = () => {
                                         </div>
                                         <p className="text-xs text-slate-500">
                                           ₹{slot.hourlyPrice}/hr
+                                          {slot.monthlyPrice != null && (
+                                            <span> · ₹{slot.monthlyPrice}/mo</span>
+                                          )}
                                         </p>
                                       </div>
                                     </div>
@@ -549,12 +574,21 @@ const SlotEditForm = ({
 }) => {
   const [vehicleType, setVehicleType] = useState(slot.vehicleType || 'FOUR_WHEELER');
   const { register, handleSubmit } = useForm<SlotFormValues>({
-    defaultValues: { code: slot.code, hourlyPrice: slot.hourlyPrice },
+    defaultValues: {
+      code: slot.code,
+      hourlyPrice: slot.hourlyPrice,
+      monthlyPrice: slot.monthlyPrice ?? undefined,
+    },
   });
   return (
     <form
       onSubmit={handleSubmit((v) =>
-        onSubmit({ code: v.code, vehicleType, hourlyPrice: Number(v.hourlyPrice) })
+        onSubmit({
+          code: v.code,
+          vehicleType,
+          hourlyPrice: Number(v.hourlyPrice),
+          monthlyPrice: v.monthlyPrice != null && String(v.monthlyPrice) !== '' ? Number(v.monthlyPrice) : null,
+        })
       )}
       className="space-y-3 p-3"
     >
@@ -575,9 +609,10 @@ const SlotEditForm = ({
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <input className="input text-sm" placeholder="Code" required {...register('code')} />
         <input className="input text-sm" type="number" step="any" placeholder="Hourly ₹" required {...register('hourlyPrice')} />
+        <input className="input text-sm" type="number" step="any" placeholder="Monthly ₹" {...register('monthlyPrice')} />
       </div>
       <div className="flex gap-2">
         <button className="btn-primary flex-1 text-xs" disabled={submitting}>
@@ -588,6 +623,18 @@ const SlotEditForm = ({
         </button>
       </div>
     </form>
+  );
+};
+
+const SpaceDetail = ({
+  label, value, mono, className,
+}: { label: string; value?: React.ReactNode; mono?: boolean; className?: string }) => {
+  if (value == null || value === '') return null;
+  return (
+    <div className={className}>
+      <dt className="mb-0.5 text-xs text-slate-400">{label}</dt>
+      <dd className={`break-words text-slate-700 dark:text-slate-200 ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
+    </div>
   );
 };
 
@@ -603,7 +650,12 @@ const NewSlotForm = ({
   return (
     <form
       onSubmit={handleSubmit((v) => {
-        onSubmit({ code: v.code, vehicleType, hourlyPrice: Number(v.hourlyPrice) });
+        onSubmit({
+          code: v.code,
+          vehicleType,
+          hourlyPrice: Number(v.hourlyPrice),
+          monthlyPrice: v.monthlyPrice != null && String(v.monthlyPrice) !== '' ? Number(v.monthlyPrice) : null,
+        });
         reset();
         setVehicleType('FOUR_WHEELER');
       })}
@@ -626,9 +678,10 @@ const NewSlotForm = ({
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <input className="input text-sm" placeholder="Code (A1) *" required {...register('code')} />
         <input className="input text-sm" type="number" step="any" placeholder="Hourly ₹ *" required {...register('hourlyPrice')} />
+        <input className="input text-sm" type="number" step="any" placeholder="Monthly ₹" {...register('monthlyPrice')} />
         <button className="btn-primary text-sm sm:col-auto col-span-2" disabled={submitting}>
           {submitting ? 'Adding…' : '+ Add Slot'}
         </button>

@@ -6,6 +6,7 @@ import { validate } from '../../middleware/validate.js';
 import { BadRequest, Conflict, Forbidden, NotFound } from '../../lib/http.js';
 import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, commissionFor } from '../../lib/commission.js';
+import { resolveDateRange } from '../../lib/dateRange.js';
 import { deleteImageByUrl, storeImageBuffer } from '../../lib/images.js';
 import { imageUpload } from '../uploads/uploads.routes.js';
 
@@ -91,6 +92,7 @@ const locationSchema = z.object({
   name: z.string().min(2).max(120),
   description: z.string().max(2000).optional(),
   addressLine: z.string().min(3).max(255),
+  landmark: z.string().max(160).optional(),
   city: z.string().min(2).max(80),
   state: z.string().min(2).max(80),
   pincode: z.string().min(3).max(12),
@@ -180,7 +182,7 @@ const slotSchema = z.object({
   vehicleType: z.string().default('FOUR_WHEELER'),
   hourlyPrice: z.number().nonnegative(),
   dailyPrice: z.number().nonnegative().default(0),   // kept for DB compat; UI no longer collects it
-  monthlyPrice: z.number().nonnegative().optional(),
+  monthlyPrice: z.number().nonnegative().nullish(),
 });
 
 r.post('/locations/:id/slots', validate(slotSchema), async (req, res, next) => {
@@ -198,7 +200,7 @@ const slotUpdateSchema = z.object({
   vehicleType: z.string().optional(),
   hourlyPrice: z.number().nonnegative().optional(),
   dailyPrice: z.number().nonnegative().optional(),
-  monthlyPrice: z.number().nonnegative().optional(),
+  monthlyPrice: z.number().nonnegative().nullish(),
 });
 
 const ensureOwnSlot = async (vendorUserId: string, slotId: string) => {
@@ -378,10 +380,16 @@ r.get('/bookings', async (req, res) => {
 // Commission the vendor owes the company — total, paid, pending (+ per-space breakdown)
 r.get('/commission/summary', async (req, res, next) => {
   try {
+    const range = resolveDateRange(
+      req.query.period as string | undefined,
+      req.query.from   as string | undefined,
+      req.query.to     as string | undefined,
+    );
     const due = await prisma.booking.findMany({
       where: {
         status: { in: ['CONFIRMED', 'COMPLETED'] },
         slot:   { location: { vendor: { userId: req.user!.sub } } },
+        ...(range ? { createdAt: range } : {}),
       },
       select: {
         commissionAmount: true,

@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE `ParkingLocation` ADD COLUMN `landmark` VARCHAR(191) NULL;
+
+-- AlterTable
+ALTER TABLE `Vendor` ADD COLUMN `createdById` VARCHAR(191) NULL,
+    ADD COLUMN `createdVia` ENUM('SELF_REGISTRATION', 'ADMIN') NOT NULL DEFAULT 'SELF_REGISTRATION';

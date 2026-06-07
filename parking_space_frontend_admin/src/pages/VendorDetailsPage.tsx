@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -6,6 +6,7 @@ import {
   Calendar, CalendarCheck, IndianRupee, Layers, Plus,
   CheckCircle2, Clock, XCircle, Pencil, ChevronDown, ChevronUp,
   Bike, Car, Truck, ToggleLeft, ToggleRight, Sparkles, Save, X, Percent,
+  UserPlus, Upload,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { KebabMenu, MenuItem } from '@/components/KebabMenu';
@@ -60,6 +61,57 @@ const fmtDate = (d?: string | null) =>
 
 const fmtINR = (n?: number | null) =>
   `₹${Number(n ?? 0).toLocaleString('en-IN')}`;
+
+// ── Commission date-range filter ───────────────────────────────────────────────
+type CommissionPeriod = 'day' | 'month' | 'year' | 'fy' | 'custom';
+
+const COMMISSION_PERIODS: { key: CommissionPeriod; label: string }[] = [
+  { key: 'day',   label: 'Today' },
+  { key: 'month', label: 'Month' },
+  { key: 'year',  label: 'Year' },
+  { key: 'fy',    label: 'FY' },
+  { key: 'custom', label: 'Custom' },
+];
+
+const CommissionFilterBar = ({
+  period, onPeriod, from, to, onFrom, onTo,
+}: {
+  period: CommissionPeriod;
+  onPeriod: (p: CommissionPeriod) => void;
+  from: string;
+  to: string;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
+}) => (
+  <div className="flex flex-col items-end gap-2">
+    <div className="flex flex-wrap gap-1">
+      {COMMISSION_PERIODS.map(({ key, label }) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onPeriod(key)}
+          className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${
+            period === key
+              ? 'bg-amber-500 text-white'
+              : 'bg-white text-slate-600 hover:bg-amber-100 dark:bg-slate-800 dark:text-slate-300'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+    {period === 'custom' && (
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-slate-400">From</span>
+        <input type="date" value={from} onChange={(e) => onFrom(e.target.value)}
+               className="input w-36 text-xs sm:w-40" />
+        <span className="text-slate-400">→</span>
+        <input type="date" value={to} onChange={(e) => onTo(e.target.value)}
+               className="input w-36 text-xs sm:w-40" />
+      </div>
+    )}
+  </div>
+);
 
 // ── Slot row (inline edit + status toggle) ───────────────────────────────────
 const SlotRow = ({
@@ -591,6 +643,19 @@ export const VendorDetailsPage = () => {
     enabled: Boolean(id),
   });
 
+  const [commPeriod, setCommPeriod] = useState<CommissionPeriod>('month');
+  const [commFrom, setCommFrom] = useState('');
+  const [commTo, setCommTo] = useState('');
+  const commissionParams =
+    commPeriod === 'custom'
+      ? (commFrom && commTo ? { period: 'custom', from: commFrom, to: commTo } : { period: 'month' })
+      : { period: commPeriod };
+  const { data: commData } = useQuery({
+    queryKey: ['vendor-commission', id, commissionParams],
+    queryFn: async () => (await api.get(`/admin/vendors/${id}/commission`, { params: commissionParams })).data,
+    enabled: Boolean(id),
+  });
+
   if (isLoading) {
     return (
       <section className="space-y-4 p-6">
@@ -619,9 +684,9 @@ export const VendorDetailsPage = () => {
   }
 
   const v: any           = data.vendor;
+  const origin: any      = data.origin ?? {};
   const stats            = data.stats ?? {};
   const locations: any[] = v.locations ?? [];
-  const commissionBySpace: any[] = data.commissionBySpace ?? [];
   const bookings: any[]  = data.bookings ?? [];
   const statusCls        = VENDOR_STATUS_CLS[v.status] ?? VENDOR_STATUS_CLS.INACTIVE;
 
@@ -677,22 +742,28 @@ export const VendorDetailsPage = () => {
 
       {/* ── Commission ── */}
       <div className="card border-amber-200 bg-amber-50/40 p-5 dark:border-amber-900/40 dark:bg-amber-900/10">
-        <div className="mb-3 flex items-center gap-2">
-          <Percent className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-          <h2 className="text-sm font-semibold">Commission Owed by this Vendor</h2>
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Percent className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <h2 className="text-sm font-semibold">Commission Owed by this Vendor</h2>
+          </div>
+          <CommissionFilterBar
+            period={commPeriod} onPeriod={setCommPeriod}
+            from={commFrom} to={commTo} onFrom={setCommFrom} onTo={setCommTo}
+          />
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <StatTile icon={<Percent className="h-4 w-4 text-amber-500" />}
-                    label="Total Commission" value={fmtINR(stats.commissionTotal ?? 0)} />
+                    label="Total Commission" value={fmtINR(commData?.total ?? 0)} />
           <StatTile icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-                    label="Received" value={fmtINR(stats.commissionPaid ?? 0)} />
+                    label="Received" value={fmtINR(commData?.paid ?? 0)} />
           <StatTile icon={<Clock className="h-4 w-4 text-red-500" />}
-                    label="Pending Collection" value={fmtINR(stats.commissionPending ?? 0)} />
+                    label="Pending Collection" value={fmtINR(commData?.pending ?? 0)} />
         </div>
 
         {/* Per-space breakdown */}
-        {commissionBySpace.length > 0 && (
+        {(commData?.bySpace?.length ?? 0) > 0 && (
           <div className="mt-4 overflow-x-auto rounded-lg border border-amber-100 bg-white dark:border-amber-900/30 dark:bg-slate-900">
             <table className="table">
               <thead>
@@ -704,7 +775,7 @@ export const VendorDetailsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {commissionBySpace.map((s) => (
+                {(commData?.bySpace ?? []).map((s: any) => (
                   <tr key={s.locationId}>
                     <td className="text-sm">
                       <p className="font-medium">{s.name}</p>
@@ -738,25 +809,36 @@ export const VendorDetailsPage = () => {
             {v.gstNumber   && <DetailRow icon={<ShieldCheck className="h-3.5 w-3.5" />} label="GST Number" value={v.gstNumber} mono />}
             {v.panNumber   && <DetailRow icon={<ShieldCheck className="h-3.5 w-3.5" />} label="PAN Number" value={v.panNumber} mono />}
             {v.payoutUpiId && <DetailRow icon={<IndianRupee className="h-3.5 w-3.5" />} label="Payout UPI" value={v.payoutUpiId} mono />}
-            {v.aadharDocUrl && (
-              <DetailRow
-                icon={<ShieldCheck className="h-3.5 w-3.5" />}
-                label="Aadhar Doc"
-                value={
+            <DetailRow
+              icon={<ShieldCheck className={`h-3.5 w-3.5 ${v.aadharDocUrl ? '' : 'text-amber-500'}`} />}
+              label="Aadhar Doc"
+              value={
+                v.aadharDocUrl ? (
                   <a href={v.aadharDocUrl} target="_blank" rel="noreferrer"
                      className="text-brand-600 underline dark:text-brand-400">
                     View document
                   </a>
-                }
-              />
-            )}
-            {/* ── Status timeline — joined / approved / rejected / deactivated ── */}
+                ) : (
+                  <AadharUpload vendorId={v.id} />
+                )
+              }
+            />
+            {/* ── Status timeline — created / approved / rejected / deactivated ── */}
             {/* "Joined" is already shown in the page header subtitle, no duplicate here. */}
+            <DetailRow
+              icon={<UserPlus className="h-3.5 w-3.5 text-slate-500" />}
+              label="Account created"
+              value={
+                origin.createdVia === 'ADMIN'
+                  ? `By admin${origin.createdBy?.fullName ? ` — ${origin.createdBy.fullName}` : ''} · ${fmtDate(origin.createdAt ?? v.createdAt)}`
+                  : `Self-registration · ${fmtDate(origin.createdAt ?? v.createdAt)}`
+              }
+            />
             {v.approvedAt && (
               <DetailRow
                 icon={<CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
                 label="Approved on"
-                value={fmtDate(v.approvedAt)}
+                value={`${fmtDate(v.approvedAt)}${origin.approvedBy?.fullName ? ` · by ${origin.approvedBy.fullName}` : ''}`}
               />
             )}
             {v.rejectedAt && (
@@ -770,7 +852,7 @@ export const VendorDetailsPage = () => {
               <DetailRow
                 icon={<Clock className="h-3.5 w-3.5 text-slate-500" />}
                 label="Stopped on"
-                value={fmtDate(v.deactivatedAt)}
+                value={`${fmtDate(v.deactivatedAt)}${origin.deactivatedBy?.fullName ? ` · by ${origin.deactivatedBy.fullName}` : ''}`}
               />
             )}
             {v.status === 'REJECTED' && v.rejectionNote && (
@@ -847,6 +929,48 @@ export const VendorDetailsPage = () => {
 };
 
 // ── Presentational pieces ────────────────────────────────────────────────────
+// Shown in place of the "View document" link when a vendor was approved without
+// an Aadhaar document. Lets an admin upload one; the parent query refetches and
+// the row flips to "View document" automatically.
+const AadharUpload = ({ vendorId }: { vendorId: string }) => {
+  const qc = useQueryClient();
+  const ref = useRef<HTMLInputElement>(null);
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post<{ url: string }>('/uploads/documents', fd);
+      await api.patch(`/admin/vendors/${vendorId}`, { aadharDocUrl: data.url });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vendor-details', vendorId] }),
+  });
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+        Aadhaar not uploaded
+      </span>
+      <input
+        ref={ref}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ''; }}
+      />
+      <button
+        type="button"
+        onClick={() => ref.current?.click()}
+        disabled={upload.isPending}
+        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+      >
+        <Upload className="h-3 w-3" />
+        {upload.isPending ? 'Uploading…' : 'Upload Aadhaar'}
+      </button>
+      {upload.isError && <span className="text-xs text-red-500">Upload failed</span>}
+    </div>
+  );
+};
+
 const StatTile = ({
   icon, label, value, sub,
 }: { icon: React.ReactNode; label: string; value: number | string; sub?: string }) => (

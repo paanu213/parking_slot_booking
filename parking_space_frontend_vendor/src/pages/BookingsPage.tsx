@@ -384,7 +384,8 @@ const EditGuestModal = ({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-500">Customer Phone *</label>
-              <input className="input w-full" placeholder="Phone number" required {...register('guestPhone')} />
+              <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" required
+                     {...register('guestPhone', { onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); } })} />
             </div>
           </div>
 
@@ -613,6 +614,57 @@ const SummaryCard = ({
   </div>
 );
 
+// ── Commission date-range filter ───────────────────────────────────────────────
+export type CommissionPeriod = 'day' | 'month' | 'year' | 'fy' | 'custom';
+
+const COMMISSION_PERIODS: { key: CommissionPeriod; label: string }[] = [
+  { key: 'day',   label: 'Today' },
+  { key: 'month', label: 'Month' },
+  { key: 'year',  label: 'Year' },
+  { key: 'fy',    label: 'FY' },
+  { key: 'custom', label: 'Custom' },
+];
+
+const CommissionFilterBar = ({
+  period, onPeriod, from, to, onFrom, onTo,
+}: {
+  period: CommissionPeriod;
+  onPeriod: (p: CommissionPeriod) => void;
+  from: string;
+  to: string;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
+}) => (
+  <div className="flex flex-col items-end gap-2">
+    <div className="flex flex-wrap gap-1">
+      {COMMISSION_PERIODS.map(({ key, label }) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onPeriod(key)}
+          className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${
+            period === key
+              ? 'bg-amber-500 text-white'
+              : 'bg-white text-slate-600 hover:bg-amber-100 dark:bg-slate-800 dark:text-slate-300'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+    {period === 'custom' && (
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-slate-400">From</span>
+        <input type="date" value={from} onChange={(e) => onFrom(e.target.value)}
+               className="input w-36 text-xs sm:w-40" />
+        <span className="text-slate-400">→</span>
+        <input type="date" value={to} onChange={(e) => onTo(e.target.value)}
+               className="input w-36 text-xs sm:w-40" />
+      </div>
+    )}
+  </div>
+);
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export const BookingsPage = () => {
   const qc = useQueryClient();
@@ -620,6 +672,9 @@ export const BookingsPage = () => {
   const [cancelTarget,      setCancelTarget]      = useState<Booking | null>(null);
   const [editTarget,        setEditTarget]        = useState<Booking | null>(null);
   const [planFilter,        setPlanFilter]        = useState<'ALL' | 'HOURLY' | 'MONTHLY'>('ALL');
+  const [commPeriod,        setCommPeriod]        = useState<CommissionPeriod>('month');
+  const [commFrom,          setCommFrom]          = useState('');
+  const [commTo,            setCommTo]            = useState('');
 
   const { data: bookingsData, isLoading } = useQuery({
     queryKey: ['vendor-bookings'],
@@ -661,9 +716,14 @@ export const BookingsPage = () => {
     },
   });
 
+  const commissionParams =
+    commPeriod === 'custom'
+      ? (commFrom && commTo ? { period: 'custom', from: commFrom, to: commTo } : { period: 'month' })
+      : { period: commPeriod };
   const { data: commissionData } = useQuery({
-    queryKey: ['vendor-commission-summary'],
-    queryFn: async () => (await api.get('/vendor/commission/summary')).data,
+    queryKey: ['vendor-commission-summary', commissionParams],
+    queryFn: async () =>
+      (await api.get('/vendor/commission/summary', { params: commissionParams })).data,
   });
 
   const approvedSpaces: Space[] = (spacesData?.items ?? []).filter(
@@ -741,12 +801,22 @@ export const BookingsPage = () => {
         {/* Commission payable to company */}
         {!isLoading && bookings.length > 0 && commissionData && (
           <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/40 dark:bg-amber-900/10">
-            <div className="mb-3 flex items-center gap-2">
-              <Percent className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              <h2 className="text-sm font-semibold">Commission Payable to Company</h2>
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                {commissionData.rate}%
-              </span>
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Percent className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <h2 className="text-sm font-semibold">Commission Payable to Company</h2>
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                  {commissionData.rate}%
+                </span>
+              </div>
+              <CommissionFilterBar
+                period={commPeriod}
+                onPeriod={setCommPeriod}
+                from={commFrom}
+                to={commTo}
+                onFrom={setCommFrom}
+                onTo={setCommTo}
+              />
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <SummaryCard
@@ -1196,7 +1266,8 @@ const DirectBookingFormFields = ({
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">Customer Phone *</label>
-          <input className="input w-full" placeholder="Phone number" required {...register('guestPhone')} />
+          <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" required
+                 {...register('guestPhone', { onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); } })} />
         </div>
       </div>
 

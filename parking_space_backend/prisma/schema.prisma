@@ -39,6 +39,13 @@ enum VendorStatus {
   INACTIVE
 }
 
+// How a vendor account came to exist: the partner registered themselves,
+// or an admin created the account on their behalf.
+enum VendorCreationSource {
+  SELF_REGISTRATION
+  ADMIN
+}
+
 enum SlotStatus {
   ACTIVE
   INACTIVE
@@ -134,6 +141,9 @@ model Vendor {
   contactPhone  String
   address       String
   status        VendorStatus  @default(PENDING)
+  // How this vendor account was created, and by which admin (null for self-registration).
+  createdVia    VendorCreationSource @default(SELF_REGISTRATION)
+  createdById   String?
   approvedAt    DateTime?
   approvedById  String?
   // Set when an admin rejects the vendor. rejectionNote stores the reason shown to them.
@@ -162,6 +172,7 @@ model ParkingLocation {
   name        String
   description String?  @db.Text
   addressLine String
+  landmark    String?
   city        String
   state       String
   pincode     String
