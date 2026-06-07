@@ -85,9 +85,13 @@ export const RegisterPage = () => {
             </label>
             <input
               type="tel"
+              inputMode="numeric"
+              maxLength={10}
               className="input w-full"
-              placeholder="+91 98765 43210"
-              {...register('phone')}
+              placeholder="10-digit mobile"
+              {...register('phone', {
+                onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); },
+              })}
             />
           </div>
           <div>

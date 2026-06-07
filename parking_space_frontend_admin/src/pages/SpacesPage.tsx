@@ -520,6 +520,9 @@ export const SpacesPage = () => {
 
                     {/* 3-dot kebab — portal-based, always above table */}
                     <KebabMenu>
+                      <MenuItem onClick={() => navigate(`/spaces/${space.id}`)}>
+                        View Details
+                      </MenuItem>
                       <MenuItem onClick={() => navigate(`/spaces/${space.id}/edit`)}>
                         Edit Space
                       </MenuItem>

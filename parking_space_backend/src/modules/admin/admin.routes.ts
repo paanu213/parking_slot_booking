@@ -7,6 +7,7 @@ import { hashPassword } from '../../lib/password.js';
 import { BadRequest, NotFound } from '../../lib/http.js';
 import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, setCommissionRate } from '../../lib/commission.js';
+import { resolveDateRange } from '../../lib/dateRange.js';
 import { storeIconBuffer, storeImageBuffer, deleteImageByUrl, storeDocumentBuffer, deleteDocumentByUrl } from '../../lib/images.js';
 import { imageUpload, docUpload } from '../uploads/uploads.routes.js';
 
@@ -226,8 +227,31 @@ r.get('/vendors/:id', async (req, res, next) => {
       commissionBySpace.set(locId, row);
     }
 
+    // Resolve the admin users behind createdById / approvedById / deactivatedById
+    // so the UI can show "created by <admin>" rather than a raw id.
+    const adminIds = [vendor.createdById, vendor.approvedById, vendor.deactivatedById].filter(
+      (id): id is string => Boolean(id),
+    );
+    const adminUsers = adminIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: Array.from(new Set(adminIds)) } },
+          select: { id: true, fullName: true, email: true },
+        })
+      : [];
+    const adminById = new Map(adminUsers.map((u) => [u.id, u]));
+    const origin = {
+      createdVia:     vendor.createdVia,
+      createdAt:      vendor.createdAt,
+      createdBy:      vendor.createdById ? adminById.get(vendor.createdById) ?? null : null,
+      approvedAt:     vendor.approvedAt,
+      approvedBy:     vendor.approvedById ? adminById.get(vendor.approvedById) ?? null : null,
+      deactivatedAt:  vendor.deactivatedAt,
+      deactivatedBy:  vendor.deactivatedById ? adminById.get(vendor.deactivatedById) ?? null : null,
+    };
+
     res.json({
       vendor,
+      origin,
       stats: {
         spaces:            vendor.locations.length,
         slots:             vendor.locations.reduce((sum, l) => sum + l.slots.length, 0),
@@ -253,6 +277,55 @@ r.get('/vendors/:id', async (req, res, next) => {
       }),
       // Most-recent bookings across this vendor's slots (up to 50, newest first)
       bookings: recentBookings,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Commission owed by a single vendor, filtered by a date range
+// (?period=day|month|year|fy|custom[&from&to]). Default = current month.
+r.get('/vendors/:id/commission', async (req, res, next) => {
+  try {
+    const range = resolveDateRange(
+      req.query.period as string | undefined,
+      req.query.from   as string | undefined,
+      req.query.to     as string | undefined,
+    );
+    const rows = await prisma.booking.findMany({
+      where: {
+        status: { in: ['CONFIRMED', 'COMPLETED'] },
+        slot:   { location: { vendor: { id: req.params.id } } },
+        ...(range ? { createdAt: range } : {}),
+      },
+      select: {
+        commissionAmount: true,
+        commissionStatus: true,
+        slot: { select: { location: { select: { id: true, name: true, city: true } } } },
+      },
+    });
+
+    const bySpace = new Map<string, { locationId: string; name: string; city: string; total: number; paid: number }>();
+    let total = 0;
+    let paid  = 0;
+    for (const b of rows) {
+      const amt = Number(b.commissionAmount);
+      total += amt;
+      if (b.commissionStatus === 'PAID') paid += amt;
+      const loc = b.slot?.location;
+      if (!loc) continue;
+      const row = bySpace.get(loc.id) ?? { locationId: loc.id, name: loc.name, city: loc.city, total: 0, paid: 0 };
+      row.total += amt;
+      if (b.commissionStatus === 'PAID') row.paid += amt;
+      bySpace.set(loc.id, row);
+    }
+
+    res.json({
+      total,
+      paid,
+      pending: total - paid,
+      bookings: rows.length,
+      bySpace: [...bySpace.values()].map((s) => ({ ...s, pending: s.total - s.paid })),
     });
   } catch (e) {
     next(e);
@@ -400,6 +473,7 @@ r.post('/vendors', validate(createVendorSchema), async (req, res) => {
           aadharNumber: aadharNumber ?? null,
           aadharDocUrl: aadharDocUrl ?? null,
           status: 'APPROVED', approvedAt: new Date(),
+          createdVia: 'ADMIN', createdById: req.user!.sub,
         },
       },
     },
@@ -491,6 +565,73 @@ r.get('/spaces/:id', async (req, res, next) => {
   }
 });
 
+// Single space — enriched detail for the admin Space Details page.
+// Space + vendor + aggregate booking / revenue / commission stats + recent history.
+r.get('/spaces/:id/details', async (req, res, next) => {
+  try {
+    const space = await prisma.parkingLocation.findUniqueOrThrow({
+      where: { id: req.params.id },
+      include: {
+        vendor: { include: { user: { select: { fullName: true, email: true, phone: true, status: true } } } },
+        images: { orderBy: { sortOrder: 'asc' } },
+        slots:  { orderBy: { createdAt: 'asc' } },
+        amenities: { include: { amenity: true } },
+      },
+    });
+
+    const slotFilter = { slot: { locationId: space.id } } as const;
+    const [bookingsTotal, bookingsConfirmed, bookingsCancelled, revenueAgg, commissionRows, recentBookings] =
+      await Promise.all([
+        prisma.booking.count({ where: slotFilter }),
+        prisma.booking.count({ where: { ...slotFilter, status: 'CONFIRMED' } }),
+        prisma.booking.count({ where: { ...slotFilter, status: 'CANCELLED' } }),
+        prisma.booking.aggregate({
+          _sum: { totalAmount: true },
+          where: { ...slotFilter, status: { in: ['CONFIRMED', 'COMPLETED'] } },
+        }),
+        prisma.booking.findMany({
+          where: { ...slotFilter, status: { in: ['CONFIRMED', 'COMPLETED'] } },
+          select: { commissionAmount: true, commissionStatus: true },
+        }),
+        prisma.booking.findMany({
+          where: slotFilter,
+          include: {
+            user: { select: { id: true, fullName: true, email: true, phone: true } },
+            slot: { select: { id: true, code: true, vehicleType: true } },
+            payments: { select: { status: true, amount: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+        }),
+      ]);
+
+    let commissionTotal = 0;
+    let commissionPaid  = 0;
+    for (const b of commissionRows) {
+      const amt = Number(b.commissionAmount);
+      commissionTotal += amt;
+      if (b.commissionStatus === 'PAID') commissionPaid += amt;
+    }
+
+    res.json({
+      space,
+      stats: {
+        slots:             space.slots.length,
+        bookingsTotal,
+        bookingsConfirmed,
+        bookingsCancelled,
+        revenue:           Number(revenueAgg._sum.totalAmount ?? 0),
+        commissionTotal,
+        commissionPaid,
+        commissionPending: commissionTotal - commissionPaid,
+      },
+      bookings: recentBookings,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 r.get('/spaces', async (req, res) => {
   const status   = req.query.status   as string | undefined;
   const vendorId = req.query.vendorId as string | undefined;
@@ -577,6 +718,7 @@ const updateSpaceSchema = z.object({
   name:        z.string().min(2).optional(),
   description: z.string().optional(),
   addressLine: z.string().min(3).optional(),
+  landmark:    z.string().max(160).nullish(),
   city:        z.string().min(2).optional(),
   state:       z.string().min(2).optional(),
   pincode:     z.string().length(6).optional(),
@@ -608,6 +750,7 @@ const createLocationSchema = z.object({
   vendorId:    z.string().min(1),
   name:        z.string().min(2),
   addressLine: z.string().min(3),
+  landmark:    z.string().max(160).optional(),
   city:        z.string().min(2),
   state:       z.string().min(2),
   pincode:     z.string().length(6),

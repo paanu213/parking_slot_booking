@@ -109,9 +109,13 @@ export const ProfilePage = () => {
                   <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
                     type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
                     className={cn('input w-full pl-9', errors.phone && 'border-rose-500')}
                     placeholder="10-digit mobile"
-                    {...register('phone')}
+                    {...register('phone', {
+                      onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); },
+                    })}
                   />
                 </div>
                 {errors.phone && <p className="mt-1 text-xs text-rose-600">{errors.phone.message}</p>}

@@ -94,9 +94,12 @@ export const ProfilePage = () => {
               <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 className="input w-full pl-9"
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Optional"
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                placeholder="10-digit mobile"
               />
             </div>
           </div>

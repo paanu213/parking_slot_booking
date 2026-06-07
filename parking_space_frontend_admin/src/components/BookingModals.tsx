@@ -232,7 +232,8 @@ export const EditBookingModal = ({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-500">Customer Phone *</label>
-              <input className="input w-full" placeholder="Phone number" required {...register('guestPhone')} />
+              <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" required
+                     {...register('guestPhone', { onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); } })} />
             </div>
           </div>
 

@@ -280,9 +280,19 @@ const Step1 = ({
         <label className="mb-1 block text-xs font-medium text-slate-500">Street Address *</label>
         <input
           className="input w-full"
-          placeholder="Building, street, landmark…"
+          placeholder="Building, street…"
           required
           {...register('addressLine')}
+        />
+      </div>
+
+      {/* Landmark */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-500">Landmark</label>
+        <input
+          className="input w-full"
+          placeholder="e.g. Near City Mall, opposite metro station"
+          {...register('landmark')}
         />
       </div>
 
@@ -833,6 +843,12 @@ const Step4 = ({
           <dt className="mb-0.5 text-xs text-slate-400">Street Address</dt>
           <dd>{spaceData.addressLine}</dd>
         </div>
+        {spaceData.landmark && (
+          <div className="col-span-2">
+            <dt className="mb-0.5 text-xs text-slate-400">Landmark</dt>
+            <dd>{spaceData.landmark}</dd>
+          </div>
+        )}
         <div>
           <dt className="mb-0.5 text-xs text-slate-400">Latitude</dt>
           <dd className="font-mono text-xs">{Number(spaceData.latitude).toFixed(6)}</dd>

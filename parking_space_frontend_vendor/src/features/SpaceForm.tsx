@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 export interface SpaceFormValues {
   name: string;
   addressLine: string;
+  landmark?: string;
   city: string;
   state: string;
   pincode: string;
@@ -189,7 +190,13 @@ export const SpaceForm = ({
       {/* Street address */}
       <div>
         <label className="mb-1 block text-xs font-medium text-slate-500">Street Address *</label>
-        <input className="input w-full" placeholder="Building, street, landmark…" required {...register('addressLine')} />
+        <input className="input w-full" placeholder="Building, street…" required {...register('addressLine')} />
+      </div>
+
+      {/* Landmark */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-500">Landmark</label>
+        <input className="input w-full" placeholder="e.g. Near City Mall, opposite metro station" {...register('landmark')} />
       </div>
 
       {/* Google Maps → lat/lng */}

@@ -270,6 +270,11 @@ export const ProfilePage = () => {
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [key]: e.target.value }));
 
+  // Phone fields: digits only, capped at 10.
+  const setPhone = (key: keyof EditForm) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [key]: e.target.value.replace(/\D/g, '').slice(0, 10) }));
+
   if (isLoading) {
     return (
       <section className="p-6">
@@ -385,7 +390,7 @@ export const ProfilePage = () => {
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-500">Personal Phone</label>
-                  <input className="input w-full" placeholder="Personal contact number" value={form.phone} onChange={set('phone')} />
+                  <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={form.phone} onChange={setPhone('phone')} />
                 </div>
               </div>
               <div>
@@ -409,7 +414,7 @@ export const ProfilePage = () => {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-500">Business Contact Phone</label>
-                  <input className="input w-full" value={form.contactPhone} onChange={set('contactPhone')} />
+                  <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={form.contactPhone} onChange={setPhone('contactPhone')} />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-500">Address</label>

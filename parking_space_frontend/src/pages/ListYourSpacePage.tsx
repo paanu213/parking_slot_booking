@@ -250,11 +250,13 @@ export const ListYourSpacePage = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
+                    maxLength={10}
                     className={cn('input mt-1', errors.phone && 'border-rose-500')}
                     placeholder="10-digit mobile"
                     {...register('phone', {
                       required: 'Required',
-                      minLength: { value: 7, message: 'Too short' },
+                      minLength: { value: 10, message: 'Enter a 10-digit number' },
+                      onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); },
                     })}
                   />
                 </Field>
