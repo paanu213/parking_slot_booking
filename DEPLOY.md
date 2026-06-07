@@ -250,35 +250,35 @@ You push to main
        │
        ├─► [GitHub Actions] Build customer site → rsync to Hostinger
        ├─► [Hostinger Node.js manager] git pull → build → prisma migrate deploy → restart API
-       └─► [Vercel] rebuild prod admin + prod vendor projects
+       └─► [Vercel] admin + vendor projects build PRODUCTION (→ admin/vendor.autosahay.com)
 
 You push to stage
        │
-       └─► [Vercel] rebuild stage admin + stage vendor + stage customer projects
+       └─► [Vercel] admin + vendor + customer projects build the STAGE branch
+              (→ stageadmin / stagevendor / stagecustomer.autosahay.com branch domains)
 ```
 
 ---
 
-## Vercel — admin + vendor (prod & stage) + stage customer
+## Vercel — admin + vendor + stage customer (3 projects, branch-based)
 
-Create **one Vercel project per app per environment**. They all point at the same
-GitHub repo and differ only by **Root Directory** + **Production Branch** + **Domain**.
+Use **one Vercel project per app** (3 total), not one per environment. Each project
+serves **production from `main`** and a **stable stage URL from the `stage` branch**
+via a branch-assigned domain. This is fewer projects to manage and makes promotion
+"just merge `stage` → `main`".
 
-| Vercel project | Root Directory | Production Branch | Suggested domain |
-|----------------|----------------|-------------------|------------------|
-| prod admin     | `parking_space_frontend_admin`  | `main`  | `admin.autosahay.com` |
-| prod vendor    | `parking_space_frontend_vendor` | `main`  | `vendor.autosahay.com` |
-| stage admin    | `parking_space_frontend_admin`  | `stage` | `stageadmin.autosahay.com` |
-| stage vendor   | `parking_space_frontend_vendor` | `stage` | `stagevendor.autosahay.com` |
-| stage customer | `parking_space_frontend`        | `stage` | `stagecustomer.autosahay.com` |
+| Vercel project | Root Directory | `main` → Production | `stage` → Preview (branch domain) |
+|----------------|----------------|---------------------|-----------------------------------|
+| **admin**    | `parking_space_frontend_admin`  | `admin.autosahay.com`  | `stageadmin.autosahay.com`  |
+| **vendor**   | `parking_space_frontend_vendor` | `vendor.autosahay.com` | `stagevendor.autosahay.com` |
+| **customer** | `parking_space_frontend`        | *(none — prod is Hostinger)* | `stagecustomer.autosahay.com` |
 
-> Production **customer** is **not** on Vercel — it's on Hostinger (`main`).
+> The **customer** project is **stage-only** on Vercel — production customer lives on
+> Hostinger (`main`, via GitHub Actions). Set its **Production Branch = `stage`** so
+> the project has something to build, and attach `stagecustomer.autosahay.com` as its
+> production domain. Do **not** point a prod customer domain here.
 
-For **every** project, set the same basics:
-
-**Settings → Git → Production Branch** — `main` or `stage` per the table.
-(Other branches make harmless "preview" builds; disable via *Ignored Build Step*
-if you want.)
+For **every** project:
 
 **Settings → Build & Development**
 - **Root Directory:** the app folder per the table.
@@ -289,14 +289,29 @@ if you want.)
 - Each app already has a `vercel.json` with the SPA fallback rewrite, so deep
   links like `/login` work.
 
-**Settings → Environment Variables** (all projects)
-| Name | Value |
-|------|-------|
-| `VITE_API_URL` | `https://api.autosahay.com/api` |
+**Settings → Git → Production Branch** — `main` for admin & vendor; `stage` for customer.
 
-> The customer project also reads `VITE_VENDOR_URL` (footer "Partner portal"
-> link) — set it to the prod vendor URL, `https://vendor.autosahay.com`.
-> Env-var changes only take effect on the **next deploy** — redeploy after adding.
+**Settings → Domains** — assign the stage subdomain to the `stage` branch:
+1. Add `admin.autosahay.com` → it auto-attaches to Production (`main`).
+2. Add `stageadmin.autosahay.com` → click it → set **Git Branch = `stage`**. This
+   pins a stable URL that always serves the latest `stage` commit (instead of a
+   random per-commit `*.vercel.app` preview URL). Same pattern for vendor/customer.
+
+**Settings → Environment Variables** — ⚠️ tick **BOTH `Production` and `Preview`** scopes
+for every variable. Vite bakes env vars at build time, and Vercel builds the `stage`
+branch with **Preview**-scoped vars; if you only set Production, stage builds ship the
+localhost fallback.
+| Name | Value | Scopes |
+|------|-------|--------|
+| `VITE_API_URL` | `https://api.autosahay.com/api` | Production + Preview |
+| `VITE_VENDOR_URL` *(customer project only)* | `https://vendor.autosahay.com` | Production + Preview |
+
+> `VITE_ADMIN_URL` is **not used by any app** — don't add it (delete it if present).
+> Env-var changes only take effect on the **next deploy** — redeploy after editing.
+
+**Settings → Deployment Protection** — turn **Vercel Authentication OFF**. On Pro it's
+on by default for Preview deployments, which would put a Vercel login wall in front of
+your `stage*.autosahay.com` URLs.
 
 ### Domains must be `autosahay.com` subdomains (auth requirement)
 
@@ -305,6 +320,11 @@ served from an `autosahay.com` subdomain to be *same-site* with
 `api.autosahay.com`. A bare `*.vercel.app` URL is cross-site → the browser won't
 send the session cookie → login silently fails. Add each domain under
 **Settings → Domains** and point its DNS (CNAME) at Vercel.
+
+> **Cutover note:** `admin.autosahay.com` / `vendor.autosahay.com` currently resolve to
+> Hostinger. Moving them to Vercel means repointing their DNS (CNAME) to Vercel — a
+> domain can only target one host. The old Hostinger admin/vendor folders then go dead
+> (harmless). Customer + backend DNS stay on Hostinger, untouched.
 
 ### Backend must allow every origin
 
