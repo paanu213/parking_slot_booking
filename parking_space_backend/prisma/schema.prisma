@@ -3,6 +3,13 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Hostinger runs CloudLinux (RHEL-based); Prisma's distro auto-detection fails
+  // ("Distro is undefined") and falls back to the debian engine, whose in-process
+  // library engine panics on this host ("PANIC: timer has gone away"). Pin the
+  // real targets and use the binary engine (separate process, clean runtime) to
+  // avoid that crash. Keep "native" so local dev still works.
+  engineType    = "binary"
+  binaryTargets = ["native", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {
