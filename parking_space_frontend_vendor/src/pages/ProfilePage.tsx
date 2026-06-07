@@ -17,6 +17,7 @@ interface VendorProfile {
   payoutUpiId?: string | null;
   aadharNumber?: string | null;
   aadharDocUrl?: string | null;
+  aadharVerifiedAt?: string | null;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'INACTIVE';
   rejectionNote?: string | null;
   pendingProfileData?: string | null;
@@ -249,12 +250,13 @@ export const ProfilePage = () => {
     onError: (e: any) => setFormErr(e?.response?.data?.error?.message ?? e?.response?.data?.message ?? 'Failed to save. Please try again.'),
   });
 
-  // Inline KYC save mutation
+  // Inline KYC save mutation — uses the dedicated Aadhaar endpoint so the doc is
+  // stored immediately as "pending verification" for an admin to approve.
   const saveKyc = useMutation({
     mutationFn: () =>
-      api.put('/vendor/me', {
+      api.post('/vendor/me/aadhaar', {
         aadharNumber: kycNumber.trim() || undefined,
-        aadharDocUrl: kycDocUrl.trim() || undefined,
+        aadharDocUrl: kycDocUrl.trim(),
       }).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['vendor-me'] });
@@ -293,9 +295,12 @@ export const ProfilePage = () => {
   const hasPending     = Boolean(profile.pendingProfileData);
   const pendingData    = hasPending ? (JSON.parse(profile.pendingProfileData!) as Record<string, string>) : null;
   const canEdit        = isApproved;
-  const hasApprovedKyc = Boolean(profile.aadharNumber || profile.aadharDocUrl);
-  // pendingData may only contain KYC fields (from inline KYC form) or all profile fields (from full edit)
-  const pendingKyc     = Boolean(pendingData && (pendingData.aadharNumber || pendingData.aadharDocUrl));
+  // Aadhaar verification state — single source of truth is the vendor record.
+  const hasAadharDoc      = Boolean(profile.aadharDocUrl);
+  const aadharVerified    = Boolean(profile.aadharDocUrl && profile.aadharVerifiedAt);
+  const aadharPendingVerify = Boolean(profile.aadharDocUrl && !profile.aadharVerifiedAt);
+  const hasApprovedKyc = hasAadharDoc;
+  const pendingKyc     = aadharPendingVerify;
 
   return (
     <section className="mx-auto max-w-2xl p-6">
@@ -531,8 +536,8 @@ export const ProfilePage = () => {
                 <h2 className="text-sm font-semibold">KYC Details</h2>
               </div>
               <div className="flex items-center gap-2">
-                {/* "Add KYC" — shown when no approved KYC, no pending KYC, not already open */}
-                {canEdit && !hasApprovedKyc && !pendingKyc && !kycOpen && (
+                {/* "Add KYC" — shown when no Aadhaar doc on record */}
+                {canEdit && !hasAadharDoc && !kycOpen && (
                   <button
                     onClick={() => { setKycOpen(true); setKycNumber(''); setKycDocUrl(''); setKycErr(''); }}
                     className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-900/20 transition"
@@ -540,12 +545,12 @@ export const ProfilePage = () => {
                     <Plus className="h-3.5 w-3.5" /> Add KYC
                   </button>
                 )}
-                {/* "Modify" — shown when KYC is pending review and form is closed */}
-                {canEdit && pendingKyc && !kycOpen && (
+                {/* "Modify" — re-upload while pending verification */}
+                {canEdit && aadharPendingVerify && !kycOpen && (
                   <button
                     onClick={() => {
-                      setKycNumber(pendingData?.aadharNumber ?? '');
-                      setKycDocUrl(pendingData?.aadharDocUrl ?? '');
+                      setKycNumber(profile.aadharNumber ?? '');
+                      setKycDocUrl(profile.aadharDocUrl ?? '');
                       setKycErr('');
                       setKycOpen(true);
                     }}
@@ -559,66 +564,46 @@ export const ProfilePage = () => {
 
             <div className="space-y-3 p-5">
 
-              {/* ── Approved KYC — read-only ── */}
-              {hasApprovedKyc && (
+              {/* ── Aadhaar on record — verified or pending verification ── */}
+              {hasAadharDoc && (
                 <>
                   {profile.aadharNumber && (
                     <InfoRow label="Aadhar Number" value={profile.aadharNumber} mono />
                   )}
-                  {profile.aadharDocUrl && (
-                    <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                      <span className="w-36 shrink-0 text-xs text-slate-400">Aadhar Document</span>
-                      <a href={profile.aadharDocUrl} target="_blank" rel="noreferrer"
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
+                    <span className="w-36 shrink-0 text-xs text-slate-400">Aadhar Document</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a href={profile.aadharDocUrl!} target="_blank" rel="noreferrer"
                         className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 underline dark:text-brand-400">
-                        {profile.aadharDocUrl.endsWith('.pdf')
+                        {profile.aadharDocUrl!.endsWith('.pdf')
                           ? <><FileText className="h-3.5 w-3.5" /> View PDF</>
                           : <><CheckCircle2 className="h-3.5 w-3.5" /> View Image</>}
                       </a>
+                      {aadharVerified ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                          <CheckCircle2 className="h-3 w-3" /> Verified
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                          <AlertCircle className="h-3 w-3" /> Pending verification
+                        </span>
+                      )}
                     </div>
+                  </div>
+                  {aadharPendingVerify && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      Awaiting admin verification (usually 1–2 business days). You can re-upload via <strong>Modify</strong> above.
+                    </p>
                   )}
                 </>
               )}
 
-              {/* ── Pending KYC — under review banner ── */}
-              {pendingKyc && !kycOpen && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/40 dark:bg-amber-900/10">
-                  {/* Status row */}
-                  <div className="mb-3 flex items-start gap-2">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                    <div>
-                      <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
-                        KYC details are being reviewed by admin
-                      </p>
-                      <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
-                        Please wait — this usually takes 1–2 business days. You can modify your submission while it's under review.
-                      </p>
-                    </div>
-                  </div>
-                  {/* Submitted values preview */}
-                  <div className="space-y-1.5 rounded-lg border border-amber-200 bg-white/60 px-3 py-2.5 text-xs dark:border-amber-800/30 dark:bg-black/20">
-                    <p className="mb-1.5 font-medium text-amber-700 dark:text-amber-400">Submitted details:</p>
-                    {pendingData?.aadharNumber && (
-                      <div className="flex gap-2">
-                        <span className="w-28 shrink-0 text-slate-400">Aadhar Number</span>
-                        <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{pendingData.aadharNumber}</span>
-                      </div>
-                    )}
-                    {pendingData?.aadharDocUrl && (
-                      <div className="flex gap-2">
-                        <span className="w-28 shrink-0 text-slate-400">Document</span>
-                        <a href={pendingData.aadharDocUrl} target="_blank" rel="noreferrer"
-                          className="font-medium text-brand-600 underline dark:text-brand-400">
-                          {pendingData.aadharDocUrl.endsWith('.pdf') ? 'View PDF' : 'View Image'}
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* ── No KYC at all — empty state ── */}
-              {!hasApprovedKyc && !pendingKyc && !kycOpen && (
+              {/* ── No Aadhaar on record — empty state ── */}
+              {!hasAadharDoc && !kycOpen && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                    Pending — not uploaded
+                  </span>
                   <ShieldCheck className="h-8 w-8 text-slate-200 dark:text-slate-700" />
                   <p className="text-sm font-medium text-slate-400">No KYC documents on record</p>
                   {canEdit
@@ -678,10 +663,10 @@ export const ProfilePage = () => {
                     </button>
                     <button
                       type="button"
-                      disabled={saveKyc.isPending || kycDocUploading || (!kycNumber.trim() && !kycDocUrl)}
+                      disabled={saveKyc.isPending || kycDocUploading || !kycDocUrl}
                       onClick={() => {
-                        if (!kycNumber.trim() && !kycDocUrl) {
-                          setKycErr('Please enter an Aadhar number or upload a document.');
+                        if (!kycDocUrl) {
+                          setKycErr('Please upload your Aadhaar document.');
                           return;
                         }
                         saveKyc.mutate();

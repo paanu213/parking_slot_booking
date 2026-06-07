@@ -163,6 +163,10 @@ model Vendor {
   payoutUpiId         String?
   aadharNumber        String?
   aadharDocUrl        String?
+  // Aadhaar verification: a doc is "pending verification" once uploaded until an
+  // admin approves it (sets verifiedAt). Admin direct-uploads are auto-verified.
+  aadharVerifiedAt    DateTime?
+  aadharVerifiedById  String?
   pendingProfileData  String?       @db.Text
   createdAt           DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
