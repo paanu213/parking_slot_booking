@@ -7,7 +7,7 @@ import { BadRequest, Conflict, Forbidden, NotFound } from '../../lib/http.js';
 import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, commissionFor } from '../../lib/commission.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
-import { deleteImageByUrl, storeImageBuffer } from '../../lib/images.js';
+import { deleteImageByUrl, storeImageBuffer, deleteDocumentByUrl } from '../../lib/images.js';
 import { imageUpload } from '../uploads/uploads.routes.js';
 
 const r = Router();
@@ -81,6 +81,35 @@ r.put('/me', validate(updateProfileSchema), async (req, res, next) => {
     // Return fresh vendor with user
     const updated = await prisma.vendor.findUniqueOrThrow({
       where: { userId: req.user!.sub },
+      include: { user: { select: { fullName: true, email: true, phone: true, avatarUrl: true } } },
+    });
+    res.json(updated);
+  } catch (e) { next(e); }
+});
+
+// Aadhaar upload — works even after approval. Sets the doc directly (NOT via the
+// pendingProfileData edit flow) and resets verification to pending, so an admin
+// must approve it. Uploading a new doc re-enters the pending state.
+const aadhaarUploadSchema = z.object({
+  aadharNumber: z.string().max(20).optional(),
+  aadharDocUrl: z.string().url(),
+});
+
+r.post('/me/aadhaar', validate(aadhaarUploadSchema), async (req, res, next) => {
+  try {
+    const vendor = await prisma.vendor.findUniqueOrThrow({ where: { userId: req.user!.sub } });
+    // Remove the previous doc from storage if it's being replaced.
+    if (vendor.aadharDocUrl && vendor.aadharDocUrl !== req.body.aadharDocUrl) {
+      await deleteDocumentByUrl(vendor.aadharDocUrl).catch(() => {});
+    }
+    const updated = await prisma.vendor.update({
+      where: { userId: req.user!.sub },
+      data: {
+        aadharNumber:       req.body.aadharNumber ?? vendor.aadharNumber,
+        aadharDocUrl:       req.body.aadharDocUrl,
+        aadharVerifiedAt:   null,
+        aadharVerifiedById: null,
+      },
       include: { user: { select: { fullName: true, email: true, phone: true, avatarUrl: true } } },
     });
     res.json(updated);

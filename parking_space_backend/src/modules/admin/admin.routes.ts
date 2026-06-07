@@ -430,15 +430,57 @@ r.patch('/vendors/:id', validate(updateVendorSchema), async (req, res, next) => 
       await prisma.user.update({ where: { id: current.user.id }, data: userUpdate });
     }
 
+    // An admin uploading the doc directly counts as verified immediately.
+    const verifyStamp = vendorData.aadharDocUrl
+      ? { aadharVerifiedAt: new Date(), aadharVerifiedById: req.user!.sub }
+      : {};
     const vendor = await prisma.vendor.update({
       where: { id: req.params.id },
-      data:  vendorData,
+      data:  { ...vendorData, ...verifyStamp },
       include: { user: { select: { fullName: true, email: true, phone: true, status: true } } },
     });
     await prisma.auditLog.create({
       data: { actorId: req.user!.sub, action: 'VENDOR_EDIT', entity: 'Vendor', entityId: vendor.id },
     });
     res.json(vendor);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Approve a vendor-submitted Aadhaar doc (marks it verified).
+r.post('/vendors/:id/aadhaar/approve', async (req, res, next) => {
+  try {
+    const vendor = await prisma.vendor.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (!vendor.aadharDocUrl) throw BadRequest('No Aadhaar document to verify');
+    const updated = await prisma.vendor.update({
+      where: { id: req.params.id },
+      data: { aadharVerifiedAt: new Date(), aadharVerifiedById: req.user!.sub },
+      include: { user: { select: { fullName: true, email: true, phone: true, status: true } } },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'VENDOR_AADHAAR_APPROVE', entity: 'Vendor', entityId: updated.id },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Reject a vendor-submitted Aadhaar doc — removes it so the vendor must re-upload.
+r.post('/vendors/:id/aadhaar/reject', async (req, res, next) => {
+  try {
+    const vendor = await prisma.vendor.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (vendor.aadharDocUrl) await deleteDocumentByUrl(vendor.aadharDocUrl).catch(() => {});
+    const updated = await prisma.vendor.update({
+      where: { id: req.params.id },
+      data: { aadharDocUrl: null, aadharVerifiedAt: null, aadharVerifiedById: null },
+      include: { user: { select: { fullName: true, email: true, phone: true, status: true } } },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: 'VENDOR_AADHAAR_REJECT', entity: 'Vendor', entityId: updated.id },
+    });
+    res.json(updated);
   } catch (e) {
     next(e);
   }
@@ -472,6 +514,9 @@ r.post('/vendors', validate(createVendorSchema), async (req, res) => {
           businessName, contactPhone, address,
           aadharNumber: aadharNumber ?? null,
           aadharDocUrl: aadharDocUrl ?? null,
+          // Admin-provided doc at creation is auto-verified.
+          aadharVerifiedAt:   aadharDocUrl ? new Date() : null,
+          aadharVerifiedById: aadharDocUrl ? req.user!.sub : null,
           status: 'APPROVED', approvedAt: new Date(),
           createdVia: 'ADMIN', createdById: req.user!.sub,
         },
@@ -511,9 +556,14 @@ r.post('/vendors/:id/approve-profile', async (req, res, next) => {
       await prisma.user.update({ where: { id: vendor.user.id }, data: userUpdate });
     }
 
+    // Approving a profile edit that includes a (new) Aadhaar doc verifies it.
+    const verifyStamp = vendorUpdate.aadharDocUrl
+      ? { aadharVerifiedAt: new Date(), aadharVerifiedById: req.user!.sub }
+      : {};
+
     const updated = await prisma.vendor.update({
       where: { id: req.params.id },
-      data: { ...vendorUpdate, pendingProfileData: null },
+      data: { ...vendorUpdate, ...verifyStamp, pendingProfileData: null },
       include: { user: { select: { fullName: true, email: true, phone: true, status: true } } },
     });
     await prisma.auditLog.create({
@@ -1687,17 +1737,44 @@ r.patch('/bookings/:id/commission', validate(commissionStatusSchema), async (req
 });
 
 // Commission overview for the admin dashboard / bookings page
-r.get('/commission/summary', async (_req, res, next) => {
+r.get('/commission/summary', async (req, res, next) => {
   try {
+    // Optional date filter (?period=day|month|year|fy|custom[&from&to]). When NO
+    // filter param is passed, return all-time (keeps the Bookings page summary intact).
+    const hasFilter = Boolean(req.query.period || req.query.from || req.query.to);
+    const range = hasFilter
+      ? resolveDateRange(req.query.period as string, req.query.from as string, req.query.to as string)
+      : null;
+
     // Only CONFIRMED / COMPLETED bookings represent real revenue & owed commission.
     const due = await prisma.booking.findMany({
-      where: { status: { in: ['CONFIRMED', 'COMPLETED'] } },
-      select: { commissionAmount: true, commissionStatus: true, totalAmount: true },
+      where: {
+        status: { in: ['CONFIRMED', 'COMPLETED'] },
+        ...(range ? { createdAt: range } : {}),
+      },
+      select: {
+        commissionAmount: true,
+        commissionStatus: true,
+        totalAmount: true,
+        slot: { select: { location: { select: { vendor: { select: { id: true, businessName: true } } } } } },
+      },
     });
     const totalCommission = due.reduce((s, b) => s + Number(b.commissionAmount), 0);
     const paidCommission  = due.filter((b) => b.commissionStatus === 'PAID')
       .reduce((s, b) => s + Number(b.commissionAmount), 0);
     const grossRevenue    = due.reduce((s, b) => s + Number(b.totalAmount), 0);
+
+    // Per-vendor breakdown — who owes what.
+    const byVendor = new Map<string, { vendorId: string; businessName: string; total: number; paid: number; bookings: number }>();
+    for (const b of due) {
+      const v = b.slot?.location?.vendor;
+      if (!v) continue;
+      const row = byVendor.get(v.id) ?? { vendorId: v.id, businessName: v.businessName, total: 0, paid: 0, bookings: 0 };
+      row.total    += Number(b.commissionAmount);
+      row.bookings += 1;
+      if (b.commissionStatus === 'PAID') row.paid += Number(b.commissionAmount);
+      byVendor.set(v.id, row);
+    }
 
     res.json({
       rate: await getCommissionRate(),
@@ -1706,6 +1783,9 @@ r.get('/commission/summary', async (_req, res, next) => {
       paidCommission,
       pendingCommission: totalCommission - paidCommission,
       bookings: due.length,
+      byVendor: [...byVendor.values()]
+        .map((r) => ({ ...r, pending: r.total - r.paid }))
+        .sort((a, b) => b.total - a.total),
     });
   } catch (e) {
     next(e);

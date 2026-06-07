@@ -10,7 +10,7 @@ import {
   Timer, Moon, Navigation, Car, Bike, Truck,
   CalendarCheck, Users, MapPin,
   TrendingUp, Activity, UploadCloud, FileText, AlertCircle,
-  XCircle, ChevronDown, CalendarRange, Search,
+  XCircle, ChevronDown, CalendarRange, Search, Percent, Wallet,
 } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -22,6 +22,7 @@ import { AdminsPage } from '@/pages/AdminsPage';
 import { SpacesPage } from '@/pages/SpacesPage';
 import { SpaceEditPage } from '@/pages/SpaceEditPage';
 import SpaceDetailsPage from '@/pages/SpaceDetailsPage';
+import CommissionsPage from '@/pages/CommissionsPage';
 import { AddVendorPage } from '@/pages/AddVendorPage';
 import { AddSpacePage } from '@/pages/AddSpacePage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -260,6 +261,13 @@ const Overview = () => {
       })).data,
     refetchInterval: 60_000,
     enabled: rangeKey !== 'custom' || (customStart !== '' && customEnd !== ''),
+  });
+
+  // Platform-wide commission (all-time) for the dashboard widget.
+  const { data: commission } = useQuery({
+    queryKey: ['admin-commission-overview'],
+    queryFn: async () => (await api.get('/admin/commission/summary')).data,
+    refetchInterval: 60_000,
   });
 
   const approve = useMutation({
@@ -503,6 +511,28 @@ const Overview = () => {
             />
           </div>
         )}
+      </div>
+
+      {/* ══ Commission (platform-wide, all-time) ══ */}
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Commission Owed by Vendors · All time
+          </p>
+          <Link to="/commissions" className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">
+            View details →
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard label="Total Commission" value={inr(commission?.totalCommission ?? 0)}
+                    sub={`at ${commission?.rate ?? '—'}% rate`} icon={Percent} tone="amber" />
+          <StatCard label="Collected" value={inr(commission?.paidCommission ?? 0)}
+                    sub="received from vendors" icon={CheckCircle2} tone="emerald" />
+          <StatCard label="Pending Collection" value={inr(commission?.pendingCommission ?? 0)}
+                    sub="still owed" icon={Clock} tone="amber" />
+          <StatCard label="Gross Revenue" value={inr(commission?.grossRevenue ?? 0)}
+                    sub="confirmed + completed" icon={Wallet} tone="blue" />
+        </div>
       </div>
 
       {/* Pending actions — three columns on desktop, stacked on mobile */}
@@ -1781,6 +1811,7 @@ export default function App() {
                     <Route path="/spaces/:id" element={<SpaceDetailsPage />} />
                     <Route path="/spaces/:id/edit" element={<SpaceEditPage />} />
                     <Route path="/bookings" element={<BookingsPage />} />
+                    <Route path="/commissions" element={<CommissionsPage />} />
                     <Route path="/payments" element={<PaymentsPage />} />
                     <Route path="/admins" element={<AdminsPage />} />
                     <Route path="/amenities" element={<AmenitiesPage />} />

@@ -810,18 +810,9 @@ export const VendorDetailsPage = () => {
             {v.panNumber   && <DetailRow icon={<ShieldCheck className="h-3.5 w-3.5" />} label="PAN Number" value={v.panNumber} mono />}
             {v.payoutUpiId && <DetailRow icon={<IndianRupee className="h-3.5 w-3.5" />} label="Payout UPI" value={v.payoutUpiId} mono />}
             <DetailRow
-              icon={<ShieldCheck className={`h-3.5 w-3.5 ${v.aadharDocUrl ? '' : 'text-amber-500'}`} />}
+              icon={<ShieldCheck className={`h-3.5 w-3.5 ${v.aadharVerifiedAt ? 'text-emerald-500' : 'text-amber-500'}`} />}
               label="Aadhar Doc"
-              value={
-                v.aadharDocUrl ? (
-                  <a href={v.aadharDocUrl} target="_blank" rel="noreferrer"
-                     className="text-brand-600 underline dark:text-brand-400">
-                    View document
-                  </a>
-                ) : (
-                  <AadharUpload vendorId={v.id} />
-                )
-              }
+              value={<AadharStatus vendor={v} />}
             />
             {/* ── Status timeline — created / approved / rejected / deactivated ── */}
             {/* "Joined" is already shown in the page header subtitle, no duplicate here. */}
@@ -929,40 +920,78 @@ export const VendorDetailsPage = () => {
 };
 
 // ── Presentational pieces ────────────────────────────────────────────────────
-// Shown in place of the "View document" link when a vendor was approved without
-// an Aadhaar document. Lets an admin upload one; the parent query refetches and
-// the row flips to "View document" automatically.
-const AadharUpload = ({ vendorId }: { vendorId: string }) => {
+// Aadhaar doc status + actions. Three states:
+//   • verified              → "View document" + Verified badge
+//   • uploaded, unverified  → "View document" + Pending badge + Approve / Reject
+//   • not uploaded          → Pending badge + admin direct-upload (auto-verified)
+const AadharStatus = ({ vendor }: { vendor: any }) => {
   const qc = useQueryClient();
   const ref = useRef<HTMLInputElement>(null);
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['vendor-details', vendor.id] });
+
   const upload = useMutation({
     mutationFn: async (file: File) => {
       const fd = new FormData();
       fd.append('file', file);
       const { data } = await api.post<{ url: string }>('/uploads/documents', fd);
-      await api.patch(`/admin/vendors/${vendorId}`, { aadharDocUrl: data.url });
+      await api.patch(`/admin/vendors/${vendor.id}`, { aadharDocUrl: data.url });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vendor-details', vendorId] }),
+    onSuccess: invalidate,
+  });
+  const approve = useMutation({
+    mutationFn: () => api.post(`/admin/vendors/${vendor.id}/aadhaar/approve`),
+    onSuccess: invalidate,
+  });
+  const reject = useMutation({
+    mutationFn: () => api.post(`/admin/vendors/${vendor.id}/aadhaar/reject`),
+    onSuccess: invalidate,
   });
 
+  const viewLink = (
+    <a href={vendor.aadharDocUrl} target="_blank" rel="noreferrer"
+       className="text-brand-600 underline dark:text-brand-400">View document</a>
+  );
+
+  // State 1 & 2 — a doc exists.
+  if (vendor.aadharDocUrl) {
+    if (vendor.aadharVerifiedAt) {
+      return (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          {viewLink}
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+            <CheckCircle2 className="h-3 w-3" /> Verified
+          </span>
+        </span>
+      );
+    }
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {viewLink}
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+          Pending verification
+        </span>
+        <button type="button" onClick={() => approve.mutate()} disabled={approve.isPending}
+          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+          <CheckCircle2 className="h-3 w-3" /> {approve.isPending ? 'Approving…' : 'Approve'}
+        </button>
+        <button type="button" onClick={() => reject.mutate()} disabled={reject.isPending}
+          className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-800/50 dark:hover:bg-red-900/20">
+          <XCircle className="h-3 w-3" /> Reject
+        </button>
+      </div>
+    );
+  }
+
+  // State 3 — nothing uploaded; admin can upload directly (auto-verified).
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-        Aadhaar not uploaded
+        Pending — not uploaded
       </span>
-      <input
-        ref={ref}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,application/pdf"
-        className="hidden"
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ''; }}
-      />
-      <button
-        type="button"
-        onClick={() => ref.current?.click()}
-        disabled={upload.isPending}
-        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-      >
+      <input ref={ref} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ''; }} />
+      <button type="button" onClick={() => ref.current?.click()} disabled={upload.isPending}
+        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
         <Upload className="h-3 w-3" />
         {upload.isPending ? 'Uploading…' : 'Upload Aadhaar'}
       </button>

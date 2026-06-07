@@ -1,13 +1,14 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Route, Routes, Link, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { Clock, CheckCircle2, Layers, CalendarCheck, CircleDot, Wallet, TrendingUp, ArrowRight } from 'lucide-react';
+import { Clock, CheckCircle2, Layers, CalendarCheck, CircleDot, Wallet, TrendingUp, ArrowRight, Percent } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/auth';
 import { AppShell } from '@/components/AppShell';
 import { ParkingSpacesPage } from '@/pages/ParkingSpacesPage';
 import { AddParkingSpacePage } from '@/pages/AddParkingSpacePage';
 import { BookingsPage } from '@/pages/BookingsPage';
+import { CommissionsPage } from '@/pages/CommissionsPage';
 import { SlotBookingsPage } from '@/pages/SlotBookingsPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -47,6 +48,10 @@ const Dashboard = () => {
   const { data: bookingData, isLoading: bookingLoading } = useQuery({
     queryKey: ['vendor-bookings'],
     queryFn: async () => (await api.get('/vendor/bookings')).data,
+  });
+  const { data: commission } = useQuery({
+    queryKey: ['vendor-commission-summary', { period: 'month' }],
+    queryFn: async () => (await api.get('/vendor/commission/summary', { params: { period: 'month' } })).data,
   });
 
   const locations: any[] = locData?.items ?? [];
@@ -187,6 +192,43 @@ const Dashboard = () => {
             value={`₹${todayRevenue.toLocaleString('en-IN')}`}
             sub={`${todayBookings.length} booking${todayBookings.length !== 1 ? 's' : ''} today`}
             accent="emerald"
+          />
+        </div>
+      </div>
+
+      {/* Commission (this month) */}
+      <div>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Commission Payable · This Month</h2>
+          <Link to="/commissions" className="flex items-center gap-1 text-xs text-brand-600 hover:underline dark:text-brand-400">
+            View details <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <StatCard
+            loading={loading}
+            icon={<Percent className="h-4 w-4 text-amber-500" />}
+            label="Total Commission"
+            value={`₹${Number(commission?.totalCommission ?? 0).toLocaleString('en-IN')}`}
+            sub={`at ${commission?.rate ?? '—'}% rate`}
+            accent="amber"
+            linkTo="/commissions"
+          />
+          <StatCard
+            loading={loading}
+            icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+            label="Paid"
+            value={`₹${Number(commission?.paidCommission ?? 0).toLocaleString('en-IN')}`}
+            sub="settled with company"
+            accent="emerald"
+          />
+          <StatCard
+            loading={loading}
+            icon={<Clock className="h-4 w-4 text-red-500" />}
+            label="Pending"
+            value={`₹${Number(commission?.pendingCommission ?? 0).toLocaleString('en-IN')}`}
+            sub="to be paid"
+            accent="red"
           />
         </div>
       </div>
@@ -339,6 +381,7 @@ export default function App() {
                     <Route path="/spaces/add" element={<AddParkingSpacePage />} />
                     <Route path="/slots/:id/bookings" element={<SlotBookingsPage />} />
                     <Route path="/bookings" element={<BookingsPage />} />
+                    <Route path="/commissions" element={<CommissionsPage />} />
                     <Route path="/profile" element={<ProfilePage />} />
                   </Routes>
                 </AppShell>

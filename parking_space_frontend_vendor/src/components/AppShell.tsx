@@ -7,6 +7,7 @@ import {
   MapPin,
   CalendarCheck,
   Building2,
+  Percent,
   Sun,
   Moon,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ const NAV: { to: string; label: string; icon: React.ComponentType<{ className?: 
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/spaces', label: 'Parking Spaces', icon: MapPin },
   { to: '/bookings', label: 'Bookings', icon: CalendarCheck },
+  { to: '/commissions', label: 'Commissions', icon: Percent },
   { to: '/profile', label: 'Profile', icon: Building2 },
 ];
 
