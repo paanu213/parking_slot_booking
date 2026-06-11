@@ -95,9 +95,23 @@ const resolveBase = (portal: Portal, origin: string): string => {
   return frontendBase(portal).replace(/\/$/, '');
 };
 
+/**
+ * Sanitize a post-login `returnTo` into a safe **relative** path. Rejects absolute
+ * URLs, protocol-relative `//host`, backslash tricks and CR/LF, so it can only ever
+ * point back inside the SPA — never to an attacker-controlled host (open-redirect).
+ */
+const sanitizeReturnTo = (raw: unknown): string => {
+  if (typeof raw !== 'string' || !raw) return '/';
+  const v = raw.replace(/[\r\n\t]/g, '');
+  if (!v.startsWith('/') || v.startsWith('//') || v.startsWith('/\\')) return '/';
+  return v;
+};
+
 /** Build an absolute redirect URL, defending against open-redirect. */
 const buildRedirect = (base: string, pathOrQuery: string): string => {
-  const safe = pathOrQuery.startsWith('/') ? pathOrQuery : `/${pathOrQuery}`;
+  // Collapse any leading slashes to exactly one so the result can't become
+  // `https://base//evil` style; the path always stays on `base`'s origin.
+  const safe = '/' + sanitizeReturnTo(pathOrQuery).replace(/^\/+/, '');
   return `${base}${safe}`;
 };
 
@@ -194,9 +208,7 @@ r.get('/google', (req, res, next) => {
   const csrf = buildState();
   const portal = portalFromQuery(req.query.portal);
   const origin = safeOriginOrEmpty(req.query.origin ?? req.headers.referer);
-  const rawReturn = (req.query.returnTo as string) ?? '/';
-  // returnTo is appended to the portal's frontend base URL; restrict to relative paths only.
-  const returnTo = rawReturn.startsWith('/') ? rawReturn : '/';
+  const returnTo = sanitizeReturnTo(req.query.returnTo);
   res.cookie(STATE_COOKIE, csrf, stateCookieOptions());
   const params = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
@@ -250,8 +262,7 @@ r.get('/facebook', (req, res, next) => {
   const csrf = buildState();
   const portal = portalFromQuery(req.query.portal);
   const origin = safeOriginOrEmpty(req.query.origin ?? req.headers.referer);
-  const rawReturn = (req.query.returnTo as string) ?? '/';
-  const returnTo = rawReturn.startsWith('/') ? rawReturn : '/';
+  const returnTo = sanitizeReturnTo(req.query.returnTo);
   res.cookie(STATE_COOKIE, csrf, stateCookieOptions());
   const params = new URLSearchParams({
     client_id: env.FACEBOOK_APP_ID,
