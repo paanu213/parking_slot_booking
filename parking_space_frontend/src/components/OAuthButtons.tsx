@@ -9,9 +9,27 @@ const PROVIDERS: { id: Provider; label: string }[] = [
   { id: 'apple', label: 'Continue with Apple' },
 ];
 
+/**
+ * Resolve where to send the user *after* login — the page they actually wanted,
+ * not the auth page they're standing on. If we're on /login (or /register), that
+ * route carries the real intent in its own `?returnTo=`, so prefer that; else use
+ * the current path. Restrict to safe same-site relative paths (no protocol-relative
+ * `//host`, no absolute URLs) to prevent open-redirects, and never loop back to an
+ * auth page. Path + query are preserved so deep links like /explore?category=design
+ * survive the round-trip.
+ */
+const resolvePostLoginPath = (): string => {
+  const { pathname, search } = window.location;
+  const inner = new URLSearchParams(search).get('returnTo');
+  const candidate = inner ?? `${pathname}${search}`;
+  if (!candidate.startsWith('/') || candidate.startsWith('//') || candidate.startsWith('/\\')) return '/';
+  if (/^\/(login|register)(\/|\?|#|$)/.test(candidate)) return '/';
+  return candidate;
+};
+
 export const OAuthButtons = ({ className }: { className?: string }) => {
   const go = (provider: Provider) => {
-    const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+    const returnTo = encodeURIComponent(resolvePostLoginPath());
     const origin = encodeURIComponent(window.location.origin);
     window.location.href = `${API_URL}/auth/${provider}?portal=customer&returnTo=${returnTo}&origin=${origin}`;
   };
