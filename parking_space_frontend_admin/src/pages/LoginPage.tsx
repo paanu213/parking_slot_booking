@@ -69,7 +69,18 @@ export const LoginPage = () => {
       setSession(user);
       nav(safeReturnTo, { replace: true });
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? 'Invalid email or password.');
+      // Surface the real cause instead of always blaming credentials.
+      if (!e?.response) {
+        setError('Cannot reach the server. Please check your connection and try again.');
+      } else if (e.response.status === 401) {
+        setError('Invalid email or password.');
+      } else {
+        setError(
+          e.response.data?.error?.message ??
+          e.response.data?.message ??
+          `Sign-in failed (HTTP ${e.response.status}). Please try again.`,
+        );
+      }
     }
   };
 
