@@ -23,6 +23,7 @@ import { SpacesPage } from '@/pages/SpacesPage';
 import { SpaceEditPage } from '@/pages/SpaceEditPage';
 import SpaceDetailsPage from '@/pages/SpaceDetailsPage';
 import CommissionsPage from '@/pages/CommissionsPage';
+import { ListingRequests } from '@/components/ListingRequests';
 import { AddVendorPage } from '@/pages/AddVendorPage';
 import { AddSpacePage } from '@/pages/AddSpacePage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -1135,6 +1136,11 @@ const Vendors = () => {
             <Plus className="h-4 w-4" />
             Add Vendor
           </button>
+        </div>
+
+        {/* "List your space" submissions from the customer site, pending review */}
+        <div className="mt-4">
+          <ListingRequests />
         </div>
 
         {/* Filters row — status tabs + state/city search */}

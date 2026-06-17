@@ -486,6 +486,38 @@ r.post('/vendors/:id/aadhaar/reject', async (req, res, next) => {
   }
 });
 
+// --- Vendor leads ("List your space" submissions from the customer site) ---
+r.get('/vendor-leads', async (req, res) => {
+  const status = req.query.status as string | undefined;
+  const items = await prisma.vendorLead.findMany({
+    where: status ? { status: status as any } : {},
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ items });
+});
+
+const vendorLeadStatusSchema = z.object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED']) });
+
+r.patch('/vendor-leads/:id', validate(vendorLeadStatusSchema), async (req, res, next) => {
+  try {
+    const { status } = req.body as z.infer<typeof vendorLeadStatusSchema>;
+    const lead = await prisma.vendorLead.update({
+      where: { id: req.params.id },
+      data: {
+        status,
+        reviewedAt:   status === 'PENDING' ? null : new Date(),
+        reviewedById: status === 'PENDING' ? null : req.user!.sub,
+      },
+    });
+    await prisma.auditLog.create({
+      data: { actorId: req.user!.sub, action: `VENDOR_LEAD_${status}`, entity: 'VendorLead', entityId: lead.id },
+    });
+    res.json(lead);
+  } catch (e) {
+    next(e);
+  }
+});
+
 // --- Create vendor (admin action) ---
 const createVendorSchema = z.object({
   email:        z.string().email(),

@@ -106,22 +106,25 @@ r.post('/vendor-leads', validate(leadSchema), async (req, res, next) => {
   try {
     const data = req.body as z.infer<typeof leadSchema>;
     const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.ip;
+    // Persist a reviewable record (shows on the admin Vendors page as a pending request).
+    const lead = await prisma.vendorLead.create({
+      data: {
+        businessName: data.businessName,
+        fullName:     data.fullName,
+        email:        data.email,
+        phone:        data.phone,
+        city:         data.city,
+        slotsApprox:  data.slotsApprox ?? null,
+        notes:        data.notes ?? null,
+      },
+    });
     await prisma.auditLog.create({
       data: {
         action:   'VENDOR_LEAD_SUBMIT',
-        entity:   'Lead',
-        entityId: data.email, // searchable on the email so dupes are easy to spot
+        entity:   'VendorLead',
+        entityId: lead.id,
         ip,
-        metadata: JSON.stringify({
-          businessName: data.businessName,
-          fullName:     data.fullName,
-          email:        data.email,
-          phone:        data.phone,
-          city:         data.city,
-          slotsApprox:  data.slotsApprox ?? null,
-          notes:        data.notes ?? null,
-          userAgent:    req.headers['user-agent'] ?? null,
-        }),
+        metadata: JSON.stringify({ email: data.email, businessName: data.businessName, userAgent: req.headers['user-agent'] ?? null }),
       },
     });
     res.status(201).json({ ok: true });

@@ -77,6 +77,13 @@ enum BookingType {
   MONTHLY
 }
 
+// "List your space" prospect submissions from the customer site, reviewed by admin.
+enum VendorLeadStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum CommissionStatus {
   PENDING
   PAID
@@ -173,6 +180,26 @@ model Vendor {
 
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   locations ParkingLocation[]
+
+  @@index([status])
+}
+
+// "List your space" prospect submissions from the customer landing page. Admins
+// review these (with a pending tag) and approve/reject; no account is created here.
+model VendorLead {
+  id           String           @id @default(cuid())
+  businessName String
+  fullName     String
+  email        String
+  phone        String
+  city         String
+  slotsApprox  Int?
+  notes        String?          @db.Text
+  status       VendorLeadStatus @default(PENDING)
+  reviewedAt   DateTime?
+  reviewedById String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   @@index([status])
 }
