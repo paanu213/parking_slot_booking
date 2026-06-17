@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft, Building2, User, Phone, Mail, MapPin,
@@ -122,7 +122,18 @@ const DocPicker = ({
 // ── Page ──────────────────────────────────────────────────────────────────────
 export const AddVendorPage = () => {
   const navigate = useNavigate();
-  const [form, setForm]         = useState<VendorForm>(EMPTY);
+  // When converting a "List your space" request, the form is pre-filled from the
+  // lead and the lead is marked approved on success.
+  const [params] = useSearchParams();
+  const leadId = params.get('leadId');
+  const [form, setForm]         = useState<VendorForm>(() => ({
+    ...EMPTY,
+    businessName: params.get('businessName') ?? '',
+    fullName:     params.get('fullName') ?? '',
+    email:        params.get('email') ?? '',
+    phone:        params.get('phone') ?? '',
+    contactPhone: params.get('phone') ?? '',
+  }));
   const [showPwd, setShowPwd]   = useState(false);
   const [errors, setErrors]     = useState<Partial<Record<keyof VendorForm, string>>>({});
   const [aadharFile, setAadharFile] = useState<File | null>(null);
@@ -195,7 +206,11 @@ export const AddVendorPage = () => {
         aadharDocUrl: body.aadharDocUrl || undefined,
         tempPassword: body.tempPassword,
       }),
-    onSuccess: () => { setTimeout(() => navigate('/vendors'), 1500); },
+    onSuccess: () => {
+      // Mark the originating request as approved/converted (best-effort).
+      if (leadId) api.patch(`/admin/vendor-leads/${leadId}`, { status: 'APPROVED' }).catch(() => {});
+      setTimeout(() => navigate(leadId ? '/requests' : '/vendors'), 1500);
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {

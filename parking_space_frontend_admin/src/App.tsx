@@ -23,7 +23,7 @@ import { SpacesPage } from '@/pages/SpacesPage';
 import { SpaceEditPage } from '@/pages/SpaceEditPage';
 import SpaceDetailsPage from '@/pages/SpaceDetailsPage';
 import CommissionsPage from '@/pages/CommissionsPage';
-import { ListingRequests } from '@/components/ListingRequests';
+import RequestsPage from '@/pages/RequestsPage';
 import { AddVendorPage } from '@/pages/AddVendorPage';
 import { AddSpacePage } from '@/pages/AddSpacePage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -1138,11 +1138,6 @@ const Vendors = () => {
           </button>
         </div>
 
-        {/* "List your space" submissions from the customer site, pending review */}
-        <div className="mt-4">
-          <ListingRequests />
-        </div>
-
         {/* Filters row — status tabs + state/city search */}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {/* Status tabs */}
@@ -1804,6 +1799,7 @@ export default function App() {
                   <Routes>
                     <Route path="/" element={<Overview />} />
                     <Route path="/vendors" element={<Vendors />} />
+                    <Route path="/requests" element={<RequestsPage />} />
                     <Route path="/vendors/add" element={<AddVendorPage />} />
                     <Route path="/vendors/:id" element={<VendorDetailsPage />} />
                     <Route path="/customers" element={<CustomersPage />} />
