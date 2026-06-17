@@ -478,6 +478,12 @@ export const SpacesPage = () => {
                     {space.approvalStatus === 'PENDING_REVIEW' && (
                       <>
                         <button
+                          className="btn-ghost text-xs"
+                          onClick={() => navigate(`/spaces/${space.id}`)}
+                        >
+                          View Details
+                        </button>
+                        <button
                           className="btn-primary text-xs"
                           disabled={approve.isPending}
                           onClick={() => approve.mutate(space.id)}

@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Building2, MapPin, Layers, CalendarCheck, IndianRupee,
-  Percent, CheckCircle2, Clock, Pencil, Hash, Navigation, Sparkles,
-  User, Phone, Mail, Store,
+  Percent, CheckCircle2, XCircle, Clock, Pencil, Hash, Navigation, Sparkles,
+  User, Phone, Mail, Store, ImageIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -35,10 +36,27 @@ export default function SpaceDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
+  const qc = useQueryClient();
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectNote, setRejectNote] = useState('');
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['space-details', id],
     queryFn: async () => (await api.get(`/admin/spaces/${id}/details`)).data,
     enabled: Boolean(id),
+  });
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['space-details', id] });
+    qc.invalidateQueries({ queryKey: ['admin-spaces'] });
+  };
+  const approve = useMutation({
+    mutationFn: () => api.post(`/admin/spaces/${id}/approve`),
+    onSuccess: invalidate,
+  });
+  const reject = useMutation({
+    mutationFn: () => api.post(`/admin/spaces/${id}/reject`, { note: rejectNote || undefined }),
+    onSuccess: () => { invalidate(); setRejecting(false); setRejectNote(''); },
   });
 
   if (isLoading) {
@@ -71,6 +89,7 @@ export default function SpaceDetailsPage() {
   const vendor: any      = s.vendor ?? {};
   const slots: any[]     = s.slots ?? [];
   const amenities: any[] = s.amenities ?? [];
+  const images: any[]    = s.images ?? [];
   const statusCls        = APPROVAL_CLS[s.approvalStatus] ?? APPROVAL_CLS.PENDING_REVIEW;
 
   return (
@@ -104,13 +123,60 @@ export default function SpaceDetailsPage() {
             </p>
           </div>
 
-          <button
-            onClick={() => navigate(`/spaces/${s.id}/edit`)}
-            className="btn-primary flex shrink-0 items-center gap-1.5 text-xs"
-          >
-            <Pencil className="h-3.5 w-3.5" /> Edit Space
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {s.approvalStatus === 'PENDING_REVIEW' && (
+              <>
+                <button
+                  onClick={() => approve.mutate()}
+                  disabled={approve.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" /> {approve.isPending ? 'Approving…' : 'Approve'}
+                </button>
+                <button
+                  onClick={() => setRejecting((v) => !v)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-800/50 dark:hover:bg-red-900/20"
+                >
+                  <XCircle className="h-3.5 w-3.5" /> Reject
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => navigate(`/spaces/${s.id}/edit`)}
+              className="btn-ghost flex items-center gap-1.5 text-xs"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edit Space
+            </button>
+          </div>
         </div>
+
+        {/* Reject reason (pending spaces) */}
+        {rejecting && (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-900/20">
+            <label className="mb-1 block text-xs font-medium text-red-700 dark:text-red-300">
+              Reason for rejection (shown to the vendor)
+            </label>
+            <textarea
+              className="input w-full text-sm"
+              rows={2}
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              placeholder="e.g. Images unclear, address mismatch…"
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => reject.mutate()}
+                disabled={reject.isPending}
+                className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {reject.isPending ? 'Rejecting…' : 'Confirm Reject'}
+              </button>
+              <button onClick={() => { setRejecting(false); setRejectNote(''); }} className="btn-ghost text-xs">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Quick stats ── */}
@@ -190,6 +256,27 @@ export default function SpaceDetailsPage() {
             <DetailRow icon={<CheckCircle2 className="h-3.5 w-3.5" />} label="Vendor status" value={vendor.status} />
           </dl>
         </div>
+      </div>
+
+      {/* ── Images ── */}
+      <div className="card">
+        <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800">
+          <ImageIcon className="h-4 w-4 text-brand-500" />
+          <h2 className="text-sm font-semibold">Photos <span className="text-slate-400">({images.length})</span></h2>
+        </div>
+        {images.length === 0 ? (
+          <div className="p-6 text-center text-sm text-slate-400">No photos uploaded for this space.</div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-4">
+            {images.map((img) => (
+              <a key={img.id} href={img.url} target="_blank" rel="noreferrer"
+                 className="group relative aspect-video overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                <img src={img.url} alt="" loading="lazy"
+                     className="h-full w-full object-cover transition group-hover:scale-105" />
+              </a>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Slots ── */}
