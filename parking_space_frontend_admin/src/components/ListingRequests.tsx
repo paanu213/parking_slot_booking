@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Inbox, ChevronDown, ChevronUp, CheckCircle2, XCircle,
+  Inbox, ChevronDown, ChevronUp, UserPlus, XCircle,
   Mail, Phone, MapPin, Building2, User, Hash, Clock, FileText,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -27,8 +28,20 @@ type Lead = {
  */
 export const ListingRequests = () => {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [showAll, setShowAll] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+
+  const makeVendor = (lead: Lead) => {
+    const q = new URLSearchParams({
+      leadId: lead.id,
+      businessName: lead.businessName,
+      fullName: lead.fullName,
+      email: lead.email,
+      phone: lead.phone,
+    });
+    navigate(`/vendors/add?${q.toString()}`);
+  };
 
   const { data } = useQuery({
     queryKey: ['vendor-leads', showAll ? 'ALL' : 'PENDING'],
@@ -44,9 +57,6 @@ export const ListingRequests = () => {
 
   const leads: Lead[] = data?.items ?? [];
   const pendingCount = leads.filter((l) => l.status === 'PENDING').length;
-
-  // Hide the card entirely when there's nothing to review and not showing history.
-  if (!showAll && leads.length === 0) return null;
 
   return (
     <div className="card overflow-hidden">
@@ -115,11 +125,10 @@ export const ListingRequests = () => {
                     {lead.status === 'PENDING' && (
                       <div className="flex flex-wrap gap-2">
                         <button
-                          onClick={() => setStatus.mutate({ id: lead.id, status: 'APPROVED' })}
-                          disabled={setStatus.isPending}
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                          onClick={() => makeVendor(lead)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
                         >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                          <UserPlus className="h-3.5 w-3.5" /> Make as Vendor
                         </button>
                         <button
                           onClick={() => setStatus.mutate({ id: lead.id, status: 'REJECTED' })}
@@ -129,6 +138,9 @@ export const ListingRequests = () => {
                           <XCircle className="h-3.5 w-3.5" /> Reject
                         </button>
                       </div>
+                    )}
+                    {lead.status === 'APPROVED' && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400">✓ Converted to vendor.</p>
                     )}
                   </div>
                 )}

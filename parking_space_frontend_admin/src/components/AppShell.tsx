@@ -10,6 +10,7 @@ import {
   CalendarCheck,
   Wallet,
   Percent,
+  Inbox,
   ShieldCheck,
   Sun,
   Moon,
@@ -23,6 +24,7 @@ import { BRAND_NAME, LOGO_URL } from '@/lib/config';
 const NAV: { to: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard },
   { to: '/vendors', label: 'Vendors', icon: Users },
+  { to: '/requests', label: 'Requests', icon: Inbox },
   { to: '/customers', label: 'Customers', icon: UserRound },
   { to: '/spaces', label: 'Spaces', icon: MapPin },
   { to: '/bookings', label: 'Bookings', icon: CalendarCheck },
