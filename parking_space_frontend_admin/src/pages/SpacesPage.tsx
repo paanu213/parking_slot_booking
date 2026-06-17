@@ -253,6 +253,48 @@ const SlotRow = ({
 };
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+// Inline "add a slot" form for the slot panel (mirrors the vendor panel).
+const AddSlotForm = ({
+  submitting, onAdd,
+}: {
+  submitting: boolean;
+  onAdd: (code: string, hourlyPrice: string, monthlyPrice: string, vehicleType: string) => void;
+}) => {
+  const [code, setCode]               = useState('');
+  const [vehicleType, setVehicleType] = useState('FOUR_WHEELER');
+  const [hourlyPrice, setHourlyPrice] = useState('');
+  const [monthlyPrice, setMonthlyPrice] = useState('');
+
+  const submit = () => {
+    if (!code.trim() || hourlyPrice.trim() === '') return;
+    onAdd(code.trim(), hourlyPrice, monthlyPrice, vehicleType);
+    setCode(''); setHourlyPrice(''); setMonthlyPrice(''); setVehicleType('FOUR_WHEELER');
+  };
+
+  return (
+    <div className="mt-3 rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
+      <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-400">Add New Slot</p>
+      <div className="grid gap-2 sm:grid-cols-5">
+        <input className="input text-sm" placeholder="Code (A1)" value={code}
+               onChange={(e) => setCode(e.target.value)} />
+        <select className="input text-sm" value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
+          {VT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <input className="input text-sm" type="number" min="0" placeholder="Hourly ₹" value={hourlyPrice}
+               onChange={(e) => setHourlyPrice(e.target.value)} />
+        <input className="input text-sm" type="number" min="0" placeholder="Monthly ₹ (optional)" value={monthlyPrice}
+               onChange={(e) => setMonthlyPrice(e.target.value)} />
+        <button className="btn-primary text-sm" disabled={submitting || !code.trim() || hourlyPrice.trim() === ''} onClick={submit}>
+          {submitting ? 'Adding…' : '+ Add Slot'}
+        </button>
+      </div>
+      <p className="mt-1 text-[10px] text-slate-400">
+        Monthly = 30-day pass. Leave blank to disable monthly bookings for this slot.
+      </p>
+    </div>
+  );
+};
+
 export const SpacesPage = () => {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -318,6 +360,17 @@ export const SpacesPage = () => {
       id: string; code: string; hourlyPrice: number;
       monthlyPrice: number | null; vehicleType: string;
     }) => api.patch(`/admin/slots/${id}`, { code, hourlyPrice, monthlyPrice, vehicleType }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-spaces'] }),
+  });
+
+  const addSlot = useMutation({
+    mutationFn: ({ locationId, code, hourlyPrice, monthlyPrice, vehicleType }: {
+      locationId: string; code: string; hourlyPrice: number;
+      monthlyPrice: number | null; vehicleType: string;
+    }) => api.post(`/admin/locations/${locationId}/slots`, {
+      code, hourlyPrice, vehicleType,
+      ...(monthlyPrice != null && monthlyPrice > 0 ? { monthlyPrice } : {}),
+    }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-spaces'] }),
   });
 
@@ -581,6 +634,20 @@ export const SpacesPage = () => {
                         />
                       ))}
                     </div>
+
+                    {/* Add a new slot (same as the vendor panel) */}
+                    <AddSlotForm
+                      submitting={addSlot.isPending}
+                      onAdd={(code, hourlyPrice, monthlyPrice, vehicleType) =>
+                        addSlot.mutate({
+                          locationId: space.id,
+                          code,
+                          hourlyPrice: Number(hourlyPrice),
+                          monthlyPrice: monthlyPrice.trim() === '' ? null : Number(monthlyPrice),
+                          vehicleType,
+                        })
+                      }
+                    />
                   </div>
                 )}
 

@@ -1,4 +1,12 @@
 {
+  "permissions": {
+    "allow": [
+      "Read(//e/Web and App works/Develop/parking_slot_booking/parking_space_frontend_admin/src/**)",
+      "Bash(git merge *)",
+      "Bash(git stash *)",
+      "Bash(grep -n \"PENDING_REVIEW\\\\|approve\\\\|reject\\\\|View Details\\\\|/spaces/\\\\${\\\\|navigate\\(.*spaces\" parking_space_frontend_admin/src/pages/SpacesPage.tsx)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -10,11 +18,6 @@
           }
         ]
       }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "Read(//e/Web and App works/Develop/parking_slot_booking/parking_space_frontend_admin/src/**)"
     ]
   }
 }
