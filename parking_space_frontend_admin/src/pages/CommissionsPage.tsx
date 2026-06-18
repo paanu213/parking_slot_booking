@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Percent, CheckCircle2, Clock, Wallet } from 'lucide-react';
 import { api } from '@/lib/api';
 
 const inr = (v: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(v ?? 0));
+
+const fmtDate = (d?: string | null) =>
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+type StatusFilter = 'ALL' | 'PENDING' | 'PAID';
 
 type Period = 'day' | 'month' | 'year' | 'fy' | 'custom';
 
@@ -19,9 +24,11 @@ const PERIODS: { key: Period; label: string }[] = [
 
 export default function CommissionsPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [period, setPeriod] = useState<Period>('month');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
 
   const params =
     period === 'custom'
@@ -33,7 +40,26 @@ export default function CommissionsPage() {
     queryFn: async () => (await api.get('/admin/commission/summary', { params })).data,
   });
 
+  // Individual commission records (with the status filter applied).
+  const recordParams = { ...params, ...(statusFilter !== 'ALL' ? { status: statusFilter } : {}) };
+  const { data: recordsData, isLoading: recordsLoading } = useQuery({
+    queryKey: ['admin-commission-records', recordParams],
+    queryFn: async () => (await api.get('/admin/commission/bookings', { params: recordParams })).data,
+  });
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['admin-commission-records'] });
+    qc.invalidateQueries({ queryKey: ['admin-commissions'] });
+    qc.invalidateQueries({ queryKey: ['admin-commission-overview'] });
+  };
+  const setPaid = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'PAID' | 'PENDING' }) =>
+      api.patch(`/admin/bookings/${id}/commission`, { status }),
+    onSuccess: invalidate,
+  });
+
   const byVendor: any[] = data?.byVendor ?? [];
+  const records: any[] = recordsData?.items ?? [];
 
   return (
     <section className="space-y-5 p-6">
@@ -116,6 +142,84 @@ export default function CommissionsPage() {
                     <td className="text-emerald-600 dark:text-emerald-400">{inr(v.paid)}</td>
                     <td className={v.pending > 0 ? 'font-semibold text-red-600 dark:text-red-400' : 'text-slate-400'}>
                       {inr(v.pending)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Commission records — mark received, filter by status */}
+      <div className="card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800">
+          <h2 className="text-sm font-semibold">Commission Records <span className="text-slate-400">({records.length})</span></h2>
+          <div className="flex gap-1">
+            {(['ALL', 'PENDING', 'PAID'] as StatusFilter[]).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${
+                  statusFilter === s
+                    ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                }`}
+              >
+                {s === 'ALL' ? 'All' : s === 'PENDING' ? 'Pending' : 'Received'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {recordsLoading ? (
+          <div className="space-y-2 p-4">{[...Array(4)].map((_, i) => <div key={i} className="skeleton h-10 rounded-lg" />)}</div>
+        ) : records.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-400">No commission records for this filter.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr><th>Date</th><th>Reference</th><th>Vendor</th><th>Space</th><th>Commission</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody>
+                {records.map((b) => (
+                  <tr key={b.id}>
+                    <td className="text-xs text-slate-500">{fmtDate(b.createdAt)}</td>
+                    <td className="font-mono text-xs">{b.reference}</td>
+                    <td className="text-sm font-medium text-brand-600 dark:text-brand-400">
+                      <button onClick={() => b.vendorId && navigate(`/vendors/${b.vendorId}`)} className="hover:underline">
+                        {b.vendorName}
+                      </button>
+                    </td>
+                    <td className="text-sm text-slate-500">{b.spaceName}</td>
+                    <td className="font-semibold">{inr(b.commissionAmount)}</td>
+                    <td>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        b.commissionStatus === 'PAID'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                      }`}>
+                        {b.commissionStatus === 'PAID' ? 'Received' : 'Pending'}
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      {b.commissionStatus === 'PAID' ? (
+                        <button
+                          onClick={() => setPaid.mutate({ id: b.id, status: 'PENDING' })}
+                          disabled={setPaid.isPending}
+                          className="btn-ghost text-xs"
+                        >
+                          Mark Pending
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setPaid.mutate({ id: b.id, status: 'PAID' })}
+                          disabled={setPaid.isPending}
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Mark Received
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
