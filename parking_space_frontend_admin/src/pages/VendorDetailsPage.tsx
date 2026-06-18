@@ -755,16 +755,95 @@ const SpaceCard = ({
   );
 };
 
+// Slide-over to edit a vendor's core details (business + owner account).
+const VendorEditSlideOver = ({
+  vendor, onClose,
+}: { vendor: any; onClose: () => void }) => {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    businessName: vendor.businessName ?? '',
+    contactPhone: vendor.contactPhone ?? '',
+    address:      vendor.address ?? '',
+    fullName:     vendor.user?.fullName ?? '',
+    phone:        vendor.user?.phone ?? '',
+    email:        vendor.user?.email ?? '',
+  });
+  const [err, setErr] = useState('');
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setPhone = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value.replace(/\D/g, '').slice(0, 10) }));
+
+  const save = useMutation({
+    mutationFn: () => api.patch(`/admin/vendors/${vendor.id}`, {
+      businessName: form.businessName.trim() || undefined,
+      contactPhone: form.contactPhone.trim() || undefined,
+      address:      form.address.trim() || undefined,
+      fullName:     form.fullName.trim() || undefined,
+      phone:        form.phone.trim() || undefined,
+      email:        form.email.trim() || undefined,
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['vendor-details', vendor.id] }); onClose(); },
+    onError: (e: any) => setErr(e?.response?.data?.error?.message ?? 'Could not save. Please try again.'),
+  });
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+      <div className="fixed inset-y-0 right-0 z-50 ml-auto flex h-full w-[420px] max-w-full flex-col bg-white shadow-xl dark:bg-slate-900">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800">
+          <h2 className="text-sm font-semibold">Edit Vendor</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          <Field label="Business Name"><input className="input w-full" value={form.businessName} onChange={set('businessName')} /></Field>
+          <Field label="Business Contact Phone"><input className="input w-full" type="tel" inputMode="numeric" maxLength={10} value={form.contactPhone} onChange={setPhone('contactPhone')} /></Field>
+          <Field label="Business Address"><input className="input w-full" value={form.address} onChange={set('address')} /></Field>
+          <div className="border-t border-slate-100 pt-3 dark:border-slate-800">
+            <p className="mb-2 text-xs font-semibold text-slate-500">Owner / Account</p>
+            <div className="space-y-4">
+              <Field label="Full Name"><input className="input w-full" value={form.fullName} onChange={set('fullName')} /></Field>
+              <Field label="Personal Phone"><input className="input w-full" type="tel" inputMode="numeric" maxLength={10} value={form.phone} onChange={setPhone('phone')} /></Field>
+              <Field label="Email"><input className="input w-full" type="email" value={form.email} onChange={set('email')} /></Field>
+            </div>
+          </div>
+          {err && <p className="text-xs text-red-500">{err}</p>}
+        </div>
+        <div className="flex gap-2 border-t border-slate-100 p-4 dark:border-slate-800">
+          <button onClick={onClose} className="btn-ghost flex-1 text-sm" disabled={save.isPending}>Cancel</button>
+          <button onClick={() => { setErr(''); save.mutate(); }} className="btn-primary flex-1 text-sm" disabled={save.isPending}>
+            <Save className="mr-1.5 h-4 w-4" /> {save.isPending ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+};
+
+const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div>
+    <label className="mb-1 block text-xs font-medium text-slate-500">{label}</label>
+    {children}
+  </div>
+);
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export const VendorDetailsPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [editSpace, setEditSpace] = useState<any | null>(null);
+  const [editingVendor, setEditingVendor] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['vendor-details', id],
     queryFn: async () => (await api.get(`/admin/vendors/${id}`)).data,
     enabled: Boolean(id),
+  });
+
+  const toggleStatus = useMutation({
+    mutationFn: (status: 'INACTIVE' | 'APPROVED') => api.patch(`/admin/vendors/${id}/status`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vendor-details', id] }),
   });
 
   const [commPeriod, setCommPeriod] = useState<CommissionPeriod>('month');
@@ -839,7 +918,31 @@ export const VendorDetailsPage = () => {
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <button
+              onClick={() => setEditingVendor(true)}
+              className="btn-ghost flex items-center gap-1.5 text-xs"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit Vendor
+            </button>
+            {v.status === 'INACTIVE' ? (
+              <button
+                onClick={() => toggleStatus.mutate('APPROVED')}
+                disabled={toggleStatus.isPending}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                <ToggleRight className="h-3.5 w-3.5" /> {toggleStatus.isPending ? 'Activating…' : 'Activate'}
+              </button>
+            ) : v.status === 'APPROVED' ? (
+              <button
+                onClick={() => toggleStatus.mutate('INACTIVE')}
+                disabled={toggleStatus.isPending}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60 dark:border-amber-700/50 dark:text-amber-300 dark:hover:bg-amber-900/20"
+              >
+                <ToggleLeft className="h-3.5 w-3.5" /> {toggleStatus.isPending ? 'Deactivating…' : 'Deactivate'}
+              </button>
+            ) : null}
             <button
               onClick={() => navigate(`/spaces/add?vendorId=${v.id}&vendorName=${encodeURIComponent(v.businessName ?? '')}`)}
               className="btn-primary flex items-center gap-1.5 text-xs"
@@ -1038,6 +1141,11 @@ export const VendorDetailsPage = () => {
           space={editSpace}
           onClose={() => setEditSpace(null)}
         />
+      )}
+
+      {/* ── Edit vendor slide-over ── */}
+      {editingVendor && (
+        <VendorEditSlideOver vendor={v} onClose={() => setEditingVendor(false)} />
       )}
     </section>
   );
