@@ -253,6 +253,19 @@ const SlotRow = ({
   );
 };
 
+// Label/value row for the space "Details" panel.
+const SpaceField = ({
+  label, value, full,
+}: { label: string; value?: React.ReactNode; full?: boolean }) => {
+  if (value == null || value === '') return null;
+  return (
+    <div className={full ? 'sm:col-span-2' : ''}>
+      <dt className="mb-0.5 text-xs text-slate-400">{label}</dt>
+      <dd className="break-words text-slate-700 dark:text-slate-200">{value}</dd>
+    </div>
+  );
+};
+
 // ── Space card (fully interactive — approve/reject/slots/edit, all inline) ───
 const SpaceCard = ({
   space, onEdit,
@@ -262,6 +275,7 @@ const SpaceCard = ({
 }) => {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const [detailsExpanded, setDetailsExpanded]     = useState(false);
   const [slotsExpanded, setSlotsExpanded]         = useState(false);
   const [amenitiesExpanded, setAmenitiesExpanded] = useState(false);
   const [editingAmenities, setEditingAmenities]   = useState(false);
@@ -424,6 +438,17 @@ const SpaceCard = ({
           )}
 
           <button
+            onClick={() => setDetailsExpanded((s) => !s)}
+            className="btn-ghost flex items-center gap-1 text-xs"
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            Details
+            {detailsExpanded
+              ? <ChevronUp className="h-3.5 w-3.5" />
+              : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+
+          <button
             onClick={() => setSlotsExpanded((s) => !s)}
             className="btn-ghost flex items-center gap-1 text-xs"
           >
@@ -462,6 +487,64 @@ const SpaceCard = ({
           </KebabMenu>
         </div>
       </div>
+
+      {/* Full details panel — everything captured for this space */}
+      {detailsExpanded && (
+        <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/40">
+          <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
+            <SpaceField label="Name" value={space.name} />
+            <SpaceField label="Status" value={space.approvalStatus} />
+            <SpaceField label="Address" value={space.addressLine} full />
+            <SpaceField label="Landmark" value={space.landmark} full />
+            <SpaceField label="Area" value={space.area} />
+            <SpaceField label="City / State" value={[space.city, space.state].filter(Boolean).join(', ')} />
+            <SpaceField label="Pincode" value={space.pincode} />
+            <SpaceField label="Latitude" value={space.latitude != null ? Number(space.latitude).toFixed(6) : null} />
+            <SpaceField label="Longitude" value={space.longitude != null ? Number(space.longitude).toFixed(6) : null} />
+            <SpaceField label="Active" value={space.isActive ? 'Yes' : 'No'} />
+            <SpaceField label="Description" value={space.description} full />
+            {(space.amenities?.length ?? 0) > 0 && (
+              <SpaceField
+                full
+                label="Amenities"
+                value={
+                  <span className="flex flex-wrap gap-1.5">
+                    {space.amenities.map((a: any) => (
+                      <span key={a.amenity?.id ?? a.amenityId}
+                            className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {a.amenity?.icon} {a.amenity?.name}
+                      </span>
+                    ))}
+                  </span>
+                }
+              />
+            )}
+          </dl>
+
+          {/* Photos */}
+          <p className="mb-2 mt-3 text-xs font-semibold text-slate-600 dark:text-slate-400">
+            Photos ({space.images?.length ?? 0})
+          </p>
+          {(space.images?.length ?? 0) === 0 ? (
+            <p className="text-xs text-slate-400">No photos uploaded.</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+              {space.images.map((img: any) => (
+                <a key={img.id} href={img.url} target="_blank" rel="noreferrer"
+                   className="aspect-video overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                  <img src={img.url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                </a>
+              ))}
+            </div>
+          )}
+
+          {hasPendingEdits && (
+            <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800/40 dark:bg-blue-900/20 dark:text-blue-300">
+              This space has vendor edits awaiting review — use Approve Changes / Reject Changes above. To modify it yourself, use Edit.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Slot management panel */}
       {slotsExpanded && (
