@@ -305,23 +305,10 @@ export default function SpaceDetailsPage() {
         {slots.length === 0 ? (
           <div className="p-6 text-center text-sm text-slate-400">No slots on this space yet.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr><th>Code</th><th>Vehicle</th><th>Hourly</th><th>Monthly</th><th>Status</th></tr>
-              </thead>
-              <tbody>
-                {slots.map((sl) => (
-                  <tr key={sl.id}>
-                    <td className="font-medium">{sl.code}</td>
-                    <td className="text-sm text-slate-500">{sl.vehicleType}</td>
-                    <td>{fmtINR(Number(sl.hourlyPrice))}/hr</td>
-                    <td>{sl.monthlyPrice != null ? `${fmtINR(Number(sl.monthlyPrice))}/mo` : '—'}</td>
-                    <td className="text-sm">{sl.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-2 p-4">
+            {slots.map((sl) => (
+              <SlotManageRow key={sl.id} slot={sl} spaceId={String(id)} />
+            ))}
           </div>
         )}
 
@@ -403,6 +390,79 @@ export default function SpaceDetailsPage() {
     </section>
   );
 }
+
+const VT_LABELS: Record<string, string> = { TWO_WHEELER: '2-Wheeler', FOUR_WHEELER: '4-Wheeler', HEAVY: 'Heavy' };
+
+// Editable slot row for the space details page (edit + activate/deactivate).
+const SlotManageRow = ({ slot, spaceId }: { slot: any; spaceId: string }) => {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['space-details', spaceId] });
+  const [editing, setEditing]         = useState(false);
+  const [code, setCode]               = useState(slot.code);
+  const [vehicleType, setVehicleType] = useState(slot.vehicleType === 'CAR' ? 'FOUR_WHEELER' : slot.vehicleType);
+  const [hourly, setHourly]           = useState(String(slot.hourlyPrice));
+  const [monthly, setMonthly]         = useState(slot.monthlyPrice != null ? String(slot.monthlyPrice) : '');
+
+  const save = useMutation({
+    mutationFn: () => api.patch(`/admin/slots/${slot.id}`, {
+      code: code.trim(), vehicleType,
+      hourlyPrice: Number(hourly),
+      monthlyPrice: monthly.trim() === '' ? null : Number(monthly),
+    }),
+    onSuccess: () => { invalidate(); setEditing(false); },
+  });
+  const toggle = useMutation({
+    mutationFn: () => api.patch(`/admin/slots/${slot.id}/status`, { status: slot.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <div className="min-w-0">
+          <span className="font-mono text-sm font-semibold">{slot.code}</span>
+          <span className="ml-2 text-xs text-slate-400">
+            {VT_LABELS[slot.vehicleType] ?? slot.vehicleType} · {fmtINR(Number(slot.hourlyPrice))}/hr
+            {slot.monthlyPrice != null && Number(slot.monthlyPrice) > 0 && <> · {fmtINR(Number(slot.monthlyPrice))}/mo</>}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+            slot.status === 'ACTIVE'
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+              : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+          }`}>{slot.status}</span>
+          <button onClick={() => toggle.mutate()} disabled={toggle.isPending} className="btn-ghost text-xs">
+            {slot.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+          </button>
+          <button onClick={() => setEditing((e) => !e)} className="btn-ghost inline-flex items-center gap-1 text-xs">
+            <Pencil className="h-3 w-3" /> Edit
+          </button>
+        </div>
+      </div>
+      {editing && (
+        <div className="border-t border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+          <div className="grid gap-2 sm:grid-cols-4">
+            <input className="input text-sm" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Code" />
+            <select className="input text-sm" value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
+              <option value="TWO_WHEELER">2-Wheeler</option>
+              <option value="FOUR_WHEELER">4-Wheeler</option>
+              <option value="HEAVY">Heavy</option>
+            </select>
+            <input className="input text-sm" type="number" min="0" value={hourly} onChange={(e) => setHourly(e.target.value)} placeholder="Hourly ₹" />
+            <input className="input text-sm" type="number" min="0" value={monthly} onChange={(e) => setMonthly(e.target.value)} placeholder="Monthly ₹ (optional)" />
+          </div>
+          <div className="mt-2 flex gap-2">
+            <button className="btn-primary text-xs" disabled={save.isPending || !code.trim() || hourly.trim() === ''} onClick={() => save.mutate()}>
+              {save.isPending ? 'Saving…' : 'Save'}
+            </button>
+            <button className="btn-ghost text-xs" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const StatTile = ({
   icon, label, value, sub,
