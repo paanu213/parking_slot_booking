@@ -1824,4 +1824,50 @@ r.get('/commission/summary', async (req, res, next) => {
   }
 });
 
+// Individual commission records (one per booking) for the Commissions page.
+// Filter by date (?period|from|to) and commission status (?status=PENDING|PAID).
+r.get('/commission/bookings', async (req, res, next) => {
+  try {
+    const range = resolveDateRange(
+      req.query.period as string | undefined,
+      req.query.from   as string | undefined,
+      req.query.to     as string | undefined,
+    );
+    const statusQ = (req.query.status as string | undefined)?.toUpperCase();
+    const commissionStatus = statusQ === 'PAID' || statusQ === 'PENDING' ? statusQ : undefined;
+
+    const rows = await prisma.booking.findMany({
+      where: {
+        status: { in: ['CONFIRMED', 'COMPLETED'] },
+        ...(range ? { createdAt: range } : {}),
+        ...(commissionStatus ? { commissionStatus: commissionStatus as any } : {}),
+      },
+      select: {
+        id: true, reference: true, totalAmount: true,
+        commissionAmount: true, commissionStatus: true, commissionPaidAt: true, createdAt: true,
+        slot: { select: { location: { select: { name: true, vendor: { select: { id: true, businessName: true } } } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+
+    res.json({
+      items: rows.map((b) => ({
+        id: b.id,
+        reference: b.reference,
+        totalAmount: Number(b.totalAmount),
+        commissionAmount: Number(b.commissionAmount),
+        commissionStatus: b.commissionStatus,
+        commissionPaidAt: b.commissionPaidAt,
+        createdAt: b.createdAt,
+        vendorId: b.slot?.location?.vendor?.id ?? null,
+        vendorName: b.slot?.location?.vendor?.businessName ?? '—',
+        spaceName: b.slot?.location?.name ?? '—',
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 export default r;
