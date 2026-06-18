@@ -20,6 +20,7 @@ interface SpaceShape {
   name?: string;
   description?: string;
   addressLine?: string;
+  landmark?: string;
   area?: string;
   city?: string;
   state?: string;
@@ -38,6 +39,7 @@ export const EditSpaceSlideOver = ({ space, onClose, onSaved }: Props) => {
     name:        space.name        ?? '',
     description: space.description ?? '',
     addressLine: space.addressLine ?? '',
+    landmark:    space.landmark    ?? '',
     area:        space.area        ?? '',
     city:        space.city        ?? '',
     state:       space.state       ?? '',
@@ -117,7 +119,16 @@ export const EditSpaceSlideOver = ({ space, onClose, onSaved }: Props) => {
                 className="input w-full"
                 value={form.addressLine}
                 onChange={(e) => set('addressLine', e.target.value)}
-                placeholder="Street, building, landmark"
+                placeholder="Street, building"
+              />
+            </Field>
+
+            <Field label="Landmark">
+              <input
+                className="input w-full"
+                value={form.landmark}
+                onChange={(e) => set('landmark', e.target.value)}
+                placeholder="e.g. Near City Mall"
               />
             </Field>
 
