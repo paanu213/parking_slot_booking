@@ -527,15 +527,17 @@ export const SpacesPage = () => {
 
                   {/* Right: actions */}
                   <div className="flex shrink-0 items-center gap-2">
+                    {/* View Details — always available, outside the kebab */}
+                    <button
+                      className="btn-ghost text-xs"
+                      onClick={() => navigate(`/spaces/${space.id}`)}
+                    >
+                      View Details
+                    </button>
+
                     {/* Approve + Reject — only when PENDING_REVIEW */}
                     {space.approvalStatus === 'PENDING_REVIEW' && (
                       <>
-                        <button
-                          className="btn-ghost text-xs"
-                          onClick={() => navigate(`/spaces/${space.id}`)}
-                        >
-                          View Details
-                        </button>
                         <button
                           className="btn-primary text-xs"
                           disabled={approve.isPending}
@@ -579,9 +581,6 @@ export const SpacesPage = () => {
 
                     {/* 3-dot kebab — portal-based, always above table */}
                     <KebabMenu>
-                      <MenuItem onClick={() => navigate(`/spaces/${space.id}`)}>
-                        View Details
-                      </MenuItem>
                       <MenuItem onClick={() => navigate(`/spaces/${space.id}/edit`)}>
                         Edit Space
                       </MenuItem>
