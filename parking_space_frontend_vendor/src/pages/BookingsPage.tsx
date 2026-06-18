@@ -8,10 +8,20 @@ import { calculateBookingAmount, formatINR, MONTHLY_PASS_DAYS, type BookingType 
 interface Slot {
   id: string;
   code: string;
+  vehicleType?: string;
+  status?: string;
   hourlyPrice: number;
   monthlyPrice?: number | null;
 }
 interface Space { id: string; name: string; slots: Slot[]; }
+
+const VT_LABEL: Record<string, string> = {
+  TWO_WHEELER:  '2-Wheeler',
+  FOUR_WHEELER: '4-Wheeler',
+  CAR:          '4-Wheeler',
+  HEAVY:        'Heavy',
+};
+const vtLabel = (v?: string) => (v ? VT_LABEL[v] ?? v : '');
 interface Booking {
   id: string;
   reference: string;
@@ -1201,7 +1211,7 @@ const DirectBookingFormFields = ({
             <option value="">Select a slot…</option>
             {activeSlots.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.code} — ₹{s.hourlyPrice}/hr
+                {s.code}{vtLabel(s.vehicleType) ? ` · ${vtLabel(s.vehicleType)}` : ''} — ₹{s.hourlyPrice}/hr
                 {s.monthlyPrice && Number(s.monthlyPrice) > 0
                   ? ` · ₹${s.monthlyPrice}/mo`
                   : ''}
