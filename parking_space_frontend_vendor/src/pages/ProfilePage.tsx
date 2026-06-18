@@ -19,6 +19,8 @@ interface VendorProfile {
   aadharDocUrl?: string | null;
   aadharVerifiedAt?: string | null;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'INACTIVE';
+  createdAt?: string | null;
+  approvedAt?: string | null;
   rejectionNote?: string | null;
   pendingProfileData?: string | null;
   user: {
@@ -46,6 +48,9 @@ interface EditForm {
   aadharNumber: string;
   aadharDocUrl: string;
 }
+
+const fmtDate = (d?: string | null) =>
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
 
 // ── Field row (read-only display) ────────────────────────────────────────────
 const InfoRow = ({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) => (
@@ -508,6 +513,9 @@ export const ProfilePage = () => {
             <InfoRow label="Full Name"     value={profile.user.fullName} />
             <InfoRow label="Email"         value={profile.user.email} />
             <InfoRow label="Personal Phone" value={profile.user.phone} />
+            <InfoRow label="Status"        value={profile.status} />
+            <InfoRow label="Joined"        value={fmtDate(profile.createdAt)} />
+            <InfoRow label="Approved on"   value={fmtDate(profile.approvedAt)} />
           </Section>
 
           {/* Business info */}
