@@ -59,6 +59,24 @@ export default function SpaceDetailsPage() {
     onSuccess: () => { invalidate(); setRejecting(false); setRejectNote(''); },
   });
 
+  // Add a slot directly (admin action — no approval step).
+  const [newSlot, setNewSlot] = useState({ code: '', vehicleType: 'FOUR_WHEELER', hourlyPrice: '', monthlyPrice: '' });
+  const addSlot = useMutation({
+    mutationFn: () => {
+      const mp = newSlot.monthlyPrice.trim();
+      return api.post(`/admin/locations/${id}/slots`, {
+        code:        newSlot.code.trim(),
+        vehicleType: newSlot.vehicleType,
+        hourlyPrice: Number(newSlot.hourlyPrice),
+        ...(mp !== '' && Number(mp) > 0 ? { monthlyPrice: Number(mp) } : {}),
+      });
+    },
+    onSuccess: () => {
+      invalidate();
+      setNewSlot({ code: '', vehicleType: 'FOUR_WHEELER', hourlyPrice: '', monthlyPrice: '' });
+    },
+  });
+
   if (isLoading) {
     return (
       <section className="space-y-4 p-6">
@@ -285,7 +303,7 @@ export default function SpaceDetailsPage() {
           <h2 className="text-sm font-semibold">Slots <span className="text-slate-400">({slots.length})</span></h2>
         </div>
         {slots.length === 0 ? (
-          <div className="p-6 text-center text-sm text-slate-400">No slots on this space.</div>
+          <div className="p-6 text-center text-sm text-slate-400">No slots on this space yet.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="table">
@@ -306,6 +324,34 @@ export default function SpaceDetailsPage() {
             </table>
           </div>
         )}
+
+        {/* Add a slot directly (no approval needed) */}
+        <div className="border-t border-slate-100 p-4 dark:border-slate-800">
+          <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-400">Add New Slot</p>
+          <div className="grid gap-2 sm:grid-cols-5">
+            <input className="input text-sm" placeholder="Code (A1)" value={newSlot.code}
+                   onChange={(e) => setNewSlot((s) => ({ ...s, code: e.target.value }))} />
+            <select className="input text-sm" value={newSlot.vehicleType}
+                    onChange={(e) => setNewSlot((s) => ({ ...s, vehicleType: e.target.value }))}>
+              <option value="TWO_WHEELER">2-Wheeler</option>
+              <option value="FOUR_WHEELER">4-Wheeler</option>
+              <option value="HEAVY">Heavy</option>
+            </select>
+            <input className="input text-sm" type="number" min="0" placeholder="Hourly ₹" value={newSlot.hourlyPrice}
+                   onChange={(e) => setNewSlot((s) => ({ ...s, hourlyPrice: e.target.value }))} />
+            <input className="input text-sm" type="number" min="0" placeholder="Monthly ₹ (optional)" value={newSlot.monthlyPrice}
+                   onChange={(e) => setNewSlot((s) => ({ ...s, monthlyPrice: e.target.value }))} />
+            <button className="btn-primary text-sm"
+                    disabled={addSlot.isPending || !newSlot.code.trim() || newSlot.hourlyPrice.trim() === ''}
+                    onClick={() => addSlot.mutate()}>
+              {addSlot.isPending ? 'Adding…' : '+ Add Slot'}
+            </button>
+          </div>
+          {addSlot.isError && <p className="mt-1 text-xs text-red-500">Could not add slot. Check the code isn’t a duplicate.</p>}
+          <p className="mt-1 text-[10px] text-slate-400">
+            Added directly — no separate approval. Monthly = 30-day pass; leave blank to disable monthly bookings.
+          </p>
+        </div>
       </div>
 
       {/* ── Booking history ── */}
