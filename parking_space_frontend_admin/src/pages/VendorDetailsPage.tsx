@@ -309,6 +309,23 @@ const SpaceCard = ({
     }) => api.patch(`/admin/slots/${id}`, { code, hourlyPrice, monthlyPrice, vehicleType }),
     onSuccess: invalidate,
   });
+  // Add a slot directly (admin action — no approval step).
+  const [newSlot, setNewSlot] = useState({ code: '', vehicleType: 'FOUR_WHEELER', hourlyPrice: '', monthlyPrice: '' });
+  const addSlot = useMutation({
+    mutationFn: () => {
+      const mp = newSlot.monthlyPrice.trim();
+      return api.post(`/admin/locations/${space.id}/slots`, {
+        code:        newSlot.code.trim(),
+        vehicleType: newSlot.vehicleType,
+        hourlyPrice: Number(newSlot.hourlyPrice),
+        ...(mp !== '' && Number(mp) > 0 ? { monthlyPrice: Number(mp) } : {}),
+      });
+    },
+    onSuccess: () => {
+      invalidate();
+      setNewSlot({ code: '', vehicleType: 'FOUR_WHEELER', hourlyPrice: '', monthlyPrice: '' });
+    },
+  });
   const saveAmenities = useMutation({
     mutationFn: (amenityIds: string[]) =>
       api.put(`/admin/locations/${space.id}/amenities`, { amenityIds }),
@@ -406,18 +423,16 @@ const SpaceCard = ({
             </>
           )}
 
-          {space.slots?.length > 0 && (
-            <button
-              onClick={() => setSlotsExpanded((s) => !s)}
-              className="btn-ghost flex items-center gap-1 text-xs"
-            >
-              <Layers className="h-3.5 w-3.5" />
-              Slots
-              {slotsExpanded
-                ? <ChevronUp className="h-3.5 w-3.5" />
-                : <ChevronDown className="h-3.5 w-3.5" />}
-            </button>
-          )}
+          <button
+            onClick={() => setSlotsExpanded((s) => !s)}
+            className="btn-ghost flex items-center gap-1 text-xs"
+          >
+            <Layers className="h-3.5 w-3.5" />
+            Slots ({space.slots?.length ?? 0})
+            {slotsExpanded
+              ? <ChevronUp className="h-3.5 w-3.5" />
+              : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
 
           <button
             onClick={() => setAmenitiesExpanded((s) => !s)}
@@ -452,10 +467,10 @@ const SpaceCard = ({
       {slotsExpanded && (
         <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/40">
           <p className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400">
-            Slots ({space.slots.length})
+            Slots ({space.slots?.length ?? 0})
           </p>
           <div className="space-y-2">
-            {space.slots.map((slot: any) => (
+            {(space.slots ?? []).map((slot: any) => (
               <SlotRow
                 key={slot.id}
                 slot={slot}
@@ -482,6 +497,32 @@ const SpaceCard = ({
                 }}
               />
             ))}
+          </div>
+
+          {/* Add a slot directly (no approval needed) */}
+          <div className="mt-3 rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
+            <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-400">Add New Slot</p>
+            <div className="grid gap-2 sm:grid-cols-5">
+              <input className="input text-sm" placeholder="Code (A1)" value={newSlot.code}
+                     onChange={(e) => setNewSlot((s) => ({ ...s, code: e.target.value }))} />
+              <select className="input text-sm" value={newSlot.vehicleType}
+                      onChange={(e) => setNewSlot((s) => ({ ...s, vehicleType: e.target.value }))}>
+                <option value="TWO_WHEELER">2-Wheeler</option>
+                <option value="FOUR_WHEELER">4-Wheeler</option>
+                <option value="HEAVY">Heavy</option>
+              </select>
+              <input className="input text-sm" type="number" min="0" placeholder="Hourly ₹" value={newSlot.hourlyPrice}
+                     onChange={(e) => setNewSlot((s) => ({ ...s, hourlyPrice: e.target.value }))} />
+              <input className="input text-sm" type="number" min="0" placeholder="Monthly ₹ (optional)" value={newSlot.monthlyPrice}
+                     onChange={(e) => setNewSlot((s) => ({ ...s, monthlyPrice: e.target.value }))} />
+              <button className="btn-primary text-sm"
+                      disabled={addSlot.isPending || !newSlot.code.trim() || newSlot.hourlyPrice.trim() === ''}
+                      onClick={() => addSlot.mutate()}>
+                {addSlot.isPending ? 'Adding…' : '+ Add Slot'}
+              </button>
+            </div>
+            {addSlot.isError && <p className="mt-1 text-xs text-red-500">Could not add slot. Check the code isn’t a duplicate.</p>}
+            <p className="mt-1 text-[10px] text-slate-400">Added directly — no separate approval.</p>
           </div>
         </div>
       )}
