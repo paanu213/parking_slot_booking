@@ -8,7 +8,7 @@ import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, commissionFor } from '../../lib/commission.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { deleteImageByUrl, storeImageBuffer, deleteDocumentByUrl } from '../../lib/images.js';
-import { imageUpload } from '../uploads/uploads.routes.js';
+import { imageUpload } from '../../middleware/upload.js';
 
 const r = Router();
 r.use(requireAuth, requireRole('VENDOR'));

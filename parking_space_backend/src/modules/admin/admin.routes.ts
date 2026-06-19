@@ -9,7 +9,7 @@ import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, setCommissionRate } from '../../lib/commission.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { storeIconBuffer, storeImageBuffer, deleteImageByUrl, storeDocumentBuffer, deleteDocumentByUrl } from '../../lib/images.js';
-import { imageUpload, docUpload } from '../uploads/uploads.routes.js';
+import { imageUpload, docUpload } from '../../middleware/upload.js';
 
 const r = Router();
 r.use(requireAuth, requireRole('SUPER_ADMIN', 'ADMIN', 'SUB_ADMIN'));
