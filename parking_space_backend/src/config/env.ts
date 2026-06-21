@@ -23,6 +23,9 @@ const schema = z.object({
   FRONTEND_ADMIN_URL:    z.string().url().default('http://localhost:5175'),
 
   DATABASE_URL: z.string().min(1),
+  // Direct mysql:// connection for migrations (Accelerate prisma:// can't run DDL).
+  // Optional so local dev can run on DATABASE_URL alone.
+  DIRECT_URL: z.string().optional(),
 
   JWT_ACCESS_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
