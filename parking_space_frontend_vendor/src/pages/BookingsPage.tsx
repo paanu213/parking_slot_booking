@@ -734,9 +734,21 @@ export const BookingsPage = () => {
 
   const editGuest = useMutation({
     mutationFn: ({ id, data }: { id: string; data: EditGuestForm }) => {
+      // Send empty optional fields as undefined (omit), not "" — the Zod schema's
+      // .optional() rejects empty strings (e.g. guestPhone min(7)), which would
+      // otherwise surface as an input/validation error on save.
+      const payload: any = {
+        guestName:          data.guestName,
+        guestEmail:         data.guestEmail,
+        guestPhone:         data.guestPhone || undefined,
+        guestVehicleNumber: data.guestVehicleNumber || undefined,
+        guestVehicleModel:  data.guestVehicleModel  || undefined,
+        bookingType:        data.bookingType,
+        startAt:            data.startAt,
+        endAt:              data.endAt,
+      };
       // Strip endAt when booking is monthly — backend ignores it anyway, but
       // sending the wrong shape would just confuse the validator.
-      const payload: any = { ...data };
       if (data.bookingType === 'MONTHLY') delete payload.endAt;
       return api.patch(`/vendor/bookings/${id}/guest`, payload).then((r) => r.data);
     },
