@@ -35,6 +35,7 @@ interface Booking {
   cancelReason?: string | null;
   isDirectBooking?: boolean;
   guestName?: string;
+  guestEmail?: string;
   guestPhone?: string;
   guestVehicleNumber?: string;
   guestVehicleModel?: string;
@@ -57,6 +58,7 @@ interface DirectBookingForm {
 
 interface EditGuestForm {
   guestName: string;
+  guestEmail: string;
   guestPhone: string;
   guestVehicleNumber: string;
   guestVehicleModel: string;
@@ -319,6 +321,7 @@ const EditGuestModal = ({
   const { register, handleSubmit, watch, setValue } = useForm<EditGuestForm>({
     defaultValues: {
       guestName:          booking.guestName          ?? '',
+      guestEmail:         booking.guestEmail         ?? booking.user?.email ?? '',
       guestPhone:         booking.guestPhone         ?? '',
       guestVehicleNumber: booking.guestVehicleNumber ?? '',
       guestVehicleModel:  booking.guestVehicleModel  ?? '',
@@ -413,10 +416,14 @@ const EditGuestModal = ({
               <input className="input w-full" placeholder="Full name" required {...register('guestName')} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Customer Phone</label>
-              <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile"
-                     {...register('guestPhone', { onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); } })} />
+              <label className="mb-1 block text-xs font-medium text-slate-500">Customer Email *</label>
+              <input className="input w-full" type="email" placeholder="name@email.com" required {...register('guestEmail')} />
             </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">Customer Phone</label>
+            <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile (optional)"
+                   {...register('guestPhone', { onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); } })} />
           </div>
 
           {/* Vehicle */}

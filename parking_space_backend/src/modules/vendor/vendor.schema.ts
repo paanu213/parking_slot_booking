@@ -78,6 +78,7 @@ export const directBookingSchema = z
 
 export const editGuestSchema = z.object({
   guestName:          z.string().min(2).max(100).optional(),
+  guestEmail:         z.string().email().optional(),
   guestPhone:         z.string().min(7).max(20).optional(),
   guestVehicleNumber: z.string().max(20).optional(),
   guestVehicleModel:  z.string().max(80).optional(),

@@ -434,7 +434,16 @@ export const editGuestBooking = async (
     throw Forbidden('You do not have access to this booking');
   }
 
-  const { startAt, endAt, bookingType, ...guestFields } = body;
+  const { startAt, endAt, bookingType, guestEmail, ...guestFields } = body;
+
+  // If the email is being corrected, normalize it and re-link the booking to an
+  // account with that email (or leave it unlinked to be claimed on signup).
+  let emailUpdate: { guestEmail: string; userId: string | null } | null = null;
+  if (guestEmail !== undefined) {
+    const email = guestEmail.trim().toLowerCase();
+    const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    emailUpdate = { guestEmail: email, userId: existing?.id ?? null };
+  }
 
   // Did anything pricing-relevant change?
   const typeChanged  = bookingType && bookingType !== (booking as any).bookingType;
@@ -466,6 +475,7 @@ export const editGuestBooking = async (
     where: { id: bookingId },
     data: {
       ...guestFields,
+      ...(emailUpdate ?? {}),
       ...(bookingType ? { bookingType } : {}),
       ...(recalc ? {
         startAt:          recalc.startAt,
