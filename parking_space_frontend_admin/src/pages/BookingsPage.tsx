@@ -36,6 +36,24 @@ const STATUS_LABELS: Record<string, string> = {
   COMPLETED:       'Completed',
 };
 
+// Booking lifecycle label for the row — kept distinct from payment so "Pending"
+// is never ambiguous between booking-pending and payment-pending.
+const BOOKING_LABEL: Record<string, string> = {
+  CONFIRMED:       'Confirmed',
+  PENDING_PAYMENT: 'Reserved',
+  CANCELLED:       'Cancelled',
+  COMPLETED:       'Completed',
+};
+
+// Customer payment state, derived from the booking lifecycle:
+//  PENDING_PAYMENT → not paid · CONFIRMED/COMPLETED → paid · CANCELLED → n/a.
+const paymentOf = (status: string): { label: string; cls: string } | null => {
+  if (status === 'CANCELLED') return null;
+  if (status === 'PENDING_PAYMENT')
+    return { label: 'Pending', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
+  return { label: 'Paid', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' };
+};
+
 const canCancel = (status: string) => ['CONFIRMED', 'PENDING_PAYMENT'].includes(status);
 
 // A monthly pass is "active" when it's a live booking whose 30-day window covers now.
@@ -412,6 +430,7 @@ export const BookingsPage = () => {
                   <th>Duration</th>
                   <th>Amount</th>
                   <th>Commission</th>
+                  <th>Payment</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -523,10 +542,27 @@ export const BookingsPage = () => {
                         )}
                       </td>
 
-                      {/* Status */}
+                      {/* Payment (customer → vendor) — separate from booking status */}
+                      <td>
+                        {(() => {
+                          const pay = paymentOf(b.status);
+                          return pay ? (
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${pay.cls}`}>
+                              {pay.label === 'Paid'
+                                ? <CheckCircle2 className="h-2.5 w-2.5" />
+                                : <Clock className="h-2.5 w-2.5" />}
+                              {pay.label}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Status (booking lifecycle) */}
                       <td>
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLS[b.status] ?? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                          {b.status === 'PENDING_PAYMENT' ? 'Pending' : b.status.charAt(0) + b.status.slice(1).toLowerCase()}
+                          {BOOKING_LABEL[b.status] ?? (b.status.charAt(0) + b.status.slice(1).toLowerCase())}
                         </span>
                         {/* Show cancel reason if available */}
                         {b.status === 'CANCELLED' && b.cancelReason && (

@@ -72,6 +72,25 @@ const STATUS_CLS: Record<string, string> = {
   FAILED:          'bg-red-100     text-red-600     dark:bg-red-900/30     dark:text-red-400',
 };
 
+// Booking lifecycle label — deliberately kept separate from payment state so
+// "Pending" is never ambiguous between "booking pending" and "payment pending".
+const BOOKING_LABEL: Record<string, string> = {
+  PENDING_PAYMENT: 'Reserved',
+  CONFIRMED:       'Confirmed',
+  COMPLETED:       'Completed',
+  CANCELLED:       'Cancelled',
+  FAILED:          'Failed',
+};
+
+// Customer payment state, derived from the booking lifecycle:
+//  PENDING_PAYMENT → not paid yet · CONFIRMED/COMPLETED → paid · CANCELLED → n/a.
+const paymentOf = (status: string): { label: string; cls: string } | null => {
+  if (status === 'CANCELLED') return null;
+  if (status === 'PENDING_PAYMENT')
+    return { label: 'Pending', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
+  return { label: 'Paid', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' };
+};
+
 const fmt = (d: string) =>
   new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -935,6 +954,7 @@ export const BookingsPage = () => {
                     <th className="px-3 py-2">Duration</th>
                     <th className="px-3 py-2">Amount</th>
                     <th className="px-3 py-2">Commission</th>
+                    <th className="px-3 py-2">Payment</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2"></th>
                   </tr>
@@ -942,7 +962,7 @@ export const BookingsPage = () => {
                 <tbody>
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={11} className="px-3 py-10 text-center text-sm text-slate-400">
+                      <td colSpan={12} className="px-3 py-10 text-center text-sm text-slate-400">
                         No {planFilter.toLowerCase()} bookings.
                       </td>
                     </tr>
@@ -1062,12 +1082,29 @@ export const BookingsPage = () => {
                           )}
                         </td>
 
-                        {/* Status */}
+                        {/* Payment (customer → vendor) — separate from booking status */}
+                        <td className="px-3 py-2">
+                          {(() => {
+                            const pay = paymentOf(b.status);
+                            return pay ? (
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${pay.cls}`}>
+                                {pay.label === 'Paid'
+                                  ? <CheckCircle2 className="h-2.5 w-2.5" />
+                                  : <Clock className="h-2.5 w-2.5" />}
+                                {pay.label}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+                            );
+                          })()}
+                        </td>
+
+                        {/* Status (booking lifecycle) */}
                         <td className="px-3 py-2">
                           <span
                             className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLS[b.status] ?? 'bg-slate-100 text-slate-600'}`}
                           >
-                            {b.status.replace('_', ' ')}
+                            {BOOKING_LABEL[b.status] ?? b.status.replace('_', ' ')}
                           </span>
                           {b.status === 'CANCELLED' && b.cancelReason && (
                             <p
