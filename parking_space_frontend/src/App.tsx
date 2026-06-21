@@ -82,13 +82,15 @@ const ScrollToTop = () => {
 };
 
 const Protected = ({ children }: { children: React.ReactNode }) => {
-  const { user } = useAuth();
+  const { user, hydrated } = useAuth();
   const loc = useLocation();
   const nav = useNavigate();
   useEffect(() => {
-    if (!user) nav(`/login?returnTo=${encodeURIComponent(loc.pathname)}`, { replace: true });
-  }, [user, loc.pathname, nav]);
-  if (!user) return null;
+    // Wait for the session check to finish before deciding — otherwise a
+    // logged-in user is wrongly redirected on a hard refresh / deep-link.
+    if (hydrated && !user) nav(`/login?returnTo=${encodeURIComponent(loc.pathname)}`, { replace: true });
+  }, [hydrated, user, loc.pathname, nav]);
+  if (!hydrated || !user) return null;
   return <>{children}</>;
 };
 
