@@ -277,9 +277,11 @@ export const LocationDetailPage = () => {
           </div>
         </div>
 
-        {/* Gallery */}
-        <section className="mt-6 grid gap-3 sm:grid-cols-[3fr,1fr]">
-          {/* Main image — fixed aspect so any source size renders consistently */}
+        {/* Gallery — the main image's 16:10 box sets the height; the thumbnail rail
+            matches that height and scrolls, so the gallery never grows/shrinks with
+            the number of photos and never leaves empty space. */}
+        <section className={cn('mt-6 grid gap-3', images.length > 1 && 'sm:grid-cols-[3fr,1fr]')}>
+          {/* Main image */}
           <div className="card relative overflow-hidden">
             <div className="aspect-[16/10] w-full bg-slate-100 dark:bg-slate-800">
               {images[activeImg]?.url ? (
@@ -319,20 +321,19 @@ export const LocationDetailPage = () => {
             )}
           </div>
 
-          {/* Thumbnail rail — only when there's more than one image. On desktop the
-              column stretches to the main image's height and the thumbs divide it
-              evenly (auto-rows-fr) so everything stays aligned. */}
+          {/* Thumbnail rail — desktop: a vertical scroller pinned to the main image's
+              height (absolute fill so it can't stretch the row). Mobile: a horizontal
+              scroller below the main image. Either way only ~3 show; scroll for more. */}
           {images.length > 1 && (
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-1 sm:auto-rows-fr">
-              {images.slice(0, 4).map((img, i) => {
-                const showMore = i === 3 && images.length > 4;
-                return (
+            <div className="relative">
+              <div className="flex gap-2 overflow-x-auto pb-1 sm:absolute sm:inset-0 sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:pb-0 sm:pr-1">
+                {images.map((img, i) => (
                   <button
                     key={i}
                     onClick={() => setActiveImg(i)}
                     aria-label={`View image ${i + 1}`}
                     className={cn(
-                      'card relative aspect-[4/3] overflow-hidden transition sm:aspect-auto',
+                      'card relative aspect-[16/10] w-28 shrink-0 overflow-hidden transition sm:w-full',
                       activeImg === i ? 'ring-2 ring-brand-500' : 'opacity-90 hover:opacity-100',
                     )}
                   >
@@ -349,14 +350,9 @@ export const LocationDetailPage = () => {
                         <Car className="h-5 w-5" />
                       </div>
                     )}
-                    {showMore && (
-                      <span className="absolute inset-0 flex items-center justify-center bg-slate-950/55 text-sm font-bold text-white backdrop-blur-[1px]">
-                        +{images.length - 4}
-                      </span>
-                    )}
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
           )}
         </section>
