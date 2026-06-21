@@ -2,14 +2,12 @@
 // Run: npm run prisma:migrate -- --name init
 
 generator client {
+  // Production runs through Prisma Accelerate (DATABASE_URL=prisma://…), so the
+  // client is generated with `--no-engine` (see build:api) and no local query
+  // engine is bundled or run — this is what permanently fixes the Hostinger
+  // CloudLinux "timer has gone away" crash. For local dev against a mysql:// URL,
+  // run a plain `npx prisma generate` (which bundles the native engine).
   provider = "prisma-client-js"
-  // Hostinger runs CloudLinux (RHEL-based); Prisma's distro auto-detection fails
-  // ("Distro is undefined") and falls back to the debian engine, whose in-process
-  // library engine panics on this host ("PANIC: timer has gone away"). Pin the
-  // real targets and use the binary engine (separate process, clean runtime) to
-  // avoid that crash. Keep "native" so local dev still works.
-  engineType    = "binary"
-  binaryTargets = ["native", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {
