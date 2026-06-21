@@ -144,7 +144,9 @@ export const getVendor = async (id: string) => {
       },
       locations: {
         include: {
-          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          // All images — the Vendor Details page shows both a cover thumbnail
+          // (images[0]) AND a full "Photos" gallery of every uploaded image.
+          images: { orderBy: { sortOrder: 'asc' } },
           slots:  {
             select: {
               id: true, code: true, vehicleType: true,

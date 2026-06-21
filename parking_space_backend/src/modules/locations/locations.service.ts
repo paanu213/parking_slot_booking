@@ -8,12 +8,18 @@ import { BadRequest, NotFound } from '../../lib/http.js';
 import type { SearchInput } from './locations.schema.js';
 
 /**
- * Customers must only see APPROVED + active spaces. Approval is the admin's
- * gate; isActive is the vendor's "publish/unpublish" toggle.
+ * Customers must only see spaces that are truly bookable:
+ *  - approvalStatus APPROVED  → admin's gate
+ *  - isActive                 → vendor's publish/unpublish toggle
+ *  - vendor.status APPROVED   → vendor not deactivated/suspended by admin
+ *  - at least one ACTIVE slot → nothing to book otherwise
+ * Deactivating the vendor OR the space OR all its slots hides it from customers.
  */
 const publicLocationFilter: Prisma.ParkingLocationWhereInput = {
   isActive:       true,
   approvalStatus: 'APPROVED',
+  vendor:         { status: 'APPROVED' },
+  slots:          { some: { status: 'ACTIVE' } },
 };
 
 export const searchLocations = async (input: SearchInput) => {
@@ -48,7 +54,9 @@ export const searchLocations = async (input: SearchInput) => {
       where,
       include: {
         images: { take: 1, orderBy: { sortOrder: 'asc' } },
-        slots:  { where: { status: 'ACTIVE' }, take: 1 },
+        // All active slots (light fields) — the card derives min price + the set
+        // of vehicle types (2W/4W/Heavy) available at this space from these.
+        slots:  { where: { status: 'ACTIVE' }, select: { vehicleType: true, hourlyPrice: true } },
       },
       skip:    (page - 1) * pageSize,
       take:    pageSize,
@@ -79,6 +87,8 @@ export const getLocation = async (id: string) => {
       images: { orderBy: { sortOrder: 'asc' } },
       slots:  { where: { status: 'ACTIVE' }, orderBy: { code: 'asc' } },
       vendor: { select: { businessName: true, contactPhone: true } },
+      // Dynamic amenities for the detail page (only what this space actually has).
+      amenities: { include: { amenity: true } },
     },
   });
   if (!location) throw NotFound('Location not found');
