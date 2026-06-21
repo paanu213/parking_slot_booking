@@ -312,6 +312,10 @@ model Booking {
   cancelReason       String?       @db.Text
   isDirectBooking    Boolean       @default(false)
   guestName          String?
+  // Email captured for a walk-in. The booking is claimed (userId set) when a
+  // customer account with this email signs up / logs in. Not unique — many
+  // bookings can share the same guest email.
+  guestEmail         String?
   guestPhone         String?
   guestVehicleNumber String?
   guestVehicleModel  String?

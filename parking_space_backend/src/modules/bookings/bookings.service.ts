@@ -67,3 +67,15 @@ export const listMyBookings = (userId: string) =>
     include: { slot: { include: { location: true } }, payments: true },
     orderBy: { createdAt: 'desc' },
   });
+
+/**
+ * Attach any unclaimed walk-in (direct) bookings made for this email to the
+ * account. Called when a customer signs up or logs in, so vendor-created
+ * bookings show up in their history. Idempotent and matches case-insensitively
+ * (emails are stored lowercased).
+ */
+export const claimDirectBookings = (userId: string, email: string) =>
+  prisma.booking.updateMany({
+    where: { isDirectBooking: true, userId: null, guestEmail: email.trim().toLowerCase() },
+    data:  { userId },
+  });

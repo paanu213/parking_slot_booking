@@ -346,9 +346,10 @@ export const commissionSummary = async (
 
 export const createDirectBooking = async (userId: string, input: DirectBookingInput) => {
   const {
-    slotId, guestName, guestPhone, guestVehicleNumber, guestVehicleModel,
+    slotId, guestName, guestEmail, guestPhone, guestVehicleNumber, guestVehicleModel,
     bookingType, startAt, endAt, totalAmount,
   } = input;
+  const email = guestEmail.trim().toLowerCase();
   const commissionRate = await getCommissionRate();
 
   return prisma.$transaction(async (tx) => {
@@ -388,15 +389,22 @@ export const createDirectBooking = async (userId: string, input: DirectBookingIn
 
     const finalAmount = totalAmount ?? calc.amount;
 
+    // Store the guest email on the booking. If a customer account already uses
+    // this email, link it now; otherwise leave it unlinked — it gets claimed when
+    // a customer signs up / logs in with this email (see claimDirectBookings).
+    // We never auto-create an account here, so the customer just registers normally.
+    const existing = await tx.user.findUnique({ where: { email }, select: { id: true } });
+
     const { nanoid } = await import('nanoid');
     return tx.booking.create({
       data: {
         reference: `DB-${nanoid(10).toUpperCase()}`,
         slotId,
-        userId: null,
+        userId: existing?.id ?? null,
         isDirectBooking: true,
         guestName,
-        guestPhone,
+        guestEmail: email,
+        guestPhone: guestPhone ?? null,
         guestVehicleNumber: guestVehicleNumber ?? null,
         guestVehicleModel:  guestVehicleModel  ?? null,
         bookingType,
