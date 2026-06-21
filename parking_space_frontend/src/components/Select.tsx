@@ -71,7 +71,10 @@ export const Select = ({
   const isPlaceholder = !selected;
 
   return (
-    <div ref={ref} className="relative inline-flex">
+    // Elevate the whole control into its own stacking context while open, so the
+    // popover reliably sits above later sibling form fields (e.g. a full-width
+    // textarea rendered below it) regardless of DOM order.
+    <div ref={ref} className={cn('relative inline-flex', open && 'z-50')}>
       <button
         type="button"
         onClick={() => !disabled && setOpen((v) => !v)}
@@ -100,7 +103,7 @@ export const Select = ({
         <div
           role="listbox"
           className={cn(
-            'absolute left-0 top-full z-40 mt-1.5 min-w-full max-h-[320px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl shadow-slate-900/10 ring-1 ring-slate-900/5',
+            'absolute left-0 top-full z-50 mt-1.5 min-w-full max-h-[320px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl shadow-slate-900/10 ring-1 ring-slate-900/5',
             'dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/40 dark:ring-white/5',
             panelClassName,
           )}
