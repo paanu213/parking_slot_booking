@@ -147,7 +147,7 @@ export const ExplorePage = () => {
           className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(to_right,#fff_1px,transparent_1px),linear-gradient(to_bottom,#fff_1px,transparent_1px)] [background-size:40px_40px]"
         />
 
-        <div className="relative mx-auto max-w-6xl px-4 py-16 sm:py-24 text-white">
+        <div className="relative mx-auto max-w-6xl px-4 py-16 sm:py-16 text-white">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide ring-1 ring-white/20 backdrop-blur">
             <Sparkles className="h-3.5 w-3.5" /> Now live in 6 cities
           </span>
@@ -307,7 +307,7 @@ export const ExplorePage = () => {
             <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">A proper parking experience</h2>
           </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
           {HIGHLIGHTS.map(({ icon: Icon, title, desc }) => (
             <div
               key={title}
