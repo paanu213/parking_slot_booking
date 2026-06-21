@@ -389,27 +389,21 @@ export const createDirectBooking = async (userId: string, input: DirectBookingIn
 
     const finalAmount = totalAmount ?? calc.amount;
 
-    // Link the booking to a customer account by email (create a lightweight
-    // account if none exists yet). This way, when the walk-in later signs into
-    // the customer site with this email, all their bookings/payments show up.
-    // Phone is intentionally NOT set on a new account here — User.phone is @unique
-    // and we don't want a walk-in's number to block a real signup; it's still
-    // captured on the booking's guestPhone for the vendor's records.
-    let customer = await tx.user.findUnique({ where: { email } });
-    if (!customer) {
-      customer = await tx.user.create({
-        data: { email, fullName: guestName, role: 'CUSTOMER' },
-      });
-    }
+    // Store the guest email on the booking. If a customer account already uses
+    // this email, link it now; otherwise leave it unlinked — it gets claimed when
+    // a customer signs up / logs in with this email (see claimDirectBookings).
+    // We never auto-create an account here, so the customer just registers normally.
+    const existing = await tx.user.findUnique({ where: { email }, select: { id: true } });
 
     const { nanoid } = await import('nanoid');
     return tx.booking.create({
       data: {
         reference: `DB-${nanoid(10).toUpperCase()}`,
         slotId,
-        userId: customer.id,
+        userId: existing?.id ?? null,
         isDirectBooking: true,
         guestName,
+        guestEmail: email,
         guestPhone: guestPhone ?? null,
         guestVehicleNumber: guestVehicleNumber ?? null,
         guestVehicleModel:  guestVehicleModel  ?? null,

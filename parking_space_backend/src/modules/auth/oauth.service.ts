@@ -10,6 +10,7 @@ import type { User } from '@prisma/client';
 import { env, corsOrigins } from '../../config/env.js';
 import { prisma } from '../../lib/prisma.js';
 import { BadRequest, ServerError } from '../../lib/http.js';
+import { claimDirectBookings } from '../bookings/bookings.service.js';
 
 export const STATE_COOKIE = 'oauth_state';
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -258,5 +259,9 @@ export const resolveOAuthLogin = async (
       data:  { provider: profile.provider, providerId: profile.providerId, emailVerified: true },
     });
   }
+
+  // Attach any walk-in bookings a vendor created for this email.
+  await claimDirectBookings(user.id, user.email).catch(() => {});
+
   return { status: 'ok', user };
 };

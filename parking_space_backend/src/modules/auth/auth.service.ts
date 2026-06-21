@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma.js';
 import { hashPassword, verifyPassword } from '../../lib/password.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../../lib/jwt.js';
 import { Conflict, Unauthorized } from '../../lib/http.js';
+import { claimDirectBookings } from '../bookings/bookings.service.js';
 import type { LoginInput, RegisterInput } from './auth.schema.js';
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
@@ -34,6 +35,11 @@ export const registerUser = async (input: RegisterInput) => {
       }),
     },
   });
+
+  // Attach any walk-in bookings a vendor created for this email before signup.
+  if (role === 'CUSTOMER') {
+    await claimDirectBookings(user.id, user.email).catch(() => {});
+  }
 
   return issueTokens(user);
 };
