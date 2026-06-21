@@ -73,3 +73,26 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 export const corsOrigins = env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
+
+// Production-only safety net — catch the misconfigurations that silently break or
+// weaken a live deployment (insecure cookies, no CORS allowlist, placeholder/dupe
+// JWT secrets). Fail fast at boot rather than shipping an insecure server.
+if (env.NODE_ENV === 'production') {
+  const problems: string[] = [];
+  if (!env.COOKIE_SECURE) problems.push('COOKIE_SECURE must be true in production (cookies sent over HTTPS only)');
+  if (corsOrigins.length === 0) problems.push('CORS_ORIGINS must list at least one allowed origin in production');
+  if (/replace_with|change.?me|example|secret_minimum/i.test(env.JWT_ACCESS_SECRET)) {
+    problems.push('JWT_ACCESS_SECRET still looks like a placeholder — set a real random secret (openssl rand -hex 32)');
+  }
+  if (/replace_with|change.?me|example|secret_32_chars/i.test(env.JWT_REFRESH_SECRET)) {
+    problems.push('JWT_REFRESH_SECRET still looks like a placeholder — set a real random secret (openssl rand -hex 32)');
+  }
+  if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
+    problems.push('JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different values');
+  }
+  if (problems.length > 0) {
+    console.error('Refusing to start — production environment is misconfigured:');
+    for (const p of problems) console.error(`  • ${p}`);
+    process.exit(1);
+  }
+}

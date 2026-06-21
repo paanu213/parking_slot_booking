@@ -19,6 +19,16 @@ import {
 import argon2 from 'argon2';
 import { nanoid } from 'nanoid';
 
+// Safety net — this seeder injects fake vendors/customers/bookings and must never
+// touch a live database. Refuse to run in production unless explicitly forced.
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== 'true') {
+  console.error(
+    'Refusing to run the demo seeder with NODE_ENV=production. This inserts fake data.\n' +
+    'If you really intend to, re-run with ALLOW_DEMO_SEED=true.',
+  );
+  process.exit(1);
+}
+
 const prisma = new PrismaClient();
 
 const DEFAULT_PASSWORD = 'Demo!2345';
