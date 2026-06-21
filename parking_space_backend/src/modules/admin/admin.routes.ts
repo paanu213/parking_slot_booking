@@ -96,11 +96,13 @@ r.patch('/bookings/:id/guest', validate(adminEditGuestSchema), ctrl.editBookingG
 r.patch('/bookings/:id/cancel', ctrl.cancelBooking);
 
 // --- Customer list & details ---
+// NOTE: literal /customers/guest* paths MUST be registered before the parametric
+// /customers/:id routes, otherwise Express matches `guest` as an :id and shadows them.
 r.get('/customers', ctrl.listCustomers);
-r.get('/customers/:id', ctrl.getCustomer);
 r.get('/customers/guest/:phone', ctrl.getGuestCustomer);
-r.patch('/customers/:id', validate(updateRegisteredCustomerSchema), ctrl.updateRegisteredCustomer);
 r.patch('/customers/guest', validate(updateGuestCustomerSchema), ctrl.updateGuestCustomer);
+r.get('/customers/:id', ctrl.getCustomer);
+r.patch('/customers/:id', validate(updateRegisteredCustomerSchema), ctrl.updateRegisteredCustomer);
 r.patch('/customers/:id/status', ctrl.toggleCustomerStatus);
 
 // --- Amenities master list (admin-managed) ---
