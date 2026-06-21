@@ -27,8 +27,7 @@ export const Header = () => {
         {/* Center nav */}
         <nav className="flex items-center gap-1 text-sm">
           <NavLink
-            to="/"
-            end
+            to="/spaces"
             className={({ isActive }) =>
               cn(
                 'rounded-lg px-3 py-1.5 transition',

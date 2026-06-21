@@ -10,6 +10,8 @@ import {
   Shield,
   Clock,
   Car,
+  Bike,
+  Truck,
   Building2,
   BadgePercent,
   Sparkles,
@@ -34,15 +36,38 @@ export interface Location {
   city: string;
   area?: string | null;
   images: { url: string }[];
-  slots?: { hourlyPrice: number }[];
+  slots?: { hourlyPrice: number; vehicleType?: string }[];
 }
 
 export const CITIES = ['Hyderabad', 'Bengaluru', 'Mumbai', 'Delhi NCR', 'Pune', 'Chennai'];
 
+// Short vehicle-type badges shown on cards so users can tell at a glance what
+// kind of parking a space offers without opening the detail page.
+const VEHICLE_BADGE: Record<string, { label: string; Icon: typeof Car }> = {
+  TWO_WHEELER:  { label: '2-Wheeler', Icon: Bike  },
+  FOUR_WHEELER: { label: '4-Wheeler', Icon: Car   },
+  CAR:          { label: '4-Wheeler', Icon: Car   }, // legacy value
+  HEAVY:        { label: 'Heavy',     Icon: Truck },
+};
+
+/** Distinct vehicle types a space offers (de-duped, legacy CAR folded into 4-Wheeler). */
+export const vehicleBadgesFor = (slots?: { vehicleType?: string }[]) => {
+  const seen = new Set<string>();
+  const out: { label: string; Icon: typeof Car }[] = [];
+  for (const s of slots ?? []) {
+    const badge = s.vehicleType ? VEHICLE_BADGE[s.vehicleType] : undefined;
+    if (badge && !seen.has(badge.label)) {
+      seen.add(badge.label);
+      out.push(badge);
+    }
+  }
+  return out;
+};
+
 const HIGHLIGHTS = [
   { icon: Shield, title: 'Verified & secure', desc: 'Every lot is vetted, CCTV-covered, and staffed.' },
-  { icon: Clock, title: 'Book in 60 seconds', desc: 'From search to QR pass in under a minute.' },
-  { icon: Zap, title: 'Instant confirmation', desc: 'Reserve now, park in the next hour.' },
+  // { icon: Clock, title: 'Book in 60 seconds', desc: 'From search to QR pass in under a minute.' },
+  // { icon: Zap, title: 'Instant confirmation', desc: 'Reserve now, park in the next hour.' },
   { icon: BadgePercent, title: 'Best price promise', desc: "We match any cheaper rate you find. Period." },
 ];
 
@@ -134,8 +159,8 @@ export const ExplorePage = () => {
             </span>
           </h1>
           <p className="mt-4 max-w-xl text-base text-white/80 sm:text-lg">
-            Book verified, secure parking by the hour, day, or month — near your office, the mall, or
-            tonight's concert. Instant QR entry, zero drama.
+            Book verified, secure parking by the hour, day, or month, near your office, the mall, or
+            tonight's concert. Instant zero drama.
           </p>
 
           {/* Search card */}
@@ -195,7 +220,7 @@ export const ExplorePage = () => {
           {/* Trust stats */}
           <div className="mt-10 grid grid-cols-2 gap-6 text-white sm:grid-cols-4">
             {[
-              { v: '12,400+', l: 'Verified slots' },
+              { v: '100%', l: 'Verified slots' },
               { v: '48 sec', l: 'Avg booking time' },
               { v: '99.9%', l: 'Uptime at peak' },
               { v: '4.8★', l: 'Customer rating' },
@@ -209,29 +234,7 @@ export const ExplorePage = () => {
         </div>
       </section>
 
-      {/* HIGHLIGHTS */}
-      <section className="mx-auto max-w-6xl px-4 py-12">
-        <div className="mb-8 flex items-end justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Why AutoSahay</p>
-            <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">A proper parking experience</h2>
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {HIGHLIGHTS.map(({ icon: Icon, title, desc }) => (
-            <div
-              key={title}
-              className="card group p-5 transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/10"
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500/15 to-brand-500/5 text-brand-600 ring-1 ring-brand-500/20 transition group-hover:scale-110">
-                <Icon className="h-5 w-5" />
-              </span>
-              <h3 className="mt-4 text-sm font-semibold">{title}</h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+
 
       {/* FEATURED LOCATIONS */}
       <section id="results" className="mx-auto max-w-6xl px-4 py-8">
@@ -247,6 +250,8 @@ export const ExplorePage = () => {
               Fresh listings, recently booked by drivers like you.
             </p>
           </div>
+
+          
 
           {/* Right: inline city switcher + View all → */}
           <div className="flex flex-wrap items-center gap-2">
@@ -281,7 +286,9 @@ export const ExplorePage = () => {
           {isLoading ? (
             Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)
           ) : data && data.items.length > 0 ? (
-            data.items.map((l) => <LocationCard key={l.id} loc={l} />)
+            // Homepage shows at most 6 (filter-aware — the query already applies
+            // q + city); the rest live on the dedicated /spaces catalog page.
+            data.items.slice(0, 6).map((l) => <LocationCard key={l.id} loc={l} />)
           ) : (
             <div className="col-span-full card p-10 text-center">
               <p className="text-slate-500 dark:text-slate-400">
@@ -289,6 +296,30 @@ export const ExplorePage = () => {
               </p>
             </div>
           )}
+        </div>
+      </section>
+
+            {/* HIGHLIGHTS */}
+      <section className="mx-auto max-w-6xl px-4 py-12">
+        <div className="mb-8 flex items-end justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Why AutoSahay</p>
+            <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">A proper parking experience</h2>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {HIGHLIGHTS.map(({ icon: Icon, title, desc }) => (
+            <div
+              key={title}
+              className="card group p-5 transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/10"
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500/15 to-brand-500/5 text-brand-600 ring-1 ring-brand-500/20 transition group-hover:scale-110">
+                <Icon className="h-5 w-5" />
+              </span>
+              <h3 className="mt-4 text-sm font-semibold">{title}</h3>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{desc}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -319,7 +350,7 @@ export const ExplorePage = () => {
       {/* TESTIMONIALS */}
       <section className="mx-auto max-w-6xl px-4 py-12">
         <div className="mb-8 text-center">
-          <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Loved by drivers</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Loved by Owners</p>
           <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">What people are saying</h2>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
@@ -441,6 +472,7 @@ export const LocationCard = ({ loc }: { loc: Location }) => {
   const minHour = hasSlots
     ? Math.min(...loc.slots!.map((s) => Number(s.hourlyPrice)))
     : null;
+  const vehicleBadges = vehicleBadgesFor(loc.slots);
 
   const inner = (
     <>
@@ -500,6 +532,19 @@ export const LocationCard = ({ loc }: { loc: Location }) => {
           <MapPin className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{loc.addressLine}, {loc.city}</span>
         </p>
+        {vehicleBadges.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {vehicleBadges.map(({ label, Icon }) => (
+              <span
+                key={label}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300"
+              >
+                <Icon className="h-3 w-3" />
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-1 text-xs text-amber-500">
             <Star className="h-3.5 w-3.5 fill-current" />

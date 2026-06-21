@@ -8,11 +8,6 @@ import {
   Truck,
   Clock,
   Shield,
-  Cctv,
-  Zap,
-  Accessibility,
-  Umbrella,
-  Wrench,
   CreditCard,
   BadgeCheck,
   Star,
@@ -41,6 +36,7 @@ import { Footer } from '@/components/Footer';
 import { SaveButton } from '@/components/SaveButton';
 import { toast } from '@/components/Toast';
 import { cn } from '@/lib/cn';
+import { AmenityIcon } from '@ps/ui';
 
 interface Slot {
   id: string;
@@ -64,6 +60,7 @@ interface Location {
   images: { url: string }[];
   slots: Slot[];
   vendor?: { businessName: string; contactPhone?: string | null };
+  amenities?: { amenity: { id: string; name: string; icon: string } }[];
 }
 
 // Map slot.vehicleType (TWO_WHEELER / FOUR_WHEELER / HEAVY / legacy CAR) → display label + icon
@@ -73,15 +70,6 @@ const VEHICLE_TYPE: Record<string, { label: string; Icon: typeof Car }> = {
   CAR:          { label: 'Car / SUV',     Icon: Car   },   // legacy
   HEAVY:        { label: 'Heavy Vehicle', Icon: Truck },
 };
-
-const AMENITIES = [
-  { icon: Cctv, label: 'CCTV monitored', always: true },
-  { icon: Shield, label: '24×7 security', always: true },
-  { icon: Umbrella, label: 'Covered parking' },
-  { icon: Zap, label: 'EV charging' },
-  { icon: Accessibility, label: 'Wheelchair access' },
-  { icon: Wrench, label: 'On-site attendant' },
-];
 
 const HIGHLIGHTS = [
   { icon: ShieldCheck, label: 'Verified space', tone: 'emerald' },
@@ -291,8 +279,9 @@ export const LocationDetailPage = () => {
 
         {/* Gallery */}
         <section className="mt-6 grid gap-3 sm:grid-cols-[3fr,1fr]">
+          {/* Main image — fixed aspect so any source size renders consistently */}
           <div className="card relative overflow-hidden">
-            <div className="aspect-[16/9] w-full bg-slate-100 dark:bg-slate-800">
+            <div className="aspect-[16/10] w-full bg-slate-100 dark:bg-slate-800">
               {images[activeImg]?.url ? (
                 <img
                   src={images[activeImg]!.url}
@@ -329,32 +318,47 @@ export const LocationDetailPage = () => {
               </>
             )}
           </div>
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-1">
-            {images.slice(0, 4).map((img, i) => (
-              <button
-                key={i}
-                onClick={() => setActiveImg(i)}
-                className={cn(
-                  'card aspect-[4/3] overflow-hidden transition sm:aspect-[16/9]',
-                  activeImg === i ? 'ring-2 ring-brand-500' : 'opacity-80 hover:opacity-100',
-                )}
-              >
-                {img?.url ? (
-                  <img
-                    src={img.url}
-                    alt={`${loc.name} ${i + 1}`}
-                    loading="lazy"
-                    decoding="async"
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center bg-slate-100 text-slate-400 dark:bg-slate-800">
-                    <Car className="h-5 w-5" />
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
+
+          {/* Thumbnail rail — only when there's more than one image. On desktop the
+              column stretches to the main image's height and the thumbs divide it
+              evenly (auto-rows-fr) so everything stays aligned. */}
+          {images.length > 1 && (
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-1 sm:auto-rows-fr">
+              {images.slice(0, 4).map((img, i) => {
+                const showMore = i === 3 && images.length > 4;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setActiveImg(i)}
+                    aria-label={`View image ${i + 1}`}
+                    className={cn(
+                      'card relative aspect-[4/3] overflow-hidden transition sm:aspect-auto',
+                      activeImg === i ? 'ring-2 ring-brand-500' : 'opacity-90 hover:opacity-100',
+                    )}
+                  >
+                    {img?.url ? (
+                      <img
+                        src={img.url}
+                        alt={`${loc.name} ${i + 1}`}
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center bg-slate-100 text-slate-400 dark:bg-slate-800">
+                        <Car className="h-5 w-5" />
+                      </div>
+                    )}
+                    {showMore && (
+                      <span className="absolute inset-0 flex items-center justify-center bg-slate-950/55 text-sm font-bold text-white backdrop-blur-[1px]">
+                        +{images.length - 4}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {/* Highlights strip */}
@@ -466,7 +470,7 @@ export const LocationDetailPage = () => {
                 </div>
               </div>
 
-              {/* Slot selection */}
+              {/* Slot selection
               <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/60">
                 <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <Car className="h-3.5 w-3.5" /> Select a slot
@@ -524,7 +528,7 @@ export const LocationDetailPage = () => {
                     })
                   )}
                 </div>
-              </div>
+              </div> */}
 
               {/* Pricing + Reserve */}
               <div className="flex flex-col rounded-2xl border border-brand-500/30 bg-gradient-to-br from-brand-600 to-brand-700 p-4 text-white shadow-lg shadow-brand-600/20">
@@ -617,34 +621,29 @@ export const LocationDetailPage = () => {
               </p>
             </div>
 
-            {/* Amenities */}
+            {/* Amenities — driven by what this space actually offers */}
             <div className="card p-5">
               <h2 className="flex items-center gap-2 font-display text-lg font-bold">
                 <Sparkles className="h-5 w-5 text-brand-600" /> Amenities
               </h2>
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {AMENITIES.map(({ icon: Icon, label, always }) => (
-                  <div
-                    key={label}
-                    className={cn(
-                      'flex items-center gap-2 rounded-xl border p-3 text-sm',
-                      always
-                        ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300'
-                        : 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-200',
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="flex-1 font-medium">{label}</span>
-                    {always ? (
+              {(loc.amenities?.length ?? 0) === 0 ? (
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  No specific amenities listed for this space.
+                </p>
+              ) : (
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {loc.amenities!.map(({ amenity }) => (
+                    <div
+                      key={amenity.id}
+                      className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-200"
+                    >
+                      <AmenityIcon icon={amenity.icon} className="h-4 w-4 shrink-0 text-brand-600" />
+                      <span className="flex-1 font-medium">{amenity.name}</span>
                       <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                    ) : (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                        Ask
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Operating hours */}
@@ -676,8 +675,8 @@ export const LocationDetailPage = () => {
                 <PolicyRow ok label="Free cancel up to 2 hrs before start" />
                 <PolicyRow ok label="Instant refund to source" />
                 <PolicyRow ok label="CCTV recording retained 30 days" />
-                <PolicyRow ok label="₹10 lakh liability insurance on-site" />
-                <PolicyRow label="No overnight vehicle storage" />
+                {/* <PolicyRow ok label="₹10 lakh liability insurance on-site" /> */}
+                {/* <PolicyRow label="No overnight vehicle storage" /> */}
                 <PolicyRow label="No commercial goods vehicles" />
               </div>
             </div>
