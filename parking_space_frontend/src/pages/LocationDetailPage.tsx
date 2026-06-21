@@ -357,6 +357,18 @@ export const LocationDetailPage = () => {
           )}
         </section>
 
+        {/* Pricing + contact — shown right below the gallery on mobile/tablet
+            (on desktop they live in the sticky right sidebar instead). */}
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:hidden">
+          <SpaceSidebar
+            minHour={minHour}
+            minMonth={minMonth}
+            slotsCount={loc.slots.length}
+            vehicleTypes={vehicleTypes}
+            vendor={loc.vendor}
+          />
+        </div>
+
         {/* Highlights strip */}
         <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {HIGHLIGHTS.map(({ icon: Icon, label, tone }) => (
@@ -740,7 +752,7 @@ export const LocationDetailPage = () => {
           </section>
 
           {/* RIGHT: pricing + contact (the two emphasized cards) */}
-          <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+          <aside className="hidden space-y-4 lg:block lg:sticky lg:top-20 lg:self-start">
             {/* Sticky mini-booking reminder — hidden until online booking is live (see BOOKING_ENABLED) */}
             {BOOKING_ENABLED && (
               <div className="card p-4">
@@ -774,108 +786,13 @@ export const LocationDetailPage = () => {
               </div>
             )}
 
-            {/* ── 1. Pricing card (brand-tinted, high hierarchy) ── */}
-            <div
-              className={cn(
-                'relative overflow-hidden rounded-2xl border border-brand-500/30 p-5 shadow-[0_10px_40px_-20px_rgba(47,102,255,0.45)]',
-                'bg-gradient-to-br from-brand-50 via-white to-brand-100/50',
-                'dark:border-brand-500/20 dark:from-brand-500/10 dark:via-slate-900 dark:to-brand-500/5',
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-brand-600" />
-                <p className="text-xs font-bold uppercase tracking-wider text-brand-700 dark:text-brand-300">Pricing</p>
-              </div>
-
-              {/* Hero price — biggest thing on the page after the gallery */}
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-xs font-semibold text-slate-500">From</span>
-                <span className="font-display text-4xl font-bold text-brand-700 dark:text-brand-300">{inr(minHour)}</span>
-                <span className="text-sm font-semibold text-slate-500">/hr</span>
-              </div>
-              {minMonth != null && (
-                <div className="mt-1 flex items-baseline gap-1 text-sm">
-                  <span className="text-xs text-slate-500">Monthly pass from</span>
-                  <span className="font-bold text-slate-900 dark:text-slate-100">{inr(minMonth)}</span>
-                  <span className="text-xs text-slate-500">/mo</span>
-                </div>
-              )}
-
-              <div className="mt-4 h-px bg-brand-500/15" />
-
-              {/* Quick facts: slots + vehicle types */}
-              <dl className="mt-4 space-y-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <dt className="flex items-center gap-1.5 text-slate-500">
-                    <Car className="h-3.5 w-3.5" /> Slots available
-                  </dt>
-                  <dd className="font-bold text-slate-900 dark:text-slate-100">{loc.slots.length}</dd>
-                </div>
-                <div>
-                  <dt className="flex items-center gap-1.5 text-slate-500">
-                    <Sparkles className="h-3.5 w-3.5" /> Vehicle types
-                  </dt>
-                  <dd className="mt-2 flex flex-wrap gap-1.5">
-                    {vehicleTypes.length === 0 ? (
-                      <span className="text-xs text-slate-400">—</span>
-                    ) : (
-                      vehicleTypes.map(({ label, Icon }) => (
-                        <span
-                          key={label}
-                          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                          {label}
-                        </span>
-                      ))
-                    )}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-
-            {/* ── 2. Call host card (also emphasized, brand-tinted) ── */}
-            <div
-              className={cn(
-                'relative overflow-hidden rounded-2xl border border-emerald-500/30 p-5 shadow-[0_10px_40px_-20px_rgba(16,185,129,0.4)]',
-                'bg-gradient-to-br from-emerald-50 via-white to-emerald-100/50',
-                'dark:border-emerald-500/20 dark:from-emerald-500/10 dark:via-slate-900 dark:to-emerald-500/5',
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <Phone className="h-4 w-4 text-emerald-600" />
-                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Talk to the host</p>
-              </div>
-
-              <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                {loc.vendor?.businessName ?? 'AutoSahay partner'}
-              </p>
-              <p className="text-xs text-slate-500">Verified partner</p>
-
-              {loc.vendor?.contactPhone ? (
-                <>
-                  <p className="mt-4 font-mono text-lg font-bold tracking-wide text-slate-900 dark:text-slate-100">
-                    {loc.vendor.contactPhone}
-                  </p>
-                  <a
-                    href={`tel:${loc.vendor.contactPhone.replace(/\s+/g, '')}`}
-                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-700 active:scale-[0.99]"
-                  >
-                    <Phone className="h-4 w-4" />
-                    Call now
-                  </a>
-                </>
-              ) : (
-                <p className="mt-3 text-xs text-slate-500">
-                  Contact number not available for this space yet.
-                </p>
-              )}
-
-              <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500">
-                <Clock className="h-3 w-3" />
-                Best response within ~5 min
-              </p>
-            </div>
+            <SpaceSidebar
+              minHour={minHour}
+              minMonth={minMonth}
+              slotsCount={loc.slots.length}
+              vehicleTypes={vehicleTypes}
+              vendor={loc.vendor}
+            />
           </aside>
         </div>
       </main>
@@ -884,6 +801,127 @@ export const LocationDetailPage = () => {
     </>
   );
 };
+
+/**
+ * Pricing + "talk to the host" cards. Rendered twice: as a sticky right sidebar
+ * on desktop, and right below the gallery (stacked / 2-up) on mobile + tablet.
+ */
+const SpaceSidebar = ({
+  minHour,
+  minMonth,
+  slotsCount,
+  vehicleTypes,
+  vendor,
+}: {
+  minHour: number;
+  minMonth: number | null;
+  slotsCount: number;
+  vehicleTypes: { label: string; Icon: typeof Car }[];
+  vendor?: { businessName: string; contactPhone?: string | null };
+}) => (
+  <>
+    {/* Pricing card */}
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-2xl border border-brand-500/30 p-5 shadow-[0_10px_40px_-20px_rgba(47,102,255,0.45)]',
+        'bg-gradient-to-br from-brand-50 via-white to-brand-100/50',
+        'dark:border-brand-500/20 dark:from-brand-500/10 dark:via-slate-900 dark:to-brand-500/5',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <CreditCard className="h-4 w-4 text-brand-600" />
+        <p className="text-xs font-bold uppercase tracking-wider text-brand-700 dark:text-brand-300">Pricing</p>
+      </div>
+
+      <div className="mt-3 flex items-baseline gap-1">
+        <span className="text-xs font-semibold text-slate-500">From</span>
+        <span className="font-display text-4xl font-bold text-brand-700 dark:text-brand-300">{inr(minHour)}</span>
+        <span className="text-sm font-semibold text-slate-500">/hr</span>
+      </div>
+      {minMonth != null && (
+        <div className="mt-1 flex items-baseline gap-1 text-sm">
+          <span className="text-xs text-slate-500">Monthly pass from</span>
+          <span className="font-bold text-slate-900 dark:text-slate-100">{inr(minMonth)}</span>
+          <span className="text-xs text-slate-500">/mo</span>
+        </div>
+      )}
+
+      <div className="mt-4 h-px bg-brand-500/15" />
+
+      <dl className="mt-4 space-y-3 text-sm">
+        <div className="flex items-center justify-between">
+          <dt className="flex items-center gap-1.5 text-slate-500">
+            <Car className="h-3.5 w-3.5" /> Slots available
+          </dt>
+          <dd className="font-bold text-slate-900 dark:text-slate-100">{slotsCount}</dd>
+        </div>
+        <div>
+          <dt className="flex items-center gap-1.5 text-slate-500">
+            <Sparkles className="h-3.5 w-3.5" /> Vehicle types
+          </dt>
+          <dd className="mt-2 flex flex-wrap gap-1.5">
+            {vehicleTypes.length === 0 ? (
+              <span className="text-xs text-slate-400">—</span>
+            ) : (
+              vehicleTypes.map(({ label, Icon }) => (
+                <span
+                  key={label}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </span>
+              ))
+            )}
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    {/* Talk to the host card */}
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-2xl border border-emerald-500/30 p-5 shadow-[0_10px_40px_-20px_rgba(16,185,129,0.4)]',
+        'bg-gradient-to-br from-emerald-50 via-white to-emerald-100/50',
+        'dark:border-emerald-500/20 dark:from-emerald-500/10 dark:via-slate-900 dark:to-emerald-500/5',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <Phone className="h-4 w-4 text-emerald-600" />
+        <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Talk to the host</p>
+      </div>
+
+      <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
+        {vendor?.businessName ?? 'AutoSahay partner'}
+      </p>
+      <p className="text-xs text-slate-500">Verified partner</p>
+
+      {vendor?.contactPhone ? (
+        <>
+          <p className="mt-4 font-mono text-lg font-bold tracking-wide text-slate-900 dark:text-slate-100">
+            {vendor.contactPhone}
+          </p>
+          <a
+            href={`tel:${vendor.contactPhone.replace(/\s+/g, '')}`}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-700 active:scale-[0.99]"
+          >
+            <Phone className="h-4 w-4" />
+            Call now
+          </a>
+        </>
+      ) : (
+        <p className="mt-3 text-xs text-slate-500">
+          Contact number not available for this space yet.
+        </p>
+      )}
+
+      <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500">
+        <Clock className="h-3 w-3" />
+        Best response within ~5 min
+      </p>
+    </div>
+  </>
+);
 
 const PriceRow = ({ label, value }: { label: string; value: string }) => (
   <div className="flex items-center justify-between text-sm">
