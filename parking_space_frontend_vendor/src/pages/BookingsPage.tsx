@@ -47,7 +47,8 @@ interface DirectBookingForm {
   slotId:      string;
   bookingType: BookingType;
   guestName:   string;
-  guestPhone:  string;
+  guestEmail:  string;
+  guestPhone?: string;
   guestVehicleNumber?: string;
   guestVehicleModel?:  string;
   startAt:     string;
@@ -412,8 +413,8 @@ const EditGuestModal = ({
               <input className="input w-full" placeholder="Full name" required {...register('guestName')} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Customer Phone *</label>
-              <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" required
+              <label className="mb-1 block text-xs font-medium text-slate-500">Customer Phone</label>
+              <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile"
                      {...register('guestPhone', { onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); } })} />
             </div>
           </div>
@@ -1220,7 +1221,8 @@ const DirectBookingFormFields = ({
           slotId:             v.slotId,
           bookingType:        v.bookingType,
           guestName:          v.guestName,
-          guestPhone:         v.guestPhone,
+          guestEmail:         v.guestEmail,
+          guestPhone:         v.guestPhone || undefined,
           guestVehicleNumber: v.guestVehicleNumber || undefined,
           guestVehicleModel:  v.guestVehicleModel  || undefined,
           startAt:            v.startAt,
@@ -1305,17 +1307,27 @@ const DirectBookingFormFields = ({
         <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
       </div>
 
-      {/* Customer Name & Phone */}
+      {/* Customer Name & Email */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">Customer Name *</label>
           <input className="input w-full" placeholder="Full name" required {...register('guestName')} />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">Customer Phone *</label>
-          <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" required
-                 {...register('guestPhone', { onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); } })} />
+          <label className="mb-1 block text-xs font-medium text-slate-500">Customer Email *</label>
+          <input className="input w-full" type="email" placeholder="name@email.com" required {...register('guestEmail')} />
         </div>
+      </div>
+      <p className="-mt-1 text-[11px] text-slate-400">
+        We link this booking to the customer's account by email, so they can see all their
+        bookings &amp; payments when they sign in to the customer site.
+      </p>
+
+      {/* Customer Phone (optional) */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-500">Customer Phone</label>
+        <input className="input w-full" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile (optional)"
+               {...register('guestPhone', { onChange: (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); } })} />
       </div>
 
       {/* Vehicle */}

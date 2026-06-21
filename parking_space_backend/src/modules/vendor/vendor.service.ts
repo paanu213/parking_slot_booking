@@ -346,9 +346,10 @@ export const commissionSummary = async (
 
 export const createDirectBooking = async (userId: string, input: DirectBookingInput) => {
   const {
-    slotId, guestName, guestPhone, guestVehicleNumber, guestVehicleModel,
+    slotId, guestName, guestEmail, guestPhone, guestVehicleNumber, guestVehicleModel,
     bookingType, startAt, endAt, totalAmount,
   } = input;
+  const email = guestEmail.trim().toLowerCase();
   const commissionRate = await getCommissionRate();
 
   return prisma.$transaction(async (tx) => {
@@ -388,15 +389,28 @@ export const createDirectBooking = async (userId: string, input: DirectBookingIn
 
     const finalAmount = totalAmount ?? calc.amount;
 
+    // Link the booking to a customer account by email (create a lightweight
+    // account if none exists yet). This way, when the walk-in later signs into
+    // the customer site with this email, all their bookings/payments show up.
+    // Phone is intentionally NOT set on a new account here — User.phone is @unique
+    // and we don't want a walk-in's number to block a real signup; it's still
+    // captured on the booking's guestPhone for the vendor's records.
+    let customer = await tx.user.findUnique({ where: { email } });
+    if (!customer) {
+      customer = await tx.user.create({
+        data: { email, fullName: guestName, role: 'CUSTOMER' },
+      });
+    }
+
     const { nanoid } = await import('nanoid');
     return tx.booking.create({
       data: {
         reference: `DB-${nanoid(10).toUpperCase()}`,
         slotId,
-        userId: null,
+        userId: customer.id,
         isDirectBooking: true,
         guestName,
-        guestPhone,
+        guestPhone: guestPhone ?? null,
         guestVehicleNumber: guestVehicleNumber ?? null,
         guestVehicleModel:  guestVehicleModel  ?? null,
         bookingType,

@@ -60,7 +60,10 @@ export const directBookingSchema = z
   .object({
     slotId: z.string().min(1),
     guestName: z.string().min(2).max(100),
-    guestPhone: z.string().min(7).max(20),
+    // Email is the mandatory identity — the booking is linked to the customer
+    // account with this email (created if needed) so the walk-in sees it on login.
+    guestEmail: z.string().email(),
+    guestPhone: z.string().min(7).max(20).optional(),
     guestVehicleNumber: z.string().max(20).optional(),
     guestVehicleModel: z.string().max(80).optional(),
     bookingType: z.enum(['HOURLY', 'MONTHLY']).default('HOURLY'),
