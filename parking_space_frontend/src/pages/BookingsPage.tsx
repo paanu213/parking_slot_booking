@@ -32,6 +32,15 @@ const STATUS_COLOR: Record<string, string> = {
   FAILED: 'bg-rose-100 text-rose-900 dark:bg-rose-900/30 dark:text-rose-200',
 };
 
+// Payment state, derived from the booking lifecycle, shown separately from the
+// booking status so "paid vs pending" is clear at a glance.
+const paymentOf = (status: string): { label: string; cls: string } | null => {
+  if (status === 'CANCELLED' || status === 'FAILED') return null;
+  if (status === 'PENDING_PAYMENT')
+    return { label: 'Payment pending', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' };
+  return { label: 'Paid', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200' };
+};
+
 export const BookingsPage = () => {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['my-bookings'],
@@ -83,9 +92,17 @@ const BookingRow = ({ b }: { b: Booking }) => (
       </div>
     </div>
     <div className="flex flex-row items-center justify-between gap-3 sm:flex-col sm:items-end">
-      <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_COLOR[b.status] ?? STATUS_COLOR.CANCELLED}`}>
-        {STATUS_LABEL[b.status] ?? b.status}
-      </span>
+      <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+        <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_COLOR[b.status] ?? STATUS_COLOR.CANCELLED}`}>
+          {STATUS_LABEL[b.status] ?? b.status}
+        </span>
+        {(() => {
+          const pay = paymentOf(b.status);
+          return pay ? (
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${pay.cls}`}>{pay.label}</span>
+          ) : null;
+        })()}
+      </div>
       <div className="text-right">
         <div className="font-semibold">{inr(Number(b.totalAmount))}</div>
         {b.status === 'PENDING_PAYMENT' && (
