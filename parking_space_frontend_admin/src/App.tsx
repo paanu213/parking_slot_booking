@@ -13,6 +13,7 @@ import {
   XCircle, ChevronDown, CalendarRange, Search, Percent, Wallet,
 } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
+import { AmenityIcon, LUCIDE_ICON_MAP } from '@ps/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/auth';
 import { AppShell } from '@/components/AppShell';
@@ -1444,24 +1445,9 @@ const Vendors = () => {
 };
 
 // ── Icon registry (Lucide icon name → component) ─────────────────────────────
+// LUCIDE_ICON_MAP + AmenityIcon are shared from @ps/ui; ICON_PALETTE + IconPicker
+// below are admin-only (the amenity-management UI lives here).
 type LucideFC = React.ComponentType<LucideProps>;
-
-const LUCIDE_ICON_MAP: Record<string, LucideFC> = {
-  Cctv, ShieldCheck, SquareParking, Zap, Accessibility, ShowerHead,
-  Lightbulb, ConciergeBell, WashingMachine, Banknote, Umbrella,
-  BatteryCharging, Wrench, Wifi, Clock, Lock, Camera, Phone,
-  Star, Wind, Building2, Sun, Leaf, Coffee, Waves, Fan, Flame,
-  Timer, Moon, Navigation, Car, Bike, Truck,
-  // Legacy aliases so old DB values still render
-  Warehouse: SquareParking,
-  User: ShowerHead,
-  KeyRound: ConciergeBell,
-  Droplets: WashingMachine,
-  Landmark: Banknote,
-  Shield: ShieldCheck,
-  MapPin: Navigation,
-  ParkingCircle: SquareParking,
-};
 
 /** Ordered palette shown in the icon picker */
 const ICON_PALETTE: { key: string; label: string }[] = [
@@ -1496,16 +1482,6 @@ const ICON_PALETTE: { key: string; label: string }[] = [
   { key: 'Timer',          label: 'Timed' },
   { key: 'Navigation',     label: 'Directions' },
 ];
-
-// ── Shared amenity icon renderer ──────────────────────────────────────────────
-const AmenityIcon = ({ icon, className = 'h-5 w-5' }: { icon: string; className?: string }) => {
-  if (!icon) return null;
-  if (icon.startsWith('http'))
-    return <img src={icon} alt="" className={`${className} rounded object-contain`} />;
-  const Icon = LUCIDE_ICON_MAP[icon] as LucideFC | undefined;
-  if (Icon) return <Icon className={className} />;
-  return <span className="leading-none text-base">{icon}</span>;
-};
 
 // ── Icon picker grid (reused in create form and per-row edit) ─────────────────
 const IconPicker = ({

@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 import { api } from '@/lib/api';
-import { Dropzone } from '@ps/ui';
+import { Dropzone, AmenityIcon } from '@ps/ui';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface SpaceFormValues {
@@ -58,31 +58,6 @@ interface Amenity {
   icon:         string;
   description?: string;
 }
-
-// ── Amenity icon lookup ────────────────────────────────────────────────────────
-type LucideFC = React.ComponentType<LucideProps>;
-
-const ICON_MAP: Record<string, LucideFC> = {
-  Cctv, ShieldCheck, SquareParking, Zap, Accessibility, ShowerHead,
-  Lightbulb, ConciergeBell, WashingMachine, Banknote, Umbrella,
-  BatteryCharging, Wrench, Wifi, Clock, Lock, Camera, Phone,
-  Star, Wind, Building2, Sun, Leaf, Coffee, Waves, Fan, Flame,
-  Timer, Moon, Navigation, Car, Bike, Truck,
-  // Legacy aliases
-  Warehouse: SquareParking,
-  Shield: ShieldCheck,
-  MapPin: Navigation,
-  ParkingCircle: SquareParking,
-};
-
-const AmenityIcon = ({ icon, className = 'h-5 w-5' }: { icon: string; className?: string }) => {
-  if (!icon) return null;
-  if (icon.startsWith('http'))
-    return <img src={icon} alt="" className={`${className} rounded object-contain`} />;
-  const Icon = ICON_MAP[icon] as LucideFC | undefined;
-  if (Icon) return <Icon className={className} />;
-  return <span className="text-base leading-none">{icon}</span>;
-};
 
 // ── Vehicle types ──────────────────────────────────────────────────────────────
 const VEHICLE_TYPES = [

@@ -11,7 +11,7 @@ import {
 import { api } from '@/lib/api';
 import { KebabMenu, MenuItem } from '@/components/KebabMenu';
 import { EditSpaceSlideOver } from '@/components/EditSpaceSlideOver';
-import { AmenityIcon } from '@/components/AmenityIcon';
+import { AmenityIcon } from '@ps/ui';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const VENDOR_STATUS_CLS: Record<string, string> = {

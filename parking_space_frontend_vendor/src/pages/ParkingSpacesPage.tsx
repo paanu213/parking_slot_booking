@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Sparkles, Bike, Car, Truck, Trash2, CalendarCheck, MapPin } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 import { api } from '@/lib/api';
-import { AmenityIcon } from '@/components/AmenityIcon';
+import { AmenityIcon } from '@ps/ui';
 import { LocationImages } from '@/features/LocationImages';
 import { SpaceForm, type SpaceFormValues } from '@/features/SpaceForm';
 
