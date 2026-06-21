@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from './cn';
 
-// Deterministic gradient picker from a string — keeps the same color
-// for the same user across sessions without storing anything.
 const PALETTES = [
   'from-fuchsia-500 via-rose-500 to-orange-400',
   'from-sky-500 via-indigo-500 to-violet-500',
@@ -14,6 +12,8 @@ const PALETTES = [
   'from-blue-500 via-cyan-500 to-teal-500',
 ];
 
+// Deterministic gradient picker from a string — keeps the same color for the
+// same user across sessions without storing anything.
 export const gradientFor = (key: string) => {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
@@ -26,7 +26,7 @@ export const initialsFor = (name?: string | null) => {
   return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
 };
 
-interface AvatarProps {
+export interface AvatarProps {
   name?: string | null;
   src?: string | null;
   size?: 'sm' | 'md' | 'lg';
@@ -40,8 +40,8 @@ const dotMap = { sm: 'h-2 w-2 right-0 bottom-0', md: 'h-2.5 w-2.5 right-0 bottom
 export const Avatar = ({ name, src, size = 'md', status = null, className }: AvatarProps) => {
   const gradient = gradientFor(name ?? 'user');
 
-  // Track whether the supplied src failed to load (404, broken URL, etc.)
-  // — reset when src changes so a new valid URL gets another try.
+  // Track whether the supplied src failed to load (404, broken URL, etc.) — reset
+  // when src changes so a new valid URL gets another try.
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => {
     setImgFailed(false);

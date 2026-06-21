@@ -6,7 +6,7 @@ import {
   Bike, Car, Truck, Plus, UploadCloud, CalendarCheck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { Dropzone } from '@/components/Dropzone';
+import { Dropzone } from '@ps/ui';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Amenity { id: string; name: string; icon: string; description?: string }

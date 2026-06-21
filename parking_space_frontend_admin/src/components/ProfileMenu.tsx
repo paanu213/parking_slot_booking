@@ -10,7 +10,7 @@ import {
   Moon,
   Crown,
 } from 'lucide-react';
-import { Avatar, gradientFor } from '@/components/Avatar';
+import { Avatar, gradientFor } from '@ps/ui';
 import { useAuth } from '@/store/auth';
 import { useTheme } from '@/store/theme';
 import { api } from '@/lib/api';

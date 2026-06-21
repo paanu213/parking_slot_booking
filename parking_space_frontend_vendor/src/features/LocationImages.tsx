@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { Dropzone } from '@/components/Dropzone';
+import { Dropzone } from '@ps/ui';
 
 interface Image {
   id: string;

@@ -17,7 +17,7 @@ import {
   Truck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { Dropzone } from '@/components/Dropzone';
+import { Dropzone } from '@ps/ui';
 import { AmenityIcon } from '@/components/AmenityIcon';
 import { type SpaceFormValues } from '@/features/SpaceForm';
 

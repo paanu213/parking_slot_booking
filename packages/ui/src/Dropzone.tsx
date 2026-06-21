@@ -1,7 +1,7 @@
 import { useRef, useState, type DragEvent, type ChangeEvent } from 'react';
 import { UploadCloud } from 'lucide-react';
 
-interface Props {
+export interface DropzoneProps {
   accept?: string;
   multiple?: boolean;
   maxSizeMB?: number;
@@ -19,7 +19,7 @@ export const Dropzone = ({
   disabled = false,
   onFiles,
   hint = 'JPEG, PNG or WebP · up to 5MB each',
-}: Props) => {
+}: DropzoneProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,20 +56,26 @@ export const Dropzone = ({
 
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
     handle(e.target.files);
+    // reset so selecting the same file again fires change
     e.target.value = '';
   };
 
   return (
     <div className="space-y-2">
       <div
-        onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragOver(true); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!disabled) setDragOver(true);
+        }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
         onClick={() => !disabled && inputRef.current?.click()}
         role="button"
         tabIndex={0}
         aria-disabled={disabled}
-        onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) inputRef.current?.click(); }}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !disabled) inputRef.current?.click();
+        }}
         className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center transition ${
           dragOver
             ? 'border-brand-600 bg-brand-500/5'
