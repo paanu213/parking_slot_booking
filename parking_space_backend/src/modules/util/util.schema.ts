@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
-// "List your space" prospect form submitted from the customer landing page.
+// Prospect form submitted from the customer landing pages:
+//  - PARKING  → "List your space"
+//  - SERVICE  → "Become a service partner" (serviceCategory says which vertical)
 export const leadSchema = z.object({
+  leadType:        z.enum(['PARKING', 'SERVICE']).default('PARKING'),
+  serviceCategory: z.string().trim().max(80).optional(),
   businessName: z.string().trim().min(2).max(120),
   fullName:     z.string().trim().min(2).max(80),
   email:        z.string().trim().email().max(120),

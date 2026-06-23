@@ -191,6 +191,10 @@ model Vendor {
 // review these (with a pending tag) and approve/reject; no account is created here.
 model VendorLead {
   id           String           @id @default(cuid())
+  // "PARKING" = List-your-space request · "SERVICE" = auto-service partner request
+  leadType        String        @default("PARKING")
+  // For SERVICE leads: which service vertical they want to register (e.g. "Car wash")
+  serviceCategory String?
   businessName String
   fullName     String
   email        String

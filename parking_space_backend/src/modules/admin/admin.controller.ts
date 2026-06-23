@@ -106,7 +106,10 @@ export const rejectAadhaar: RequestHandler = async (req, res, next) => {
 // ── Vendor leads ────────────────────────────────────────────────────────────
 export const listVendorLeads: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await service.listVendorLeads(req.query.status as string | undefined));
+    res.json(await service.listVendorLeads(
+      req.query.status as string | undefined,
+      req.query.type as string | undefined,
+    ));
   } catch (e) {
     next(e);
   }

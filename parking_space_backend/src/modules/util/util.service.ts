@@ -79,6 +79,8 @@ export const createVendorLead = async (
 ) => {
   const lead = await prisma.vendorLead.create({
     data: {
+      leadType:        data.leadType,
+      serviceCategory: data.serviceCategory ?? null,
       businessName: data.businessName,
       fullName:     data.fullName,
       email:        data.email,

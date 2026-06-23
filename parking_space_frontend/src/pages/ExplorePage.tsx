@@ -135,7 +135,6 @@ const SERVICES = [
   { icon: Truck,    label: 'Car towing service' },
 ];
 
-const PARTNER_EMAIL = 'autosahay@gmail.com';
 const PARTNER_PHONE = '+91 83283 52730';
 
 export const ExplorePage = () => {
@@ -511,12 +510,12 @@ export const ExplorePage = () => {
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <a
-                  href={`mailto:${PARTNER_EMAIL}?subject=${encodeURIComponent('Service partner interest')}`}
+                <Link
+                  to="/become-partner"
                   className="btn gap-2 bg-white text-brand-700 hover:bg-slate-100"
                 >
                   <Handshake className="h-4 w-4" /> Become a partner
-                </a>
+                </Link>
                 <a
                   href={`tel:${PARTNER_PHONE.replace(/\s+/g, '')}`}
                   className="btn gap-2 border border-white/30 bg-white/10 text-white backdrop-blur hover:bg-white/20"

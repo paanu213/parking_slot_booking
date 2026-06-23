@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE `VendorLead` ADD COLUMN `leadType` VARCHAR(191) NOT NULL DEFAULT 'PARKING';
+ALTER TABLE `VendorLead` ADD COLUMN `serviceCategory` VARCHAR(191) NULL;

@@ -427,9 +427,12 @@ export const rejectAadhaar = async (id: string, actorId: string) => {
 };
 
 // ── Vendor leads ────────────────────────────────────────────────────────────
-export const listVendorLeads = async (status?: string) => {
+export const listVendorLeads = async (status?: string, type?: string) => {
   const items = await prisma.vendorLead.findMany({
-    where: status ? { status: status as any } : {},
+    where: {
+      ...(status ? { status: status as any } : {}),
+      ...(type ? { leadType: type } : {}),
+    },
     orderBy: { createdAt: 'desc' },
   });
   return { items };
