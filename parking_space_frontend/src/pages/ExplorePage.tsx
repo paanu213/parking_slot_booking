@@ -414,65 +414,7 @@ export const ExplorePage = () => {
         </div>
       </section>
 
-      {/* SERVICE PARTNERS — recruit partners for upcoming auto-service verticals.
-          Sits right below the "List your space" CTA (both are partner pitches). */}
-      <section className="mx-auto max-w-6xl px-4 pb-2">
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="grid lg:grid-cols-[1fr,1.1fr]">
-            {/* Left: pitch + partner CTA */}
-            <div className="flex flex-col justify-center gap-5 border-b border-slate-200 bg-gradient-to-br from-brand-50 via-white to-white p-8 dark:border-slate-800 dark:from-brand-500/10 dark:via-slate-900 dark:to-slate-900 sm:p-10 lg:border-b-0 lg:border-r">
-              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-700 ring-1 ring-brand-500/20 dark:bg-brand-500/15 dark:text-brand-300">
-                <Sparkles className="h-3.5 w-3.5" /> Coming soon
-              </span>
-              <div>
-                <h2 className="font-display text-2xl font-bold sm:text-3xl">
-                  Your car's other needs — covered soon
-                </h2>
-                <p className="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-300 sm:text-base">
-                  We're expanding beyond parking into a trusted network of on-demand auto
-                  services. Run one of these businesses? Join AutoSahay early and grow with us.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <a
-                  href={`mailto:${PARTNER_EMAIL}?subject=${encodeURIComponent('Service partner interest')}`}
-                  className="btn-primary gap-2"
-                >
-                  <Handshake className="h-4 w-4" /> Become a partner
-                </a>
-                <a
-                  href={`tel:${PARTNER_PHONE.replace(/\s+/g, '')}`}
-                  className="btn gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  <Phone className="h-4 w-4" /> {PARTNER_PHONE}
-                </a>
-              </div>
-            </div>
-
-            {/* Right: service grid */}
-            <div className="grid grid-cols-2 gap-3 p-6 sm:grid-cols-3 sm:p-8">
-              {SERVICES.map(({ icon: Icon, label }) => (
-                <div
-                  key={label}
-                  className="group flex flex-col items-start gap-2.5 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 transition hover:-translate-y-0.5 hover:border-brand-300 hover:bg-white hover:shadow-md dark:border-slate-800 dark:bg-slate-800/40 dark:hover:border-brand-500/40 dark:hover:bg-slate-800"
-                >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/10 text-brand-600 ring-1 ring-brand-500/15 transition group-hover:scale-110 dark:text-brand-300">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <span className="text-sm font-semibold leading-snug text-slate-800 dark:text-slate-100">
-                    {label}
-                  </span>
-                </div>
-              ))}
-              {/* trailing "and more" tile */}
-              <div className="flex flex-col items-start justify-center gap-1 rounded-2xl border border-dashed border-slate-300 p-4 text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                <span className="text-sm font-semibold">+ more</span>
-                <span className="text-xs">services on the way</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      
 
       {/* TESTIMONIALS */}
       <section className="mx-auto max-w-6xl px-4 py-12">
@@ -540,6 +482,72 @@ export const ExplorePage = () => {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+
+      {/* SERVICE PARTNERS — recruit partners for upcoming auto-service verticals.
+          Sits right below the "List your space" CTA (both are partner pitches). */}
+      <section className="mx-auto max-w-6xl px-4 pb-2">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-slate-900 p-8 text-white sm:p-12">
+          {/* soft light accent, matching the hero / parking CTA */}
+          <div
+            aria-hidden
+            className="absolute inset-0 opacity-25 [background:radial-gradient(600px_300px_at_0%_0%,rgba(255,255,255,0.5),transparent_60%)]"
+          />
+          <div className="relative grid items-center gap-8 lg:grid-cols-[1fr,1.1fr] lg:gap-10">
+            {/* Left: pitch + partner CTA */}
+            <div className="flex flex-col gap-5">
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white ring-1 ring-white/20 backdrop-blur">
+                <Sparkles className="h-3.5 w-3.5" /> Coming soon
+              </span>
+              <div>
+                <h2 className="font-display text-2xl font-bold sm:text-3xl">
+                  Your car's other needs — covered soon
+                </h2>
+                <p className="mt-2 max-w-md text-sm text-white/80 sm:text-base">
+                  We're expanding beyond parking into a trusted network of on-demand auto
+                  services. Run one of these businesses? Join AutoSahay early and grow with us.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <a
+                  href={`mailto:${PARTNER_EMAIL}?subject=${encodeURIComponent('Service partner interest')}`}
+                  className="btn gap-2 bg-white text-brand-700 hover:bg-slate-100"
+                >
+                  <Handshake className="h-4 w-4" /> Become a partner
+                </a>
+                <a
+                  href={`tel:${PARTNER_PHONE.replace(/\s+/g, '')}`}
+                  className="btn gap-2 border border-white/30 bg-white/10 text-white backdrop-blur hover:bg-white/20"
+                >
+                  <Phone className="h-4 w-4" /> {PARTNER_PHONE}
+                </a>
+              </div>
+            </div>
+
+            {/* Right: service grid */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {SERVICES.map(({ icon: Icon, label }) => (
+                <div
+                  key={label}
+                  className="group flex flex-col items-start gap-2.5 rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-white ring-1 ring-white/20 transition group-hover:scale-110">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span className="text-sm font-semibold leading-snug text-white">
+                    {label}
+                  </span>
+                </div>
+              ))}
+              {/* trailing "and more" tile */}
+              <div className="flex flex-col items-start justify-center gap-1 rounded-2xl border border-dashed border-white/25 p-4 text-white/70">
+                <span className="text-sm font-semibold">+ more</span>
+                <span className="text-xs">services on the way</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
