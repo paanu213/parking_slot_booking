@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 import { KebabMenu, MenuItem } from '@/components/KebabMenu';
 import { EditSpaceSlideOver } from '@/components/EditSpaceSlideOver';
 import { PendingChanges } from '@/components/PendingChanges';
+import { VendorProfileChanges } from '@/components/VendorProfileChanges';
 import { AmenityIcon } from '@ps/ui';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -838,6 +839,7 @@ export const VendorDetailsPage = () => {
   const qc = useQueryClient();
   const [editSpace, setEditSpace] = useState<any | null>(null);
   const [editingVendor, setEditingVendor] = useState(false);
+  const [profileFlash, setProfileFlash] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['vendor-details', id],
@@ -957,6 +959,20 @@ export const VendorDetailsPage = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Pending profile-edit request (current vs requested) ── */}
+      {profileFlash && (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-300">
+          <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> {profileFlash}</span>
+          <button onClick={() => setProfileFlash(null)} className="text-xs font-medium hover:underline">Dismiss</button>
+        </div>
+      )}
+      {v.pendingProfileData && (
+        <VendorProfileChanges
+          vendor={v}
+          onDone={(msg) => { setProfileFlash(msg); qc.invalidateQueries({ queryKey: ['vendor-details', id] }); }}
+        />
+      )}
 
       {/* ── Quick stats ── */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

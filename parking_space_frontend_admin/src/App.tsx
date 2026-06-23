@@ -634,7 +634,7 @@ const Overview = () => {
                     </p>
                   </div>
                   <Link
-                    to={`/spaces/${s.id}/details`}
+                    to={`/spaces/${s.id}`}
                     className="btn-ghost shrink-0 border border-slate-200 text-xs dark:border-slate-700"
                   >
                     Review
@@ -688,7 +688,7 @@ const Overview = () => {
                       )}
                     </div>
                     <Link
-                      to="/vendors"
+                      to={`/vendors/${v.id}`}
                       className="btn-ghost shrink-0 text-xs text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
                     >
                       Review →
