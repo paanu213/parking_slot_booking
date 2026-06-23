@@ -18,7 +18,8 @@ interface Slot {
 }
 interface Space {
   id: string; name: string; description?: string;
-  addressLine: string; city: string; state: string; pincode: string;
+  addressLine: string; landmark?: string | null; area?: string | null;
+  city: string; state: string; pincode: string;
   latitude: number; longitude: number;
   approvalStatus: string; isActive: boolean;
   vendor: { businessName: string; user: { fullName: string; email: string } };
@@ -81,7 +82,7 @@ export const SpaceEditPage = () => {
 
   // ── Basic details form ─────────────────────────────────────────────────────
   const [form, setForm] = useState({
-    name: '', description: '', addressLine: '', city: '',
+    name: '', description: '', addressLine: '', landmark: '', area: '', city: '',
     state: '', pincode: '', latitude: '', longitude: '',
   });
   const [mapsUrl, setMapsUrl]       = useState('');
@@ -115,6 +116,8 @@ export const SpaceEditPage = () => {
       name:        space.name,
       description: space.description ?? '',
       addressLine: space.addressLine,
+      landmark:    space.landmark ?? '',
+      area:        space.area ?? '',
       city:        space.city,
       state:       space.state,
       pincode:     space.pincode,
@@ -344,6 +347,28 @@ export const SpaceEditPage = () => {
               value={form.addressLine}
               onChange={(e) => setForm((f) => ({ ...f, addressLine: e.target.value }))}
             />
+          </div>
+
+          {/* Area / Locality + Landmark */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">Area / Locality</label>
+              <input
+                className="input w-full"
+                placeholder="e.g. Gachibowli"
+                value={form.area}
+                onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">Landmark</label>
+              <input
+                className="input w-full"
+                placeholder="e.g. Near City Mall, opposite metro station"
+                value={form.landmark}
+                onChange={(e) => setForm((f) => ({ ...f, landmark: e.target.value }))}
+              />
+            </div>
           </div>
 
           {/* Google Maps / Coordinates */}
