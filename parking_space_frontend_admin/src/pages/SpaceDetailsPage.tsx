@@ -7,6 +7,7 @@ import {
   User, Phone, Mail, Store, ImageIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { PendingChanges } from '@/components/PendingChanges';
 
 const fmtDate = (d?: string | null) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -196,6 +197,13 @@ export default function SpaceDetailsPage() {
           </div>
         )}
       </div>
+
+      {/* ── Pending vendor edits — current vs requested ── */}
+      {s.pendingData && (
+        <div className="card overflow-hidden">
+          <PendingChanges space={s} />
+        </div>
+      )}
 
       {/* ── Quick stats ── */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -11,6 +11,7 @@ import {
 import { api } from '@/lib/api';
 import { KebabMenu, MenuItem } from '@/components/KebabMenu';
 import { EditSpaceSlideOver } from '@/components/EditSpaceSlideOver';
+import { PendingChanges } from '@/components/PendingChanges';
 import { AmenityIcon } from '@ps/ui';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -487,6 +488,9 @@ const SpaceCard = ({
           </KebabMenu>
         </div>
       </div>
+
+      {/* Change comparison — shown whenever the space has pending vendor edits */}
+      {hasPendingEdits && <PendingChanges space={space} />}
 
       {/* Full details panel — everything captured for this space */}
       {detailsExpanded && (
