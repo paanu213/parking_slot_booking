@@ -49,6 +49,7 @@ export const getStats = async (startQ?: string, endQ?: string) => {
     totalVendors, pendingVendors, approvedVendors,
     pendingProfileEdits,
     totalSpaces, pendingSpaces, approvedSpaces,
+    pendingSpaceEdits,
     rangeBookingsTotal,
     rangeBookingsConfirmed,
     rangeBookingsCancelled,
@@ -56,6 +57,7 @@ export const getStats = async (startQ?: string, endQ?: string) => {
     recentBookings,
     recentPendingVendors,
     recentPendingSpaces,
+    recentSpaceEdits,
     recentProfileEdits,
   ] = await prisma.$transaction([
     prisma.vendor.count(),
@@ -65,6 +67,8 @@ export const getStats = async (startQ?: string, endQ?: string) => {
     prisma.parkingLocation.count(),
     prisma.parkingLocation.count({ where: { approvalStatus: 'PENDING_REVIEW' } }),
     prisma.parkingLocation.count({ where: { approvalStatus: 'APPROVED', isActive: true } }),
+    // Approved spaces with vendor-submitted edits awaiting review
+    prisma.parkingLocation.count({ where: { pendingData: { not: null } } }),
     prisma.booking.count({ where: { createdAt: rangeCond } }),
     prisma.booking.count({ where: { status: 'CONFIRMED', createdAt: rangeCond } }),
     prisma.booking.count({ where: { status: 'CANCELLED', createdAt: rangeCond } }),
@@ -92,6 +96,12 @@ export const getStats = async (startQ?: string, endQ?: string) => {
       orderBy: { createdAt: 'desc' },
       include: { vendor: { select: { businessName: true } } },
     }),
+    prisma.parkingLocation.findMany({
+      where: { pendingData: { not: null } },
+      take: 5,
+      orderBy: { updatedAt: 'desc' },
+      include: { vendor: { select: { businessName: true } } },
+    }),
     prisma.vendor.findMany({
       where: { pendingProfileData: { not: null } },
       take: 5,
@@ -102,7 +112,7 @@ export const getStats = async (startQ?: string, endQ?: string) => {
 
   return {
     vendors: { total: totalVendors, pending: pendingVendors, approved: approvedVendors, pendingProfileEdits },
-    spaces:  { total: totalSpaces,  pending: pendingSpaces,  approved: approvedSpaces  },
+    spaces:  { total: totalSpaces,  pending: pendingSpaces,  approved: approvedSpaces, pendingEdits: pendingSpaceEdits },
     range: {
       bookings:  rangeBookingsTotal,
       confirmed: rangeBookingsConfirmed,
@@ -113,6 +123,7 @@ export const getStats = async (startQ?: string, endQ?: string) => {
       bookings:       recentBookings,
       pendingVendors: recentPendingVendors,
       pendingSpaces:  recentPendingSpaces,
+      spaceEdits:     recentSpaceEdits,
       profileEdits:   recentProfileEdits,
     },
   };

@@ -60,6 +60,19 @@ export default function SpaceDetailsPage() {
     onSuccess: () => { invalidate(); setRejecting(false); setRejectNote(''); },
   });
 
+  // ── Pending vendor edits (approve / reject the requested changes) ──
+  const [rejectingEdits, setRejectingEdits] = useState(false);
+  const [editNote, setEditNote] = useState('');
+  const [flash, setFlash] = useState<string | null>(null);
+  const approveChanges = useMutation({
+    mutationFn: () => api.post(`/admin/spaces/${id}/approve`),
+    onSuccess: () => { invalidate(); setFlash('Vendor changes approved and applied to the live space.'); },
+  });
+  const rejectEdits = useMutation({
+    mutationFn: () => api.post(`/admin/spaces/${id}/reject-edits`, { note: editNote || undefined }),
+    onSuccess: () => { invalidate(); setRejectingEdits(false); setEditNote(''); setFlash('Vendor changes rejected — the space keeps its current values.'); },
+  });
+
   // Add a slot directly (admin action — no approval step).
   const [newSlot, setNewSlot] = useState({ code: '', vehicleType: 'FOUR_WHEELER', hourlyPrice: '', monthlyPrice: '' });
   const addSlot = useMutation({
@@ -198,10 +211,62 @@ export default function SpaceDetailsPage() {
         )}
       </div>
 
-      {/* ── Pending vendor edits — current vs requested ── */}
+      {/* ── Success confirmation after approving/rejecting changes ── */}
+      {flash && (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-300">
+          <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> {flash}</span>
+          <button onClick={() => setFlash(null)} className="text-xs font-medium hover:underline">Dismiss</button>
+        </div>
+      )}
+
+      {/* ── Pending vendor edits — current vs requested + approve/reject ── */}
       {s.pendingData && (
         <div className="card overflow-hidden">
           <PendingChanges space={s} />
+          <div className="border-t border-slate-100 p-4 dark:border-slate-800">
+            {rejectingEdits ? (
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-slate-500">
+                  Reason for rejecting these changes (optional — shown to the vendor)
+                </label>
+                <textarea
+                  className="input w-full text-sm"
+                  rows={2}
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  placeholder="e.g. Area mismatch, name not permitted…"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => rejectEdits.mutate()}
+                    disabled={rejectEdits.isPending}
+                    className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {rejectEdits.isPending ? 'Rejecting…' : 'Confirm Reject Changes'}
+                  </button>
+                  <button onClick={() => { setRejectingEdits(false); setEditNote(''); }} className="btn-ghost text-xs">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => approveChanges.mutate()}
+                  disabled={approveChanges.isPending}
+                  className="btn-primary inline-flex items-center gap-1.5 text-xs"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" /> {approveChanges.isPending ? 'Approving…' : 'Approve Changes'}
+                </button>
+                <button
+                  onClick={() => setRejectingEdits(true)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-800/50 dark:hover:bg-red-900/20"
+                >
+                  <XCircle className="h-3.5 w-3.5" /> Reject Changes
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

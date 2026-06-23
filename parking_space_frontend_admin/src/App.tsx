@@ -499,8 +499,8 @@ const Overview = () => {
             />
             <StatCard
               label="Pending Approvals"
-              value={(stats?.vendors?.pending ?? 0) + (stats?.spaces?.pending ?? 0)}
-              sub={`${stats?.vendors?.pending ?? 0} vendors · ${stats?.spaces?.pending ?? 0} spaces`}
+              value={(stats?.vendors?.pending ?? 0) + (stats?.spaces?.pending ?? 0) + (stats?.spaces?.pendingEdits ?? 0)}
+              sub={`${stats?.vendors?.pending ?? 0} vendors · ${(stats?.spaces?.pending ?? 0) + (stats?.spaces?.pendingEdits ?? 0)} spaces`}
               icon={AlertCircle}
               tone="amber"
             />
@@ -584,7 +584,7 @@ const Overview = () => {
           icon={MapPin}
           iconCls="text-violet-500"
           title="Pending Space Reviews"
-          badge={stats?.spaces?.pending}
+          badge={(stats?.spaces?.pending ?? 0) + (stats?.spaces?.pendingEdits ?? 0)}
           tag="All time"
           linkTo="/spaces"
           linkLabel="View all →"
@@ -593,17 +593,21 @@ const Overview = () => {
             <div className="space-y-2 p-4">
               <div className="skeleton h-12" /><div className="skeleton h-12" />
             </div>
-          ) : (stats?.recent?.pendingSpaces ?? []).length === 0 ? (
+          ) : (stats?.recent?.pendingSpaces ?? []).length === 0 && (stats?.recent?.spaceEdits ?? []).length === 0 ? (
             <div className="flex items-center gap-2 px-4 py-6 text-sm text-slate-400">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
               All clear — no spaces pending review
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {stats.recent.pendingSpaces.map((s: any) => (
+              {/* New spaces awaiting first approval */}
+              {(stats?.recent?.pendingSpaces ?? []).map((s: any) => (
                 <div key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{s.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium">{s.name}</p>
+                      <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">New</span>
+                    </div>
                     <p className="truncate text-xs text-slate-400">
                       {s.city}, {s.state} · {s.vendor?.businessName}
                     </p>
@@ -615,6 +619,26 @@ const Overview = () => {
                   >
                     Approve
                   </button>
+                </div>
+              ))}
+              {/* Approved spaces with vendor-submitted edits — review the diff before approving */}
+              {(stats?.recent?.spaceEdits ?? []).map((s: any) => (
+                <div key={`edit-${s.id}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium">{s.name}</p>
+                      <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">Edit request</span>
+                    </div>
+                    <p className="truncate text-xs text-slate-400">
+                      {s.city}, {s.state} · {s.vendor?.businessName}
+                    </p>
+                  </div>
+                  <Link
+                    to={`/spaces/${s.id}/details`}
+                    className="btn-ghost shrink-0 border border-slate-200 text-xs dark:border-slate-700"
+                  >
+                    Review
+                  </Link>
                 </div>
               ))}
             </div>
