@@ -46,7 +46,7 @@ export interface Location {
   slots?: { hourlyPrice: number; vehicleType?: string }[];
 }
 
-export const CITIES = ['Hyderabad', 'Vizag', 'Vijayawada', 'Rajahmundry', 'Bengaluru', 'Chennai'];
+export const CITIES = ['Hyderabad', 'Vizag', 'Vijayawada', 'Rajahmundry'];
 
 // Short vehicle-type badges shown on cards so users can tell at a glance what
 // kind of parking a space offers without opening the detail page.

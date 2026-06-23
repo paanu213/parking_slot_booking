@@ -18,7 +18,6 @@ import { errorMessage } from '@/lib/errors';
 import { Footer } from '@/components/Footer';
 import { Select } from '@/components/Select';
 import { SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_PHONE_DISPLAY } from '@/lib/config';
-import { CITIES } from '@/pages/ExplorePage';
 import { cn } from '@/lib/cn';
 
 // Service verticals a partner can register for. Keep in sync with the homepage
@@ -42,6 +41,8 @@ interface PartnerForm {
   city: string;
   notes?: string;
 }
+
+export const CITIES = ['Hyderabad', 'Vizag', 'Vijayawada', 'Rajahmundry', 'Bengaluru', 'Chennai'];
 
 export const ServicePartnerPage = () => {
   const {

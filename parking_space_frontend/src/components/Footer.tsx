@@ -57,7 +57,7 @@ const scrollTop = () =>
   window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
 
 const TRUST = [
-  { icon: Shield, title: 'Verified spaces only', desc: 'Every slot is vetted before it goes live.' },
+  { icon: Shield, title: 'Verified spaces only', desc: 'Every slot is verified before it goes live.' },
   { icon: BadgeCheck, title: 'Secure payments', desc: 'Bank-grade encryption and instant refunds.' },
   { icon: HeartHandshake, title: '24×7 support', desc: 'Talk to a human in under a minute.' },
 ];

@@ -73,7 +73,7 @@ const VEHICLE_TYPE: Record<string, { label: string; Icon: typeof Car }> = {
 
 const HIGHLIGHTS = [
   { icon: ShieldCheck, label: 'Verified space', tone: 'emerald' },
-  { icon: Clock, label: 'Open 24×7', tone: 'sky' },
+  { icon: Clock, label: 'Open 8 AM – 8 PM', tone: 'sky' },
   { icon: CreditCard, label: 'Cashless entry', tone: 'violet' },
   { icon: BadgeCheck, label: 'Best price', tone: 'amber' },
 ];
@@ -661,9 +661,9 @@ export const LocationDetailPage = () => {
               </h2>
               <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
                 {[
-                  ['Mon – Fri', '24 × 7'],
-                  ['Saturday', '24 × 7'],
-                  ['Sunday', '24 × 7'],
+                  ['Mon – Fri', '8 AM – 8 PM'],
+                  ['Saturday', '8 AM – 8 PM'],
+                  ['Sunday', '8 AM – 8 PM'],
                   ['Public holidays', 'Open (surge rates may apply)'],
                 ].map(([d, t]) => (
                   <div key={d} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/40">
