@@ -20,6 +20,13 @@ import {
   ChevronDown,
   ArrowRight,
   Quote,
+  Wrench,
+  Cog,
+  Droplets,
+  Disc3,
+  SprayCan,
+  Handshake,
+  Phone,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { CardSkeleton } from '@/components/Skeleton';
@@ -39,7 +46,7 @@ export interface Location {
   slots?: { hourlyPrice: number; vehicleType?: string }[];
 }
 
-export const CITIES = ['Hyderabad', 'Bengaluru', 'Mumbai', 'Delhi NCR', 'Pune', 'Chennai'];
+export const CITIES = ['Hyderabad', 'Vizag', 'Vijayawada', 'Rajahmundry'];
 
 // Short vehicle-type badges shown on cards so users can tell at a glance what
 // kind of parking a space offers without opening the detail page.
@@ -116,6 +123,19 @@ const FAQS = [
     a: "That simply doesn't happen on reserved slots — but if it ever does, we refund 100% and help find you another space.",
   },
 ];
+
+// Upcoming auto-service verticals we're recruiting partners for.
+const SERVICES = [
+  { icon: Wrench,   label: 'Mechanic' },
+  { icon: Cog,      label: 'Car spare parts' },
+  { icon: Droplets, label: 'Car wash' },
+  { icon: Car,      label: 'Used cars / bikes' },
+  { icon: Disc3,    label: 'Wheel alignment & balancing' },
+  { icon: SprayCan, label: 'Car dent / paint service' },
+  { icon: Truck,    label: 'Car towing service' },
+];
+
+const PARTNER_PHONE = '+91 83283 52730';
 
 export const ExplorePage = () => {
   const [q, setQ] = useState('');
@@ -347,6 +367,54 @@ export const ExplorePage = () => {
         </div>
       </section>
 
+       {/* List Your Space BANNER */}
+      <section className="mx-auto max-w-6xl px-4 py-10">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-slate-900 p-8 text-white sm:p-12">
+          <div
+            aria-hidden
+            className="absolute inset-0 opacity-25 [background:radial-gradient(600px_300px_at_0%_0%,rgba(255,255,255,0.6),transparent_60%)]"
+          />
+          <div className="relative grid items-center gap-6 md:grid-cols-[1.5fr,1fr]">
+            <div>
+              <h2 className="font-display text-2xl font-bold sm:text-3xl">Own a parking lot? Start earning today.</h2>
+              <p className="mt-2 max-w-lg text-sm text-white/80 sm:text-base">
+                List your slot in minutes. We bring the customers, handle payments, and payout weekly.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link to="/list-your-space" className="btn bg-white text-brand-700 hover:bg-slate-100">
+                  <Building2 className="mr-2 h-4 w-4" /> List your space
+                </Link>
+                <a
+                  href={VENDOR_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn border border-white/30 bg-white/10 text-white hover:bg-white/20"
+                >
+                  Partner login
+                </a>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-5 ring-1 ring-white/20 backdrop-blur">
+              <ul className="space-y-2 text-sm">
+                {[
+                  'Weekly payouts via UPI',
+                  'Zero setup cost',
+                  'Dynamic pricing handled for you',
+                  'You stay fully in control',
+                ].map((t) => (
+                  <li key={t} className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      
+
       {/* TESTIMONIALS */}
       <section className="mx-auto max-w-6xl px-4 py-12">
         <div className="mb-8 text-center">
@@ -416,51 +484,73 @@ export const ExplorePage = () => {
         </div>
       </section>
 
-      {/* CTA BANNER */}
-      <section className="mx-auto max-w-6xl px-4 py-10">
+
+      {/* SERVICE PARTNERS — recruit partners for upcoming auto-service verticals.
+          Sits right below the "List your space" CTA (both are partner pitches). */}
+      <section className="mx-auto max-w-6xl px-4 pb-2">
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-slate-900 p-8 text-white sm:p-12">
+          {/* soft light accent, matching the hero / parking CTA */}
           <div
             aria-hidden
-            className="absolute inset-0 opacity-25 [background:radial-gradient(600px_300px_at_0%_0%,rgba(255,255,255,0.6),transparent_60%)]"
+            className="absolute inset-0 opacity-25 [background:radial-gradient(600px_300px_at_0%_0%,rgba(255,255,255,0.5),transparent_60%)]"
           />
-          <div className="relative grid items-center gap-6 md:grid-cols-[1.5fr,1fr]">
-            <div>
-              <h2 className="font-display text-2xl font-bold sm:text-3xl">Own a parking lot? Start earning today.</h2>
-              <p className="mt-2 max-w-lg text-sm text-white/80 sm:text-base">
-                List your slot in minutes. We bring the customers, handle payments, and payout weekly.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Link to="/list-your-space" className="btn bg-white text-brand-700 hover:bg-slate-100">
-                  <Building2 className="mr-2 h-4 w-4" /> List your space
+          <div className="relative grid items-center gap-8 lg:grid-cols-[1fr,1.1fr] lg:gap-10">
+            {/* Left: pitch + partner CTA */}
+            <div className="flex flex-col gap-5">
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white ring-1 ring-white/20 backdrop-blur">
+                <Sparkles className="h-3.5 w-3.5" /> Coming soon
+              </span>
+              <div>
+                <h2 className="font-display text-2xl font-bold sm:text-3xl">
+                  Your car's other needs — covered soon
+                </h2>
+                <p className="mt-2 max-w-md text-sm text-white/80 sm:text-base">
+                  We're expanding beyond parking into a trusted network of on-demand auto
+                  services. Run one of these businesses? Join AutoSahay early and grow with us.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  to="/become-partner"
+                  className="btn gap-2 bg-white text-brand-700 hover:bg-slate-100"
+                >
+                  <Handshake className="h-4 w-4" /> Become a partner
                 </Link>
                 <a
-                  href={VENDOR_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn border border-white/30 bg-white/10 text-white hover:bg-white/20"
+                  href={`tel:${PARTNER_PHONE.replace(/\s+/g, '')}`}
+                  className="btn gap-2 border border-white/30 bg-white/10 text-white backdrop-blur hover:bg-white/20"
                 >
-                  Partner login
+                  <Phone className="h-4 w-4" /> {PARTNER_PHONE}
                 </a>
               </div>
             </div>
-            <div className="rounded-2xl bg-white/10 p-5 ring-1 ring-white/20 backdrop-blur">
-              <ul className="space-y-2 text-sm">
-                {[
-                  'Weekly payouts via UPI',
-                  'Zero setup cost',
-                  'Dynamic pricing handled for you',
-                  'You stay fully in control',
-                ].map((t) => (
-                  <li key={t} className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-                    {t}
-                  </li>
-                ))}
-              </ul>
+
+            {/* Right: service grid */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {SERVICES.map(({ icon: Icon, label }) => (
+                <div
+                  key={label}
+                  className="group flex flex-col items-start gap-2.5 rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-white ring-1 ring-white/20 transition group-hover:scale-110">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span className="text-sm font-semibold leading-snug text-white">
+                    {label}
+                  </span>
+                </div>
+              ))}
+              {/* trailing "and more" tile */}
+              <div className="flex flex-col items-start justify-center gap-1 rounded-2xl border border-dashed border-white/25 p-4 text-white/70">
+                <span className="text-sm font-semibold">+ more</span>
+                <span className="text-xs">services on the way</span>
+              </div>
             </div>
           </div>
         </div>
       </section>
+
+     
 
       <Footer />
     </>

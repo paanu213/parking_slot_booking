@@ -5,6 +5,7 @@ import { Header } from '@/components/Header';
 import { ExplorePage } from '@/pages/ExplorePage';
 import { SpacesPage } from '@/pages/SpacesPage';
 import { ListYourSpacePage } from '@/pages/ListYourSpacePage';
+import { ServicePartnerPage } from '@/pages/ServicePartnerPage';
 import { PrivacyPage } from '@/pages/PrivacyPage';
 import { TermsPage } from '@/pages/TermsPage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -106,6 +107,7 @@ export default function App() {
           <Route path="/" element={<ExplorePage />} />
           <Route path="/spaces" element={<SpacesPage />} />
           <Route path="/list-your-space" element={<ListYourSpacePage />} />
+          <Route path="/become-partner" element={<ServicePartnerPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/locations/:id" element={<LocationDetailPage />} />

@@ -19,7 +19,7 @@ import { errorMessage } from '@/lib/errors';
 import { Footer } from '@/components/Footer';
 import { Select } from '@/components/Select';
 import { BRAND_NAME, SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_PHONE_DISPLAY } from '@/lib/config';
-import { CITIES } from '@/pages/ExplorePage';
+// import { CITIES } from '@/pages/ExplorePage';
 import { cn } from '@/lib/cn';
 
 interface LeadForm {
@@ -60,6 +60,8 @@ const STEPS = [
   { n: '2', title: 'Quick verification call',  desc: "Our team rings to confirm details and walk through pricing." },
   { n: '3', title: 'Go live',                   desc: "Your spot shows up on AutoSahay search the same day approval clears." },
 ];
+
+export const CITIES = ['Hyderabad', 'Vizag', 'Vijayawada', 'Rajahmundry', 'Bengaluru', 'Chennai'];
 
 export const ListYourSpacePage = () => {
   const {
@@ -210,8 +212,10 @@ export const ListYourSpacePage = () => {
         {submitted ? (
           <SuccessCard onReset={() => setSubmitted(false)} />
         ) : (
-          <div className="card overflow-hidden">
-            <div className="border-b border-slate-100 bg-brand-50/40 px-6 py-5 dark:border-slate-800 dark:bg-brand-500/5">
+          // No overflow-hidden on this card — it would clip the City dropdown
+          // (CLAUDE.md §1). The header tint is clipped via rounded-t-2xl instead.
+          <div className="card">
+            <div className="rounded-t-2xl border-b border-slate-100 bg-brand-50/40 px-6 py-5 dark:border-slate-800 dark:bg-brand-500/5">
               <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Lead form</p>
               <h2 className="mt-1 font-display text-xl font-bold">Tell us about your space</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">

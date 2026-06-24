@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Inbox, ChevronDown, ChevronUp, UserPlus, XCircle,
-  Mail, Phone, MapPin, Building2, User, Hash, Clock, FileText,
+  Inbox, ChevronDown, ChevronUp, UserPlus, XCircle, CheckCircle2,
+  Mail, Phone, MapPin, Building2, User, Hash, Clock, FileText, Wrench,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -17,20 +17,23 @@ const STATUS_CLS: Record<string, string> = {
 };
 
 type Lead = {
-  id: string; businessName: string; fullName: string; email: string; phone: string;
+  id: string; leadType?: string; serviceCategory?: string | null;
+  businessName: string; fullName: string; email: string; phone: string;
   city: string; slotsApprox?: number | null; notes?: string | null; status: string;
   createdAt: string; reviewedAt?: string | null;
 };
 
 /**
- * "List your space" submissions from the customer site, shown on the admin
- * Vendors page. Admins expand a request to see full details and approve/reject.
+ * Partner submissions from the customer site, filtered by lead type:
+ *  - PARKING → "List your space" (convert into a vendor)
+ *  - SERVICE → "Become a partner" auto-service requests (approve / reject)
  */
-export const ListingRequests = () => {
+export const ListingRequests = ({ leadType }: { leadType: 'PARKING' | 'SERVICE' }) => {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [showAll, setShowAll] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const isService = leadType === 'SERVICE';
 
   const makeVendor = (lead: Lead) => {
     const q = new URLSearchParams({
@@ -44,9 +47,11 @@ export const ListingRequests = () => {
   };
 
   const { data } = useQuery({
-    queryKey: ['vendor-leads', showAll ? 'ALL' : 'PENDING'],
+    queryKey: ['vendor-leads', leadType, showAll ? 'ALL' : 'PENDING'],
     queryFn: async () =>
-      (await api.get('/admin/vendor-leads', { params: showAll ? {} : { status: 'PENDING' } })).data,
+      (await api.get('/admin/vendor-leads', {
+        params: { type: leadType, ...(showAll ? {} : { status: 'PENDING' }) },
+      })).data,
   });
 
   const setStatus = useMutation({
@@ -63,7 +68,7 @@ export const ListingRequests = () => {
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <Inbox className="h-4 w-4 text-brand-500" />
-          <h2 className="text-sm font-semibold">Space Listing Requests</h2>
+          <h2 className="text-sm font-semibold">{isService ? 'Service Partner Requests' : 'Space Listing Requests'}</h2>
           {pendingCount > 0 && (
             <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
               {pendingCount} pending
@@ -79,7 +84,9 @@ export const ListingRequests = () => {
       </div>
 
       {leads.length === 0 ? (
-        <div className="p-6 text-center text-sm text-slate-400">No listing requests.</div>
+        <div className="p-6 text-center text-sm text-slate-400">
+          {isService ? 'No service requests.' : 'No listing requests.'}
+        </div>
       ) : (
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           {leads.map((lead) => {
@@ -91,6 +98,11 @@ export const ListingRequests = () => {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{lead.businessName}</span>
+                      {isService && lead.serviceCategory && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+                          <Wrench className="h-3 w-3" /> {lead.serviceCategory}
+                        </span>
+                      )}
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLS[lead.status] ?? ''}`}>
                         {lead.status}
                       </span>
@@ -116,7 +128,11 @@ export const ListingRequests = () => {
                       <Detail icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={<a href={`mailto:${lead.email}`} className="text-brand-600 underline dark:text-brand-400">{lead.email}</a>} />
                       <Detail icon={<Phone className="h-3.5 w-3.5" />} label="Phone" value={<a href={`tel:${lead.phone}`} className="text-brand-600 underline dark:text-brand-400">{lead.phone}</a>} />
                       <Detail icon={<MapPin className="h-3.5 w-3.5" />} label="City" value={lead.city} />
-                      <Detail icon={<Hash className="h-3.5 w-3.5" />} label="Approx. slots" value={lead.slotsApprox != null ? String(lead.slotsApprox) : '—'} />
+                      {isService ? (
+                        <Detail icon={<Wrench className="h-3.5 w-3.5" />} label="Service" value={lead.serviceCategory ?? '—'} />
+                      ) : (
+                        <Detail icon={<Hash className="h-3.5 w-3.5" />} label="Approx. slots" value={lead.slotsApprox != null ? String(lead.slotsApprox) : '—'} />
+                      )}
                       <Detail icon={<Clock className="h-3.5 w-3.5" />} label="Submitted" value={fmtDate(lead.createdAt)} />
                       {lead.reviewedAt && <Detail icon={<Clock className="h-3.5 w-3.5" />} label="Reviewed" value={fmtDate(lead.reviewedAt)} />}
                       {lead.notes && <Detail icon={<FileText className="h-3.5 w-3.5" />} label="Notes" value={lead.notes} full />}
@@ -124,12 +140,22 @@ export const ListingRequests = () => {
 
                     {lead.status === 'PENDING' && (
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => makeVendor(lead)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
-                        >
-                          <UserPlus className="h-3.5 w-3.5" /> Make as Vendor
-                        </button>
+                        {isService ? (
+                          <button
+                            onClick={() => setStatus.mutate({ id: lead.id, status: 'APPROVED' })}
+                            disabled={setStatus.isPending}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => makeVendor(lead)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
+                          >
+                            <UserPlus className="h-3.5 w-3.5" /> Make as Vendor
+                          </button>
+                        )}
                         <button
                           onClick={() => setStatus.mutate({ id: lead.id, status: 'REJECTED' })}
                           disabled={setStatus.isPending}
@@ -140,7 +166,9 @@ export const ListingRequests = () => {
                       </div>
                     )}
                     {lead.status === 'APPROVED' && (
-                      <p className="text-xs text-emerald-600 dark:text-emerald-400">✓ Converted to vendor.</p>
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                        {isService ? '✓ Approved.' : '✓ Converted to vendor.'}
+                      </p>
                     )}
                   </div>
                 )}

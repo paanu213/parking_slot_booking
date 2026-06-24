@@ -39,7 +39,7 @@ export const SpaceForm = ({
   submitLabel: string;
   onCancel?: () => void;
 }) => {
-  const { register, handleSubmit, reset, setValue, watch } = useForm<SpaceFormValues>({
+  const { register, handleSubmit, reset, setValue, watch, getValues } = useForm<SpaceFormValues>({
     defaultValues,
   });
 
@@ -48,7 +48,9 @@ export const SpaceForm = ({
   const lng     = watch('longitude');
 
   const [pincodeState, setPincodeState] = useState<'idle' | 'loading' | 'found' | 'error'>('idle');
-  const [areas, setAreas]               = useState<string[]>([]);
+  // Seed the area options with the already-saved area so the dropdown shows it
+  // immediately in edit mode (before/independent of the pincode lookup).
+  const [areas, setAreas]               = useState<string[]>(defaultValues?.area ? [defaultValues.area] : []);
   const [mapsUrl, setMapsUrl]           = useState('');
   const [mapsError, setMapsError]       = useState('');
   const pincodeRef                      = useRef('');
@@ -56,20 +58,35 @@ export const SpaceForm = ({
   useEffect(() => {
     const p = (pincode ?? '').replace(/\D/g, '');
     if (p.length !== 6 || p === pincodeRef.current) return;
+    // First run for an existing space (edit mode): keep the saved city/state/area
+    // as-is and only load the area options. Only a *user-initiated* pincode change
+    // should overwrite city/state and reset the chosen area.
+    const isInitial = pincodeRef.current === '';
     pincodeRef.current = p;
     setPincodeState('loading');
-    setAreas([]);
-    setValue('area', '', { shouldDirty: true });
+    if (!isInitial) {
+      setAreas([]);
+      setValue('area', '', { shouldDirty: true });
+    }
+
+    // Keep the currently-selected area available as an option even if the lookup
+    // doesn't return it, so an existing space's saved area never disappears.
+    const withCurrent = (list: string[]) => {
+      const current = (getValues('area') ?? '').trim();
+      return current && !list.includes(current) ? [current, ...list] : list;
+    };
 
     // Backend proxy (avoids the third-party API's frequent SSL cert issues).
     // Falls back to zippopotam.us if our proxy is unreachable.
     api.get(`/util/pincode/${p}`)
       .then(({ data }) => {
         if (!data?.city || !data?.state) throw new Error('not found');
-        setValue('city',  data.city,  { shouldDirty: true });
-        setValue('state', data.state, { shouldDirty: true });
+        if (!isInitial) {
+          setValue('city',  data.city,  { shouldDirty: true });
+          setValue('state', data.state, { shouldDirty: true });
+        }
         const places = Array.isArray(data.places) ? data.places : [];
-        setAreas(places.length ? places.map((p: any) => p.name) : [data.area].filter(Boolean));
+        setAreas(withCurrent(places.length ? places.map((p: any) => p.name) : [data.area].filter(Boolean)));
         setPincodeState('found');
       })
       .catch(() => {
@@ -79,9 +96,11 @@ export const SpaceForm = ({
           .then((data) => {
             if (data.places?.length > 0) {
               const place = data.places[0];
-              setValue('city',  place['place name'], { shouldDirty: true });
-              setValue('state', place['state'],      { shouldDirty: true });
-              setAreas([place['place name']]);
+              if (!isInitial) {
+                setValue('city',  place['place name'], { shouldDirty: true });
+                setValue('state', place['state'],      { shouldDirty: true });
+              }
+              setAreas(withCurrent([place['place name']]));
               setPincodeState('found');
             } else {
               setPincodeState('error');
@@ -89,7 +108,7 @@ export const SpaceForm = ({
           })
           .catch(() => setPincodeState('error'));
       });
-  }, [pincode, setValue]);
+  }, [pincode, setValue, getValues]);
 
   const handleExtractCoords = () => {
     setMapsError('');

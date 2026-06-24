@@ -32,6 +32,7 @@ export const updateSpaceSchema = z.object({
   description: z.string().optional(),
   addressLine: z.string().min(3).optional(),
   landmark:    z.string().max(160).nullish(),
+  area:        z.string().max(100).nullish(),
   city:        z.string().min(2).optional(),
   state:       z.string().min(2).optional(),
   pincode:     z.string().length(6).optional(),
