@@ -281,8 +281,10 @@ export const LocationDetailPage = () => {
             matches that height and scrolls, so the gallery never grows/shrinks with
             the number of photos and never leaves empty space. */}
         <section className={cn('mt-6 grid gap-3', images.length > 1 && 'sm:grid-cols-[3fr,1fr]')}>
-          {/* Main image */}
-          <div className="card relative overflow-hidden">
+          {/* Main image — object-contain so the whole photo is always visible (never
+              cropped) at any screen size. min-w-0 keeps the grid item from expanding
+              to the image's intrinsic width (which caused horizontal overflow). */}
+          <div className="card relative min-w-0 overflow-hidden">
             <div className="aspect-[16/10] w-full bg-slate-100 dark:bg-slate-800">
               {images[activeImg]?.url ? (
                 <img
@@ -290,7 +292,7 @@ export const LocationDetailPage = () => {
                   alt={loc.name}
                   loading="eager"
                   decoding="async"
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-slate-400">
@@ -325,7 +327,7 @@ export const LocationDetailPage = () => {
               height (absolute fill so it can't stretch the row). Mobile: a horizontal
               scroller below the main image. Either way only ~3 show; scroll for more. */}
           {images.length > 1 && (
-            <div className="relative">
+            <div className="relative min-w-0">
               <div className="flex gap-2 overflow-x-auto pb-1 sm:absolute sm:inset-0 sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:pb-0 sm:pr-1">
                 {images.map((img, i) => (
                   <button
