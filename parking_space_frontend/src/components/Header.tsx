@@ -38,6 +38,18 @@ export const Header = () => {
           >
             Explore
           </NavLink>
+          <NavLink
+            to="/list-your-space"
+            className={({ isActive }) =>
+              cn(
+                'rounded-lg px-3 py-1.5 transition',
+                'hover:bg-slate-100 dark:hover:bg-slate-800',
+                isActive && 'bg-slate-100 font-semibold dark:bg-slate-800',
+              )
+            }
+          >
+            List your space
+          </NavLink>
         </nav>
 
         {/* Spacer pushes profile cluster to right */}
