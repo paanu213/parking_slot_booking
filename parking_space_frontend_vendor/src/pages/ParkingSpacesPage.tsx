@@ -67,6 +67,21 @@ interface SlotFormValues {
   monthlyPrice?: number | null;
 }
 
+/**
+ * Pre-fill the edit form from any unapproved pending edits (merged over the live
+ * values), so a vendor keeps editing their latest draft. Without this, the form
+ * shows the live values and each re-submission is a fresh full snapshot that
+ * silently discards the previously-submitted (still-pending) changes.
+ */
+const editDefaultsFor = (space: ParkingSpace) => {
+  let pending: Record<string, unknown> = {};
+  if (space.pendingData) {
+    try { pending = JSON.parse(space.pendingData) as Record<string, unknown>; } catch { pending = {}; }
+  }
+  const merged: any = { ...space, ...pending };
+  return { ...merged, landmark: merged.landmark ?? undefined, area: merged.area ?? undefined };
+};
+
 const STATUS_META: Record<ApprovalStatus, { label: string; cls: string; icon: React.ReactNode }> = {
   PENDING_REVIEW: {
     label: 'Under Review',
@@ -307,7 +322,7 @@ export const ParkingSpacesPage = () => {
                         : 'Update Submission'}
                     </p>
                     <SpaceForm
-                      defaultValues={{ ...space, landmark: space.landmark ?? undefined, area: space.area ?? undefined }}
+                      defaultValues={editDefaultsFor(space)}
                       onSubmit={(v) => updateSpace.mutate({ id: space.id, input: v })}
                       submitting={updateSpace.isPending}
                       submitLabel={
