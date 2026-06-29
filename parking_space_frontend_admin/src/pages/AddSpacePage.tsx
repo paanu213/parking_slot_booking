@@ -36,6 +36,7 @@ interface SpaceFormValues {
   name:        string;
   addressLine: string;
   landmark?:   string;
+  area?:       string;
   city:        string;
   state:       string;
   pincode:     string;
@@ -263,10 +264,16 @@ const Step1 = ({
         <input className="input w-full" placeholder="Building, street…" required {...register('addressLine')} />
       </div>
 
-      {/* Landmark */}
-      <div>
-        <label className="mb-1 block text-xs font-medium text-slate-500">Landmark</label>
-        <input className="input w-full" placeholder="e.g. Near City Mall, opposite metro station" {...register('landmark')} />
+      {/* Area / Locality + Landmark */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500">Area / Locality</label>
+          <input className="input w-full" placeholder="e.g. Gachibowli" {...register('area')} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500">Landmark</label>
+          <input className="input w-full" placeholder="e.g. Near City Mall, opposite metro station" {...register('landmark')} />
+        </div>
       </div>
 
       {/* Google Maps → coordinates */}
@@ -624,6 +631,12 @@ const Step4 = ({
             <dt className="mb-0.5 text-xs text-slate-400">Street Address</dt>
             <dd>{spaceData.addressLine}</dd>
           </div>
+          {spaceData.area && (
+            <div>
+              <dt className="mb-0.5 text-xs text-slate-400">Area / Locality</dt>
+              <dd>{spaceData.area}</dd>
+            </div>
+          )}
           {spaceData.landmark && (
             <div className="col-span-2">
               <dt className="mb-0.5 text-xs text-slate-400">Landmark</dt>
