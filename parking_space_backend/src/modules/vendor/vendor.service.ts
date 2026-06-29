@@ -9,6 +9,7 @@ import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, commissionFor } from '../../lib/commission.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { deleteImageByUrl, storeImageBuffer, deleteDocumentByUrl } from '../../lib/images.js';
+import { parsePendingEdits, editChangesAnything } from '../../lib/pendingEdits.js';
 import {
   USER_FIELDS,
   type UserField,
@@ -155,8 +156,19 @@ export const updateLocation = async (userId: string, locationId: string, body: L
   const loc = await ensureOwnLocation(userId, locationId);
   let data: Record<string, unknown>;
   if (loc.approvalStatus === 'APPROVED') {
-    // Space is live — store edits as pending, don't overwrite live fields
-    data = { pendingData: JSON.stringify(body) };
+    // Space is live — queue the edit for admin review WITHOUT overwriting live
+    // fields. Append it to the list of pending requests so multiple un-approved
+    // edits accumulate (the admin sees every submission, not just the latest).
+    const requests = parsePendingEdits(loc.pendingData as string | null);
+    const baseline = requests.length
+      ? requests[requests.length - 1].data
+      : (loc as unknown as Record<string, unknown>);
+    if (!editChangesAnything(baseline, body as Record<string, unknown>)) {
+      // Nothing actually changed vs the latest submitted state — no-op.
+      return prisma.parkingLocation.findUniqueOrThrow({ where: { id: locationId } });
+    }
+    requests.push({ data: body as Record<string, unknown>, submittedAt: new Date().toISOString() });
+    data = { pendingData: JSON.stringify(requests) };
   } else {
     // PENDING_REVIEW or REJECTED — update directly and resubmit for review
     data = { ...body, approvalStatus: 'PENDING_REVIEW', approvalNote: null };

@@ -11,6 +11,7 @@ import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, setCommissionRate } from '../../lib/commission.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { storeImageBuffer, deleteImageByUrl, deleteDocumentByUrl } from '../../lib/images.js';
+import { parsePendingEdits, mergePendingEdits } from '../../lib/pendingEdits.js';
 import type {
   UpdateVendorInput,
   VendorLeadStatusInput,
@@ -647,11 +648,12 @@ export const listSpaces = async (status?: string, vendorId?: string) => {
 
 export const approveSpace = async (id: string, actorId: string) => {
   const space = await prisma.parkingLocation.findUniqueOrThrow({ where: { id } });
-  const pendingEdits = space.pendingData ? (JSON.parse(space.pendingData) as Record<string, unknown>) : null;
+  // Apply every queued edit request (later requests win per field).
+  const pendingEdits = mergePendingEdits(parsePendingEdits(space.pendingData as string | null));
   const updated = await prisma.parkingLocation.update({
     where: { id },
     data: {
-      ...(pendingEdits ?? {}),
+      ...pendingEdits,
       approvalStatus: 'APPROVED',
       approvalNote: null,
       pendingData: null,

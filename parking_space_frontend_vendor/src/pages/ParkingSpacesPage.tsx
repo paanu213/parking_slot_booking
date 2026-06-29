@@ -74,11 +74,17 @@ interface SlotFormValues {
  * silently discards the previously-submitted (still-pending) changes.
  */
 const editDefaultsFor = (space: ParkingSpace) => {
-  let pending: Record<string, unknown> = {};
+  // pendingData holds a list of edit requests (each a full snapshot). Pre-fill
+  // from the latest one so the vendor keeps refining their current draft.
+  let latest: Record<string, unknown> = {};
   if (space.pendingData) {
-    try { pending = JSON.parse(space.pendingData) as Record<string, unknown>; } catch { pending = {}; }
+    try {
+      const parsed = JSON.parse(space.pendingData);
+      if (Array.isArray(parsed) && parsed.length) latest = parsed[parsed.length - 1]?.data ?? {};
+      else if (parsed && typeof parsed === 'object') latest = parsed as Record<string, unknown>;
+    } catch { latest = {}; }
   }
-  const merged: any = { ...space, ...pending };
+  const merged: any = { ...space, ...latest };
   return { ...merged, landmark: merged.landmark ?? undefined, area: merged.area ?? undefined };
 };
 

@@ -28,6 +28,21 @@ export const computeChanges = (
     });
 };
 
+/** Diff two field snapshots (prev → next), returning only the changed fields. */
+export const diffObjects = (
+  prev: Record<string, unknown>,
+  next: Record<string, unknown>,
+  labels: Record<string, string>,
+): ChangeRow[] =>
+  Object.keys(next)
+    .filter((k) => k in labels && norm(prev[k]) !== norm(next[k]))
+    .map((k) => {
+      const cur = prev[k];
+      const req = next[k];
+      const kind: Kind = norm(cur) === '' ? 'added' : norm(req) === '' ? 'removed' : 'updated';
+      return { key: k, label: labels[k] ?? k, current: cur, requested: req, kind };
+    });
+
 export const ChangeTable = ({
   rows,
   title,
