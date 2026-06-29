@@ -428,7 +428,7 @@ export default function SpaceDetailsPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Reference</th><th>Customer</th><th>Slot</th><th>Period</th>
+                  <th>Reference</th><th>Booked On</th><th>Customer</th><th>Slot</th><th>Period</th>
                   <th>Amount</th><th>Commission</th><th>Status</th>
                 </tr>
               </thead>
@@ -436,6 +436,7 @@ export default function SpaceDetailsPage() {
                 {bookings.map((b) => (
                   <tr key={b.id}>
                     <td className="font-mono text-xs">{b.reference}</td>
+                    <td className="whitespace-nowrap text-xs text-slate-500">{fmtDateTime(b.createdAt)}</td>
                     <td className="text-sm">
                       <p className="font-medium">{b.user?.fullName ?? b.guestName ?? 'Walk-in Guest'}</p>
                       {(b.user?.phone ?? b.guestPhone) && (

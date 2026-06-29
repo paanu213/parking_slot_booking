@@ -25,6 +25,7 @@ const vtLabel = (v?: string) => (v ? VT_LABEL[v] ?? v : '');
 interface Booking {
   id: string;
   reference: string;
+  createdAt: string;
   startAt: string;
   endAt: string;
   totalAmount: number;
@@ -966,6 +967,7 @@ export const BookingsPage = () => {
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                     <th className="px-3 py-2">Reference</th>
+                    <th className="px-3 py-2">Booked On</th>
                     <th className="px-3 py-2">Customer</th>
                     <th className="px-3 py-2">Vehicle</th>
                     <th className="px-3 py-2">Space / Slot</th>
@@ -982,7 +984,7 @@ export const BookingsPage = () => {
                 <tbody>
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={12} className="px-3 py-10 text-center text-sm text-slate-400">
+                      <td colSpan={13} className="px-3 py-10 text-center text-sm text-slate-400">
                         No {planFilter.toLowerCase()} bookings.
                       </td>
                     </tr>
@@ -1008,6 +1010,9 @@ export const BookingsPage = () => {
                             </span>
                           )}
                         </td>
+
+                        {/* Booked on (date the booking was raised) */}
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-slate-500">{fmt(b.createdAt)}</td>
 
                         {/* Customer */}
                         <td className="px-3 py-2">

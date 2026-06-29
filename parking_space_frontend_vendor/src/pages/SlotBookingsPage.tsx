@@ -159,6 +159,7 @@ export const SlotBookingsPage = () => {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                   <th className="px-3 py-2">Reference</th>
+                  <th className="px-3 py-2">Booked On</th>
                   <th className="px-3 py-2">Plan</th>
                   <th className="px-3 py-2">When</th>
                   <th className="px-3 py-2">Customer</th>
@@ -182,6 +183,7 @@ export const SlotBookingsPage = () => {
                   return (
                     <tr key={b.id} className="border-t border-slate-100 dark:border-slate-800">
                       <td className="px-3 py-2 font-mono text-xs text-slate-500">{b.reference}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-slate-500">{fmtDateTime(b.createdAt)}</td>
                       <td className="px-3 py-2">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                           isMonthly

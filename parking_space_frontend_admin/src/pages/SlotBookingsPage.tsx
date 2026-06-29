@@ -165,6 +165,7 @@ export const SlotBookingsPage = () => {
               <thead>
                 <tr>
                   <th>Reference</th>
+                  <th>Booked On</th>
                   <th>Plan</th>
                   <th>When</th>
                   <th>Customer</th>
@@ -188,6 +189,7 @@ export const SlotBookingsPage = () => {
                   return (
                     <tr key={b.id}>
                       <td className="font-mono text-xs text-slate-500">{b.reference}</td>
+                      <td className="whitespace-nowrap text-xs text-slate-500">{fmtDateTime(b.createdAt)}</td>
                       <td>
                         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                           isMonthly

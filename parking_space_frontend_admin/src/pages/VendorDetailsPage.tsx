@@ -1319,6 +1319,7 @@ const VendorBookingsCard = ({ bookings, total }: { bookings: any[]; total: numbe
         <table className="table">
           <thead>
             <tr>
+              <th>Booked On</th>
               <th>Customer</th>
               <th>Space · Slot</th>
               <th>Start</th>
@@ -1340,6 +1341,7 @@ const VendorBookingsCard = ({ bookings, total }: { bookings: any[]; total: numbe
               const payment = b.payments?.[0];
               return (
                 <tr key={b.id}>
+                  <td className="whitespace-nowrap text-xs text-slate-500">{fmtDateTime(b.createdAt)}</td>
                   <td>
                     <p className="text-sm font-medium">{customerName}</p>
                     <p className="text-xs text-slate-400">{customerSub}</p>

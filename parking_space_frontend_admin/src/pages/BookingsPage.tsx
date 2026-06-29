@@ -422,6 +422,7 @@ export const BookingsPage = () => {
                   <th>Type</th>
                   <th>Plan</th>
                   <th>Ref</th>
+                  <th>Booked On</th>
                   <th>Customer</th>
                   <th>Vendor</th>
                   <th>Space · Slot</th>
@@ -481,6 +482,9 @@ export const BookingsPage = () => {
                       <td>
                         <span className="font-mono text-xs text-slate-500">{b.reference}</span>
                       </td>
+
+                      {/* Booked on (date the booking was raised) */}
+                      <td className="whitespace-nowrap text-xs text-slate-500">{fmtDate(b.createdAt)}</td>
 
                       {/* Customer */}
                       <td>
