@@ -16,6 +16,7 @@ const FIELD_LABELS: Record<string, string> = {
   addressLine: 'Street Address',
   landmark:    'Landmark',
   area:        'Area / Locality',
+  district:    'District',
   city:        'City',
   state:       'State',
   pincode:     'Pincode',
@@ -35,7 +36,7 @@ const parseRequests = (pendingData: unknown): EditRequest[] => {
   return [];
 };
 
-export const PendingChanges = ({ space }: { space: any }) => {
+export const PendingChanges = ({ space, requestedBy }: { space: any; requestedBy?: string }) => {
   const requests = parseRequests(space?.pendingData);
   if (requests.length === 0) return null;
 
@@ -46,6 +47,22 @@ export const PendingChanges = ({ space }: { space: any }) => {
 
   return (
     <>
+      {/* Summary banner — makes it obvious there are N pending updates, who
+          submitted them, and that they're awaiting a single decision. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-900/40 dark:bg-amber-900/10">
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 font-semibold text-white">
+          {requests.length} Pending Change{requests.length === 1 ? '' : 's'}
+        </span>
+        {requestedBy && (
+          <span className="text-amber-800 dark:text-amber-200">
+            Requested by <span className="font-medium">{requestedBy}</span>
+          </span>
+        )}
+        <span className="ml-auto inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+          Awaiting review
+        </span>
+      </div>
+
       {requests.map((req, i) => {
         const prev = i === 0 ? live : requests[i - 1].data;
         const rows = diffObjects(prev, req.data, FIELD_LABELS);

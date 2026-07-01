@@ -31,6 +31,7 @@ export const LocationDTO = z.object({
   id: z.string(),
   name: z.string(),
   addressLine: z.string(),
+  district: z.string().nullish(),
   city: z.string(),
   state: z.string(),
   pincode: z.string(),

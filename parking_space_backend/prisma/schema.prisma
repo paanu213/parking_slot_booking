@@ -218,6 +218,7 @@ model ParkingLocation {
   description String?  @db.Text
   addressLine String
   landmark    String?
+  district    String?
   city        String
   state       String
   pincode     String

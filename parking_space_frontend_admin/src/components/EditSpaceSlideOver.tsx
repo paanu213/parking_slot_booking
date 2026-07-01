@@ -22,6 +22,7 @@ interface SpaceShape {
   addressLine?: string;
   landmark?: string;
   area?: string;
+  district?: string;
   city?: string;
   state?: string;
   pincode?: string;
@@ -41,6 +42,7 @@ export const EditSpaceSlideOver = ({ space, onClose, onSaved }: Props) => {
     addressLine: space.addressLine ?? '',
     landmark:    space.landmark    ?? '',
     area:        space.area        ?? '',
+    district:    space.district    ?? '',
     city:        space.city        ?? '',
     state:       space.state       ?? '',
     pincode:     space.pincode     ?? '',
@@ -142,21 +144,31 @@ export const EditSpaceSlideOver = ({ space, onClose, onSaved }: Props) => {
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="City" required>
+              <Field label="City / Town" required>
                 <input
                   className="input w-full"
                   value={form.city}
                   onChange={(e) => set('city', e.target.value)}
+                  placeholder="e.g. Rajahmundry"
                 />
               </Field>
-              <Field label="State" required>
+              <Field label="District">
                 <input
                   className="input w-full"
-                  value={form.state}
-                  onChange={(e) => set('state', e.target.value)}
+                  value={form.district}
+                  onChange={(e) => set('district', e.target.value)}
+                  placeholder="e.g. East Godavari"
                 />
               </Field>
             </div>
+
+            <Field label="State" required>
+              <input
+                className="input w-full"
+                value={form.state}
+                onChange={(e) => set('state', e.target.value)}
+              />
+            </Field>
 
             <Field label="Pincode" required>
               <input

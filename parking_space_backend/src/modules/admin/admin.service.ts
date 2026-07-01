@@ -136,8 +136,9 @@ export const listVendors = async (status?: string) => {
     where: status ? { status: status as any } : {},
     include: {
       user: { select: { fullName: true, email: true, phone: true, status: true } },
-      // Lightweight location data — used by admin UI for state/city filters.
-      locations: { select: { state: true, city: true } },
+      // Lightweight location data — used by admin UI for state/city filters
+      // and to show which location(s) matched an active filter.
+      locations: { select: { state: true, city: true, area: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -649,7 +650,8 @@ export const listSpaces = async (status?: string, vendorId?: string) => {
 export const approveSpace = async (id: string, actorId: string) => {
   const space = await prisma.parkingLocation.findUniqueOrThrow({ where: { id } });
   // Apply every queued edit request (later requests win per field).
-  const pendingEdits = mergePendingEdits(parsePendingEdits(space.pendingData as string | null));
+  const requests = parsePendingEdits(space.pendingData as string | null);
+  const pendingEdits = mergePendingEdits(requests);
   const updated = await prisma.parkingLocation.update({
     where: { id },
     data: {
@@ -662,8 +664,18 @@ export const approveSpace = async (id: string, actorId: string) => {
       approvedById: actorId,
     },
   });
+  // Preserve the full edit history so it survives clearing pendingData: record
+  // every submitted request (fields + submittedAt) plus the net applied fields.
   await prisma.auditLog.create({
-    data: { actorId, action: 'SPACE_APPROVE', entity: 'ParkingLocation', entityId: updated.id },
+    data: {
+      actorId,
+      action: requests.length ? 'SPACE_APPROVE_EDITS' : 'SPACE_APPROVE',
+      entity: 'ParkingLocation',
+      entityId: updated.id,
+      metadata: requests.length
+        ? JSON.stringify({ decision: 'APPROVED', requests, appliedFields: Object.keys(pendingEdits) })
+        : null,
+    },
   });
   return updated;
 };
@@ -685,12 +697,21 @@ export const rejectSpace = async (id: string, actorId: string, note?: string) =>
 };
 
 export const rejectSpaceEdits = async (id: string, actorId: string, note?: string) => {
+  const space = await prisma.parkingLocation.findUniqueOrThrow({ where: { id } });
+  // Capture the pending requests before clearing so the audit trail survives.
+  const requests = parsePendingEdits(space.pendingData as string | null);
   const updated = await prisma.parkingLocation.update({
     where: { id },
     data: { pendingData: null, approvalNote: note ?? null },
   });
   await prisma.auditLog.create({
-    data: { actorId, action: 'SPACE_REJECT_EDITS', entity: 'ParkingLocation', entityId: updated.id },
+    data: {
+      actorId,
+      action: 'SPACE_REJECT_EDITS',
+      entity: 'ParkingLocation',
+      entityId: updated.id,
+      metadata: JSON.stringify({ decision: 'REJECTED', note: note ?? null, requests }),
+    },
   });
   return updated;
 };

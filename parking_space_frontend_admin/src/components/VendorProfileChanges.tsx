@@ -46,8 +46,22 @@ export const VendorProfileChanges = ({ vendor, onDone }: { vendor: any; onDone: 
     return vendor[k];
   };
   const rows = computeChanges(vendor.pendingProfileData, current, VENDOR_LABELS);
-  const fmt = (key: string, value: unknown) =>
-    key === 'aadharDocUrl' ? (String(value ?? '').trim() ? 'Document uploaded' : '—') : undefined;
+  const fmt = (key: string, value: unknown) => {
+    if (key !== 'aadharDocUrl') return undefined;
+    const url = String(value ?? '').trim();
+    if (!url) return '—';
+    // Let the admin open & inspect the uploaded doc before approving.
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="text-brand-600 underline hover:text-brand-700 dark:text-brand-400"
+      >
+        View document
+      </a>
+    );
+  };
 
   return (
     <div className="card overflow-hidden">

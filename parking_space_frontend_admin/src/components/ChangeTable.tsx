@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Pencil, PlusCircle, MinusCircle } from 'lucide-react';
 
 /**
@@ -55,7 +56,7 @@ export const ChangeTable = ({
   submittedAt?: string | null;
   footerNote?: string;
   /** Optional per-field display override (return undefined to fall back to default). */
-  formatValue?: (key: string, value: unknown) => string | undefined;
+  formatValue?: (key: string, value: unknown) => ReactNode | undefined;
 }) => {
   const show = (key: string, v: unknown) => {
     const f = formatValue?.(key, v);

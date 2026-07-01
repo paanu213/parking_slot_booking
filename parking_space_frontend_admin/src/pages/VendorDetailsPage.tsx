@@ -6,7 +6,7 @@ import {
   Calendar, CalendarCheck, IndianRupee, Layers, Plus,
   CheckCircle2, Clock, XCircle, Pencil, ChevronDown, ChevronUp,
   Bike, Car, Truck, ToggleLeft, ToggleRight, Sparkles, Save, X, Percent,
-  UserPlus, Upload,
+  UserPlus, Upload, ExternalLink,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { KebabMenu, MenuItem } from '@/components/KebabMenu';
@@ -502,10 +502,30 @@ const SpaceCard = ({
             <SpaceField label="Address" value={space.addressLine} full />
             <SpaceField label="Landmark" value={space.landmark} full />
             <SpaceField label="Area" value={space.area} />
-            <SpaceField label="City / State" value={[space.city, space.state].filter(Boolean).join(', ')} />
+            <SpaceField label="City" value={space.city} />
+            <SpaceField label="District" value={space.district} />
+            <SpaceField label="State" value={space.state} />
             <SpaceField label="Pincode" value={space.pincode} />
-            <SpaceField label="Latitude" value={space.latitude != null ? Number(space.latitude).toFixed(6) : null} />
-            <SpaceField label="Longitude" value={space.longitude != null ? Number(space.longitude).toFixed(6) : null} />
+            {space.latitude != null && space.longitude != null && (
+              <SpaceField
+                full
+                label="Location"
+                value={
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${space.latitude},${space.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-brand-600 underline hover:text-brand-700 dark:text-brand-400"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View on Google Maps
+                    <span className="ml-1 font-mono text-xs text-slate-400">
+                      ({Number(space.latitude).toFixed(6)}, {Number(space.longitude).toFixed(6)})
+                    </span>
+                  </a>
+                }
+              />
+            )}
             <SpaceField label="Active" value={space.isActive ? 'Yes' : 'No'} />
             <SpaceField label="Description" value={space.description} full />
             {(space.amenities?.length ?? 0) > 0 && (

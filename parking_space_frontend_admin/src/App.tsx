@@ -1306,6 +1306,35 @@ const Vendors = () => {
                           )}
                         </div>
                         {v.address && <p className="text-xs text-slate-400">{v.address}</p>}
+                        {/* Location(s) — when a state/city filter is active, show only the
+                            matching location(s) so a multi-city vendor's other spaces
+                            (e.g. Vizag) don't look like a filter leak. Otherwise show all. */}
+                        {(() => {
+                          const locs: any[] = v.locations ?? [];
+                          if (locs.length === 0) return null;
+                          const shown = hasLocationFilter
+                            ? locs.filter((l) =>
+                                (!stateFilter || l.state === stateFilter) &&
+                                (!cityFilter  || l.city  === cityFilter))
+                            : locs;
+                          const labels = [...new Set(
+                            shown
+                              .map((l) => [l.area, l.city].filter(Boolean).join(', '))
+                              .filter(Boolean),
+                          )];
+                          if (labels.length === 0) return null;
+                          return (
+                            <p className="inline-flex flex-wrap items-center gap-1 text-xs text-slate-400">
+                              <MapPin className="h-3 w-3 text-brand-500" />
+                              {hasLocationFilter
+                                ? `Matching location${labels.length > 1 ? 's' : ''}: `
+                                : 'Locations: '}
+                              <span className="font-medium text-slate-600 dark:text-slate-300">
+                                {labels.join(' · ')}
+                              </span>
+                            </p>
+                          );
+                        })()}
                         {v.aadharNumber && (
                           <p className="inline-flex items-center gap-1 text-xs text-slate-400">
                             <ShieldCheck className="h-3 w-3 text-emerald-500" />

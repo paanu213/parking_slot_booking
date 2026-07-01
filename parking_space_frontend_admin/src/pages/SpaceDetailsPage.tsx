@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Building2, MapPin, Layers, CalendarCheck, IndianRupee,
   Percent, CheckCircle2, XCircle, Clock, Pencil, Hash, Navigation, Sparkles,
-  User, Phone, Mail, Store, ImageIcon,
+  User, Phone, Mail, Store, ImageIcon, ExternalLink,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PendingChanges } from '@/components/PendingChanges';
@@ -222,7 +222,7 @@ export default function SpaceDetailsPage() {
       {/* ── Pending vendor edits — current vs requested + approve/reject ── */}
       {s.pendingData && (
         <div className="card overflow-hidden">
-          <PendingChanges space={s} />
+          <PendingChanges space={s} requestedBy={s.vendor?.businessName ?? s.vendor?.user?.fullName} />
           <div className="border-t border-slate-100 p-4 dark:border-slate-800">
             {rejectingEdits ? (
               <div className="space-y-2">
@@ -302,10 +302,30 @@ export default function SpaceDetailsPage() {
             <DetailRow icon={<MapPin className="h-3.5 w-3.5" />} label="Address" value={s.addressLine} multi />
             <DetailRow icon={<Navigation className="h-3.5 w-3.5" />} label="Landmark" value={s.landmark} multi />
             <DetailRow icon={<MapPin className="h-3.5 w-3.5" />} label="Area" value={s.area} />
-            <DetailRow icon={<MapPin className="h-3.5 w-3.5" />} label="City / State" value={[s.city, s.state].filter(Boolean).join(', ')} />
+            <DetailRow icon={<MapPin className="h-3.5 w-3.5" />} label="City" value={s.city} />
+            <DetailRow icon={<MapPin className="h-3.5 w-3.5" />} label="District" value={s.district} />
+            <DetailRow icon={<MapPin className="h-3.5 w-3.5" />} label="State" value={s.state} />
             <DetailRow icon={<Hash className="h-3.5 w-3.5" />} label="Pincode" value={s.pincode} mono />
-            <DetailRow icon={<Navigation className="h-3.5 w-3.5" />} label="Latitude" value={s.latitude != null ? Number(s.latitude).toFixed(6) : null} mono />
-            <DetailRow icon={<Navigation className="h-3.5 w-3.5" />} label="Longitude" value={s.longitude != null ? Number(s.longitude).toFixed(6) : null} mono />
+            <DetailRow
+              icon={<Navigation className="h-3.5 w-3.5" />}
+              label="Location"
+              value={
+                s.latitude != null && s.longitude != null ? (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${s.latitude},${s.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-brand-600 underline hover:text-brand-700 dark:text-brand-400"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View on Google Maps
+                    <span className="ml-1 font-mono text-xs text-slate-400">
+                      ({Number(s.latitude).toFixed(6)}, {Number(s.longitude).toFixed(6)})
+                    </span>
+                  </a>
+                ) : null
+              }
+            />
             <DetailRow icon={<Building2 className="h-3.5 w-3.5" />} label="Description" value={s.description} multi />
             {amenities.length > 0 && (
               <DetailRow

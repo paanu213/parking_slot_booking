@@ -16,6 +16,7 @@ const insecureAgent = new https.Agent({ rejectUnauthorized: false });
 interface PostOffice {
   Name?: string;
   Block?: string;
+  Division?: string;
   District?: string;
   State?: string;
   Country?: string;
@@ -24,7 +25,13 @@ interface PostOffice {
 
 export interface PincodeLookup {
   pincode: string;
+  /**
+   * Best-effort City / Town. The India Post API has no exact "city" field, so we
+   * use the postal Block (the town/mandal — e.g. "Rajahmundry" when the District
+   * is "East Godavari"), falling back to Division/District. Editable in the form.
+   */
   city: string;
+  district: string;
   state: string;
   area: string;
   places: { name: string; district: string; state: string }[];
@@ -56,9 +63,21 @@ export const lookupPincode = async (raw: string): Promise<PincodeLookup> => {
   }
 
   const po = offices[0];
+  const district = po.District ?? po.Block ?? po.Name ?? '';
+  // Best-effort City / Town. The postal Division is the cleanest city name
+  // ("Rajahmundry", "Visakhapatnam", "Hyderabad City"); Block is noisier
+  // ("Rajahmundry (Urban)", "Khairatabad"). Strip postal suffixes; fall back to
+  // Block, then District. Stays editable in the form.
+  const clean = (s?: string) =>
+    (s ?? '')
+      .replace(/\s*\([^)]*\)\s*$/, '')      // drop trailing "(Urban)", "(mdl)", …
+      .replace(/\s+(urban|rural|city)$/i, '') // drop stray "Urban"/"Rural"/"City"
+      .trim();
+  const city = clean(po.Division) || clean(po.Block) || district;
   return {
     pincode,
-    city:  po.District ?? po.Block ?? po.Name ?? '',
+    city,
+    district,
     state: po.State ?? '',
     area:  po.Name ?? po.Block ?? '',
     places: offices.map((p) => ({

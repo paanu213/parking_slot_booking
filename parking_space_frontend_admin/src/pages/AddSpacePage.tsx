@@ -37,6 +37,7 @@ interface SpaceFormValues {
   addressLine: string;
   landmark?:   string;
   area?:       string;
+  district?:   string;
   city:        string;
   state:       string;
   pincode:     string;
@@ -164,9 +165,11 @@ const Step1 = ({
     // certificate expirations that break direct browser fetch() calls.
     api.get(`/util/pincode/${p}`)
       .then(({ data }) => {
-        if (data?.city && data?.state) {
-          setValue('city',  data.city,  { shouldDirty: true });
-          setValue('state', data.state, { shouldDirty: true });
+        if (data?.state) {
+          // Auto-fill District, City/Town (best-effort) and State from the pincode.
+          setValue('district', data.district ?? '', { shouldDirty: true });
+          setValue('city',     data.city ?? '',     { shouldDirty: true });
+          setValue('state',    data.state, { shouldDirty: true });
           setPincodeState('found');
         } else {
           setPincodeState('error');
@@ -249,13 +252,22 @@ const Step1 = ({
           {pincodeState === 'error' && <p className="mt-1 text-xs text-red-500">Pincode not found. Fill manually.</p>}
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">City / District <span className="text-red-500">*</span></label>
-          <input className="input w-full" placeholder="Auto-filled" required {...register('city')} />
+          <label className="mb-1 block text-xs font-medium text-slate-500">District <span className="font-normal text-slate-400">(auto)</span></label>
+          <input className="input w-full" placeholder="District" {...register('district')} />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">State <span className="text-red-500">*</span></label>
           <input className="input w-full" placeholder="Auto-filled" required {...register('state')} />
         </div>
+      </div>
+
+      {/* City / Town — auto-filled from the pincode (best-effort), still editable */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-500">
+          City / Town <span className="text-red-500">*</span>
+          <span className="ml-1.5 font-normal text-slate-400">(auto from pincode — edit if needed)</span>
+        </label>
+        <input className="input w-full" placeholder="City / town" required {...register('city')} />
       </div>
 
       {/* Street address */}
@@ -627,6 +639,12 @@ const Step4 = ({
             <dt className="mb-0.5 text-xs text-slate-400">City, State</dt>
             <dd>{spaceData.city}, {spaceData.state}</dd>
           </div>
+          {spaceData.district && (
+            <div>
+              <dt className="mb-0.5 text-xs text-slate-400">District</dt>
+              <dd>{spaceData.district}</dd>
+            </div>
+          )}
           <div className="col-span-2">
             <dt className="mb-0.5 text-xs text-slate-400">Street Address</dt>
             <dd>{spaceData.addressLine}</dd>

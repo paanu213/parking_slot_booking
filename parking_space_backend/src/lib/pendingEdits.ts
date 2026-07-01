@@ -32,7 +32,7 @@ export const mergePendingEdits = (requests: SpaceEditRequest[]): Record<string, 
   requests.reduce((acc, r) => ({ ...acc, ...(r.data ?? {}) }), {} as Record<string, unknown>);
 
 const EDITABLE_FIELDS = [
-  'name', 'description', 'addressLine', 'landmark', 'city', 'state', 'pincode', 'area', 'latitude', 'longitude',
+  'name', 'description', 'addressLine', 'landmark', 'district', 'city', 'state', 'pincode', 'area', 'latitude', 'longitude',
 ] as const;
 
 const sameValue = (a: unknown, b: unknown): boolean => {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Sparkles, Bike, Car, Truck, Trash2, CalendarCheck, MapPin } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Sparkles, Bike, Car, Truck, Trash2, CalendarCheck, MapPin, ExternalLink } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AmenityIcon } from '@ps/ui';
@@ -45,6 +45,7 @@ interface ParkingSpace {
   addressLine: string;
   landmark?: string | null;
   area?: string | null;
+  district?: string | null;
   city: string;
   state: string;
   pincode: string;
@@ -85,7 +86,12 @@ const editDefaultsFor = (space: ParkingSpace) => {
     } catch { latest = {}; }
   }
   const merged: any = { ...space, ...latest };
-  return { ...merged, landmark: merged.landmark ?? undefined, area: merged.area ?? undefined };
+  return {
+    ...merged,
+    landmark: merged.landmark ?? undefined,
+    area:     merged.area ?? undefined,
+    district: merged.district ?? undefined,
+  };
 };
 
 const STATUS_META: Record<ApprovalStatus, { label: string; cls: string; icon: React.ReactNode }> = {
@@ -352,10 +358,29 @@ export const ParkingSpacesPage = () => {
                         {space.landmark && <SpaceDetail label="Landmark" value={space.landmark} className="col-span-2 sm:col-span-3" />}
                         {space.area && <SpaceDetail label="Area" value={space.area} />}
                         <SpaceDetail label="City" value={space.city} />
+                        {space.district && <SpaceDetail label="District" value={space.district} />}
                         <SpaceDetail label="State" value={space.state} />
                         <SpaceDetail label="Pincode" value={space.pincode} mono />
-                        <SpaceDetail label="Latitude" value={Number(space.latitude).toFixed(6)} mono />
-                        <SpaceDetail label="Longitude" value={Number(space.longitude).toFixed(6)} mono />
+                        {space.latitude != null && space.longitude != null && (
+                          <SpaceDetail
+                            label="Location"
+                            className="col-span-2 sm:col-span-3"
+                            value={
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${space.latitude},${space.longitude}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-brand-600 underline hover:text-brand-700 dark:text-brand-400"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                View on Google Maps
+                                <span className="ml-1 font-mono text-xs text-slate-400">
+                                  ({Number(space.latitude).toFixed(6)}, {Number(space.longitude).toFixed(6)})
+                                </span>
+                              </a>
+                            }
+                          />
+                        )}
                         {space.description && <SpaceDetail label="Description" value={space.description} className="col-span-2 sm:col-span-3" />}
                       </dl>
                     </div>

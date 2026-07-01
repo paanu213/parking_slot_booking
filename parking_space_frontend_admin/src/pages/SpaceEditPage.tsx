@@ -19,7 +19,7 @@ interface Slot {
 interface Space {
   id: string; name: string; description?: string;
   addressLine: string; landmark?: string | null; area?: string | null;
-  city: string; state: string; pincode: string;
+  district?: string | null; city: string; state: string; pincode: string;
   latitude: number; longitude: number;
   approvalStatus: string; isActive: boolean;
   vendor: { businessName: string; user: { fullName: string; email: string } };
@@ -82,13 +82,18 @@ export const SpaceEditPage = () => {
 
   // ── Basic details form ─────────────────────────────────────────────────────
   const [form, setForm] = useState({
-    name: '', description: '', addressLine: '', landmark: '', area: '', city: '',
+    name: '', description: '', addressLine: '', landmark: '', area: '', district: '', city: '',
     state: '', pincode: '', latitude: '', longitude: '',
   });
   const [mapsUrl, setMapsUrl]       = useState('');
   const [mapsError, setMapsError]   = useState('');
   const [pincodeStatus, setPincodeStatus] = useState<'idle'|'loading'|'found'|'error'>('idle');
   const pincodeRef = useRef('');
+  // Area / Locality options for the pincode-driven dropdown (mirrors the vendor
+  // SpaceForm). Seeded with the space's saved area so it shows immediately in
+  // edit mode, before/independent of the pincode lookup.
+  const [areas, setAreas] = useState<string[]>([]);
+  const areaRef = useRef('');
   const [detailsSaved, setDetailsSaved] = useState(false);
 
   // ── Amenities selection ────────────────────────────────────────────────────
@@ -118,26 +123,47 @@ export const SpaceEditPage = () => {
       addressLine: space.addressLine,
       landmark:    space.landmark ?? '',
       area:        space.area ?? '',
+      district:    space.district ?? '',
       city:        space.city,
       state:       space.state,
       pincode:     space.pincode,
       latitude:    String(space.latitude),
       longitude:   String(space.longitude),
     });
+    areaRef.current = space.area ?? '';
+    setAreas(space.area ? [space.area] : []);
     setSelectedAmenities(new Set(space.amenities.map((a) => a.amenityId)));
   }, [space]);
 
-  // Pincode auto-fill
+  // Pincode auto-fill → city / state + area options
   useEffect(() => {
     const p = form.pincode.replace(/\D/g, '');
     if (p.length !== 6 || p === pincodeRef.current) return;
+    // First run for an existing space (edit mode): keep the saved city/state/area
+    // as-is and only load the area options. Only a *user-initiated* pincode change
+    // should overwrite city/state and reset the chosen area.
+    const isInitial = pincodeRef.current === '';
     pincodeRef.current = p;
     setPincodeStatus('loading');
+    if (!isInitial) {
+      setAreas([]);
+      areaRef.current = '';
+      setForm((f) => ({ ...f, area: '' }));
+    }
+    // Keep the currently-selected area available as an option even if the lookup
+    // doesn't return it, so an existing space's saved area never disappears.
+    const withCurrent = (list: string[]) => {
+      const current = areaRef.current.trim();
+      return current && !list.includes(current) ? [current, ...list] : list;
+    };
     // Proxied through our backend (third-party API has frequent SSL cert issues)
     api.get(`/util/pincode/${p}`)
       .then(({ data }) => {
-        if (data?.city && data?.state) {
-          setForm((f) => ({ ...f, city: data.city, state: data.state }));
+        if (data?.state) {
+          // Auto-fill District, City/Town (best-effort) and State from the pincode.
+          if (!isInitial) setForm((f) => ({ ...f, district: data.district ?? '', city: data.city ?? f.city, state: data.state }));
+          const places = Array.isArray(data.places) ? data.places : [];
+          setAreas(withCurrent(places.length ? places.map((pl: any) => pl.name) : [data.area].filter(Boolean)));
           setPincodeStatus('found');
         } else {
           setPincodeStatus('error');
@@ -322,11 +348,14 @@ export const SpaceEditPage = () => {
               )}
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">City / District *</label>
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                District <span className="font-normal text-slate-400">(auto)</span>
+              </label>
               <input
                 className="input w-full"
-                value={form.city}
-                onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                placeholder="District"
+                value={form.district}
+                onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
               />
             </div>
             <div>
@@ -337,6 +366,20 @@ export const SpaceEditPage = () => {
                 onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
               />
             </div>
+          </div>
+
+          {/* City / Town — auto-filled from the pincode (best-effort), still editable */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">
+              City / Town *
+              <span className="ml-1.5 font-normal text-slate-400">(auto from pincode — edit if needed)</span>
+            </label>
+            <input
+              className="input w-full"
+              placeholder="City / town"
+              value={form.city}
+              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+            />
           </div>
 
           <div>
@@ -352,13 +395,33 @@ export const SpaceEditPage = () => {
           {/* Area / Locality + Landmark */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Area / Locality</label>
-              <input
-                className="input w-full"
-                placeholder="e.g. Gachibowli"
-                value={form.area}
-                onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))}
-              />
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                Area / Locality
+                {areas.length > 0 && (
+                  <span className="ml-1.5 font-normal text-slate-400">
+                    ({areas.length} found for this pincode)
+                  </span>
+                )}
+              </label>
+              {areas.length > 0 ? (
+                <select
+                  className="input w-full"
+                  value={form.area}
+                  onChange={(e) => { areaRef.current = e.target.value; setForm((f) => ({ ...f, area: e.target.value })); }}
+                >
+                  <option value="">Select the area…</option>
+                  {areas.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="input w-full"
+                  placeholder="Enter a pincode above to pick an area, or type it in"
+                  value={form.area}
+                  onChange={(e) => { areaRef.current = e.target.value; setForm((f) => ({ ...f, area: e.target.value })); }}
+                />
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-500">Landmark</label>

@@ -146,9 +146,11 @@ const Step1 = ({
     // Falls back to zippopotam.us if our proxy is unreachable.
     api.get(`/util/pincode/${p}`)
       .then(({ data }) => {
-        if (!data?.city || !data?.state) throw new Error('not found');
-        setValue('city',  data.city,  { shouldDirty: true });
-        setValue('state', data.state, { shouldDirty: true });
+        if (!data?.state) throw new Error('not found');
+        // Auto-fill District, City/Town (best-effort) and State from the pincode.
+        setValue('district', data.district ?? '', { shouldDirty: true });
+        setValue('city',     data.city ?? '',     { shouldDirty: true });
+        setValue('state',    data.state, { shouldDirty: true });
         const places = Array.isArray(data.places) ? data.places : [];
         setAreas(places.length ? places.map((p: any) => p.name) : [data.area].filter(Boolean));
         setPincodeState('found');
@@ -232,14 +234,13 @@ const Step1 = ({
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">
-            City / District
-            {pincodeState !== 'found' && <span className="ml-1 font-normal text-slate-400">*</span>}
+            District
+            <span className="ml-1 font-normal text-slate-400">(auto)</span>
           </label>
           <input
             className={`input w-full ${pincodeState === 'found' ? 'bg-slate-50 dark:bg-slate-800/60' : ''}`}
-            placeholder={pincodeState === 'found' ? '' : 'Enter city / district'}
-            required
-            {...register('city')}
+            placeholder="Enter district"
+            {...register('district')}
           />
         </div>
         <div>
@@ -254,6 +255,20 @@ const Step1 = ({
             {...register('state')}
           />
         </div>
+      </div>
+
+      {/* City / Town — auto-filled from the pincode (best-effort), still editable */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-500">
+          City / Town *
+          <span className="ml-1.5 font-normal text-slate-400">(auto from pincode — edit if needed)</span>
+        </label>
+        <input
+          className={`input w-full ${pincodeState === 'found' ? 'bg-slate-50 dark:bg-slate-800/60' : ''}`}
+          placeholder="City / town"
+          required
+          {...register('city')}
+        />
       </div>
 
       {/* Area — from Post Office API */}
@@ -832,6 +847,12 @@ const Step4 = ({
             {spaceData.city}, {spaceData.state}
           </dd>
         </div>
+        {spaceData.district && (
+          <div>
+            <dt className="mb-0.5 text-xs text-slate-400">District</dt>
+            <dd>{spaceData.district}</dd>
+          </div>
+        )}
         {spaceData.area && (
           <div>
             <dt className="mb-0.5 text-xs text-slate-400">Area</dt>
