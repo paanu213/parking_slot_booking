@@ -26,6 +26,14 @@ export const updateProfile: RequestHandler = async (req, res, next) => {
   }
 };
 
+export const withdrawProfileEdits: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.withdrawProfileEdits(req.user!.sub));
+  } catch (e) {
+    next(e);
+  }
+};
+
 export const uploadAadhaar: RequestHandler = async (req, res, next) => {
   try {
     res.json(await service.uploadAadhaar(req.user!.sub, req.body as AadhaarUploadInput));

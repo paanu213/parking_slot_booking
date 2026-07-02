@@ -9,7 +9,7 @@ import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, commissionFor } from '../../lib/commission.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { deleteImageByUrl, storeImageBuffer, deleteDocumentByUrl } from '../../lib/images.js';
-import { parsePendingEdits, editChangesAnything } from '../../lib/pendingEdits.js';
+import { parsePendingEdits, mergePendingEdits, editChangesAnything, PROFILE_EDIT_FIELDS } from '../../lib/pendingEdits.js';
 import {
   USER_FIELDS,
   type UserField,
@@ -36,15 +36,28 @@ export const getProfile = async (userId: string) => {
 export const updateProfile = async (userId: string, body: Record<string, unknown>) => {
   const vendor = await prisma.vendor.findUniqueOrThrow({
     where: { userId },
-    include: { user: { select: { id: true } } },
+    include: { user: { select: { id: true, fullName: true, email: true, phone: true } } },
   });
 
   if (vendor.status === 'APPROVED') {
-    // Store ALL fields (including user fields) as pending — admin applies them on approval
-    await prisma.vendor.update({
-      where: { userId },
-      data: { pendingProfileData: JSON.stringify(body) },
-    });
+    // Live account — queue the edit for admin review WITHOUT touching live fields.
+    // Accumulate a LIST of requests so a vendor can submit several modifications
+    // before an admin acts; the admin sees every one and approves/rejects the set.
+    const requests = parsePendingEdits(vendor.pendingProfileData as string | null);
+    const snapshot: Record<string, unknown> = {
+      fullName: vendor.user.fullName, phone: vendor.user.phone, email: vendor.user.email,
+      businessName: vendor.businessName, contactPhone: vendor.contactPhone, address: vendor.address,
+      gstNumber: vendor.gstNumber, panNumber: vendor.panNumber, payoutUpiId: vendor.payoutUpiId,
+      aadharNumber: vendor.aadharNumber, aadharDocUrl: vendor.aadharDocUrl,
+    };
+    const baseline = { ...snapshot, ...mergePendingEdits(requests) };
+    if (editChangesAnything(baseline, body, PROFILE_EDIT_FIELDS)) {
+      requests.push({ data: body, submittedAt: new Date().toISOString() });
+      await prisma.vendor.update({
+        where: { userId },
+        data: { pendingProfileData: JSON.stringify(requests) },
+      });
+    }
   } else {
     // Separate user fields from vendor fields
     const userUpdate: Partial<Record<UserField, string>> = {};
@@ -69,6 +82,31 @@ export const updateProfile = async (userId: string, body: Record<string, unknown
 
   return prisma.vendor.findUniqueOrThrow({
     where: { userId },
+    include: { user: { select: VENDOR_USER_SELECT } },
+  });
+};
+
+/**
+ * Vendor withdraws their own pending profile edit request(s) before an admin
+ * acts on them. Clears the queue and cleans up any newly-uploaded Aadhaar docs
+ * that were never applied (so orphan files don't linger in storage).
+ */
+export const withdrawProfileEdits = async (userId: string) => {
+  const vendor = await prisma.vendor.findUniqueOrThrow({ where: { userId } });
+  const requests = parsePendingEdits(vendor.pendingProfileData as string | null);
+  if (requests.length === 0) throw BadRequest('No pending profile changes to withdraw');
+
+  // Delete any uploaded-but-never-applied Aadhaar docs from storage.
+  const docs = new Set<string>();
+  for (const r of requests) {
+    const url = String((r.data as Record<string, unknown>)?.aadharDocUrl ?? '').trim();
+    if (url && url !== vendor.aadharDocUrl) docs.add(url);
+  }
+  for (const url of docs) await deleteDocumentByUrl(url).catch(() => {});
+
+  return prisma.vendor.update({
+    where: { userId },
+    data: { pendingProfileData: null },
     include: { user: { select: VENDOR_USER_SELECT } },
   });
 };

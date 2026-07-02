@@ -52,6 +52,20 @@ interface EditForm {
 const fmtDate = (d?: string | null) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
 
+// Pending profile edits accumulate as a LIST of requests (each a full snapshot).
+// Read them (newest state = merge, later wins) — tolerant of the legacy single object.
+const parseProfileRequests = (pd?: string | null): Record<string, any>[] => {
+  if (!pd) return [];
+  try {
+    const p = JSON.parse(pd);
+    if (Array.isArray(p)) return p.map((r) => r?.data ?? r).filter(Boolean);
+    if (p && typeof p === 'object') return [p];
+  } catch { /* ignore */ }
+  return [];
+};
+const mergeProfileRequests = (pd?: string | null): Record<string, string> =>
+  parseProfileRequests(pd).reduce((acc, d) => ({ ...acc, ...d }), {} as Record<string, string>);
+
 // ── Field row (read-only display) ────────────────────────────────────────────
 const InfoRow = ({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) => (
   value ? (
@@ -213,21 +227,24 @@ export const ProfilePage = () => {
     queryFn: async () => (await api.get('/vendor/me')).data,
   });
 
-  // When edit mode opens, pre-fill the form with current values
+  // When edit mode opens, pre-fill the form with the vendor's latest intended
+  // values: their approved profile with any still-pending edits merged on top, so
+  // a new submission keeps (and builds on) earlier un-approved changes.
   useEffect(() => {
     if (editing && profile) {
+      const p = mergeProfileRequests(profile.pendingProfileData);
       setForm({
-        fullName:     profile.user.fullName  ?? '',
-        phone:        profile.user.phone     ?? '',
-        email:        profile.user.email     ?? '',
-        businessName: profile.businessName   ?? '',
-        contactPhone: profile.contactPhone   ?? '',
-        address:      profile.address        ?? '',
-        gstNumber:    profile.gstNumber      ?? '',
-        panNumber:    profile.panNumber      ?? '',
-        payoutUpiId:  profile.payoutUpiId    ?? '',
-        aadharNumber: profile.aadharNumber   ?? '',
-        aadharDocUrl: profile.aadharDocUrl   ?? '',
+        fullName:     p.fullName     ?? profile.user.fullName  ?? '',
+        phone:        p.phone        ?? profile.user.phone     ?? '',
+        email:        p.email        ?? profile.user.email     ?? '',
+        businessName: p.businessName ?? profile.businessName   ?? '',
+        contactPhone: p.contactPhone ?? profile.contactPhone   ?? '',
+        address:      p.address      ?? profile.address        ?? '',
+        gstNumber:    p.gstNumber    ?? profile.gstNumber      ?? '',
+        panNumber:    p.panNumber    ?? profile.panNumber      ?? '',
+        payoutUpiId:  p.payoutUpiId  ?? profile.payoutUpiId    ?? '',
+        aadharNumber: p.aadharNumber ?? profile.aadharNumber   ?? '',
+        aadharDocUrl: p.aadharDocUrl ?? profile.aadharDocUrl   ?? '',
       });
       setFormErr('');
     }
@@ -273,6 +290,12 @@ export const ProfilePage = () => {
     onError: (e: any) => setKycErr(e?.response?.data?.error?.message ?? e?.response?.data?.message ?? 'Failed to save. Please try again.'),
   });
 
+  // Withdraw all pending profile-edit requests (before an admin acts on them).
+  const withdraw = useMutation({
+    mutationFn: () => api.post('/vendor/me/profile-edits/withdraw').then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vendor-me'] }),
+  });
+
   const set = (key: keyof EditForm) =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -298,7 +321,8 @@ export const ProfilePage = () => {
 
   const isApproved     = profile.status === 'APPROVED';
   const hasPending     = Boolean(profile.pendingProfileData);
-  const pendingData    = hasPending ? (JSON.parse(profile.pendingProfileData!) as Record<string, string>) : null;
+  const pendingData    = hasPending ? mergeProfileRequests(profile.pendingProfileData) : null;
+  const pendingCount   = parseProfileRequests(profile.pendingProfileData).length;
   const canEdit        = isApproved;
   // Aadhaar verification state — single source of truth is the vendor record.
   const hasAadharDoc      = Boolean(profile.aadharDocUrl);
@@ -317,12 +341,12 @@ export const ProfilePage = () => {
             {isApproved ? 'Your account is live.' : `Status: ${profile.status}`}
           </p>
         </div>
-        {canEdit && !editing && !hasPending && (
+        {canEdit && !editing && (
           <button
             onClick={() => setEditing(true)}
             className="btn-ghost inline-flex items-center gap-1.5 text-sm"
           >
-            <Edit2 className="h-4 w-4" /> Edit Profile
+            <Edit2 className="h-4 w-4" /> {hasPending ? 'Edit Again' : 'Edit Profile'}
           </button>
         )}
       </div>
@@ -336,17 +360,28 @@ export const ProfilePage = () => {
       )}
 
       {/* ── Pending profile edit banner ── */}
-      {hasPending && (
+      {hasPending && !editing && (
         <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-800/50 dark:bg-blue-900/20">
           <div className="flex items-start gap-2">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
-            <div>
-              <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Profile edit awaiting admin approval</p>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                {pendingCount > 1
+                  ? `${pendingCount} profile changes awaiting admin approval`
+                  : 'Profile edit awaiting admin approval'}
+              </p>
               <p className="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
-                Your changes are under review. The values shown below reflect your currently approved profile.
-                You cannot submit new edits until this review is complete.
+                Your changes are under review. The values below reflect your currently approved profile.
+                You can keep making more edits (they'll be added to this request), or withdraw the request.
               </p>
             </div>
+            <button
+              onClick={() => { if (confirm('Withdraw all pending profile changes? This cannot be undone.')) withdraw.mutate(); }}
+              disabled={withdraw.isPending}
+              className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-blue-300 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30"
+            >
+              <X className="h-3.5 w-3.5" /> {withdraw.isPending ? 'Withdrawing…' : 'Withdraw'}
+            </button>
           </div>
           {/* Show what's pending */}
           {pendingData && (

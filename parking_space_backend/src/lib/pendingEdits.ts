@@ -31,11 +31,18 @@ export const parsePendingEdits = (pendingData: string | null | undefined): Space
 export const mergePendingEdits = (requests: SpaceEditRequest[]): Record<string, unknown> =>
   requests.reduce((acc, r) => ({ ...acc, ...(r.data ?? {}) }), {} as Record<string, unknown>);
 
-const EDITABLE_FIELDS = [
+const SPACE_EDIT_FIELDS = [
   'name', 'description', 'addressLine', 'landmark', 'district', 'city', 'state', 'pincode', 'area', 'latitude', 'longitude',
 ] as const;
 
-const sameValue = (a: unknown, b: unknown): boolean => {
+/** Vendor profile edit fields (mix of user- and vendor-level), used for the same
+ *  accumulate-pending-requests flow as space edits. */
+export const PROFILE_EDIT_FIELDS = [
+  'fullName', 'phone', 'email', 'businessName', 'contactPhone', 'address',
+  'gstNumber', 'panNumber', 'payoutUpiId', 'aadharNumber', 'aadharDocUrl',
+] as const;
+
+export const sameValue = (a: unknown, b: unknown): boolean => {
   const na = a == null ? '' : String(a).trim();
   const nb = b == null ? '' : String(b).trim();
   if (na === nb) return true;
@@ -44,5 +51,9 @@ const sameValue = (a: unknown, b: unknown): boolean => {
 };
 
 /** True if `body` actually changes anything vs the given baseline (live row or latest snapshot). */
-export const editChangesAnything = (baseline: Record<string, unknown>, body: Record<string, unknown>): boolean =>
-  EDITABLE_FIELDS.some((f) => f in body && !sameValue(body[f], baseline[f]));
+export const editChangesAnything = (
+  baseline: Record<string, unknown>,
+  body: Record<string, unknown>,
+  fields: readonly string[] = SPACE_EDIT_FIELDS,
+): boolean =>
+  fields.some((f) => f in body && !sameValue(body[f], baseline[f]));

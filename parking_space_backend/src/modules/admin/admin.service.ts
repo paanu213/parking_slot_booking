@@ -501,7 +501,10 @@ export const approveVendorProfile = async (id: string, actorId: string) => {
     include: { user: { select: { id: true } } },
   });
   if (!vendor.pendingProfileData) throw BadRequest('No pending profile edits to approve');
-  const pending = JSON.parse(vendor.pendingProfileData) as Record<string, unknown>;
+  // Profile edits accumulate as a LIST of requests; merge them (later wins per
+  // field) into the final state to apply.
+  const requests = parsePendingEdits(vendor.pendingProfileData as string | null);
+  const pending = mergePendingEdits(requests);
 
   // Delete old aadhar doc if being replaced by the pending edit
   if (pending.aadharDocUrl && vendor.aadharDocUrl && pending.aadharDocUrl !== vendor.aadharDocUrl) {
@@ -530,28 +533,37 @@ export const approveVendorProfile = async (id: string, actorId: string) => {
     data: { ...vendorUpdate, ...verifyStamp, pendingProfileData: null },
     include: { user: { select: ADMIN_USER_SELECT } },
   });
+  // Preserve the full edit history (every request) beyond clearing pendingData.
   await prisma.auditLog.create({
-    data: { actorId, action: 'VENDOR_PROFILE_APPROVE', entity: 'Vendor', entityId: vendor.id },
+    data: {
+      actorId, action: 'VENDOR_PROFILE_APPROVE', entity: 'Vendor', entityId: vendor.id,
+      metadata: JSON.stringify({ decision: 'APPROVED', requests, appliedFields: Object.keys(pending) }),
+    },
   });
   return updated;
 };
 
 export const rejectVendorProfile = async (id: string, actorId: string, note?: string) => {
   const vendor = await prisma.vendor.findUniqueOrThrow({ where: { id } });
-  if (vendor.pendingProfileData) {
-    const pending = JSON.parse(vendor.pendingProfileData) as Record<string, unknown>;
-    // Delete the newly uploaded aadhar doc (if any) since it won't be used
-    if (pending.aadharDocUrl && pending.aadharDocUrl !== vendor.aadharDocUrl) {
-      await deleteDocumentByUrl(pending.aadharDocUrl as string);
-    }
+  const requests = parsePendingEdits(vendor.pendingProfileData as string | null);
+  // Delete any newly-uploaded aadhar docs (from any request) since none are used.
+  const docs = new Set<string>();
+  for (const r of requests) {
+    const url = String((r.data as Record<string, unknown>)?.aadharDocUrl ?? '').trim();
+    if (url && url !== vendor.aadharDocUrl) docs.add(url);
   }
+  for (const url of docs) await deleteDocumentByUrl(url).catch(() => {});
+
   const updated = await prisma.vendor.update({
     where: { id },
     data: { pendingProfileData: null, rejectionNote: note ?? null },
     include: { user: { select: ADMIN_USER_SELECT } },
   });
   await prisma.auditLog.create({
-    data: { actorId, action: 'VENDOR_PROFILE_REJECT', entity: 'Vendor', entityId: vendor.id },
+    data: {
+      actorId, action: 'VENDOR_PROFILE_REJECT', entity: 'Vendor', entityId: vendor.id,
+      metadata: JSON.stringify({ decision: 'REJECTED', note: note ?? null, requests }),
+    },
   });
   return updated;
 };

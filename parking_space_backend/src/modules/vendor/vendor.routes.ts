@@ -24,6 +24,7 @@ r.use(requireAuth, requireRole('VENDOR'));
 // Profile
 r.get('/me', ctrl.getProfile);
 r.put('/me', validate(updateProfileSchema), ctrl.updateProfile);
+r.post('/me/profile-edits/withdraw', ctrl.withdrawProfileEdits);
 r.post('/me/aadhaar', validate(aadhaarUploadSchema), ctrl.uploadAadhaar);
 
 // Locations CRUD (vendor-scoped)

@@ -1261,9 +1261,15 @@ const Vendors = () => {
               const isApproved         = v.status === 'APPROVED';
               const hasPendingProfile  = Boolean(v.pendingProfileData);
               const isRejectingProfile = profileRejectId === v.id;
-              const pending = hasPendingProfile
-                ? (JSON.parse(v.pendingProfileData) as Record<string, string>)
+              // Profile edits accumulate as a LIST of requests. Merge them (later
+              // wins per field) for this summary panel; count them for the badge.
+              const pendingRequests: any[] = hasPendingProfile
+                ? (() => { try { const p = JSON.parse(v.pendingProfileData); return Array.isArray(p) ? p : [{ data: p }]; } catch { return []; } })()
+                : [];
+              const pending: Record<string, string> | null = hasPendingProfile
+                ? pendingRequests.reduce((acc, r) => ({ ...acc, ...((r?.data ?? r) as Record<string, string>) }), {} as Record<string, string>)
                 : null;
+              const pendingCount = pendingRequests.length;
 
               return (
                 <div key={v.id} className="card overflow-hidden">
@@ -1284,7 +1290,8 @@ const Vendors = () => {
                           <StatusBadge status={v.status} map={VENDOR_STATUS_CLS} />
                           {hasPendingProfile && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                              <AlertCircle className="h-3 w-3" /> Profile edit pending
+                              <AlertCircle className="h-3 w-3" />
+                              {pendingCount > 1 ? `${pendingCount} profile changes pending` : 'Profile edit pending'}
                             </span>
                           )}
                         </div>
