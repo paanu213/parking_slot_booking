@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { CheckCircle2, XCircle, ShieldCheck, ExternalLink } from 'lucide-react';
+import { CheckCircle2, XCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ChangeTable, diffObjects } from '@/components/ChangeTable';
 
@@ -97,30 +97,14 @@ export const VendorProfileChanges = ({ vendor, onDone }: { vendor: any; onDone: 
       {requests.map((req, i) => {
         const prev = i === 0 ? live : requests[i - 1].data;
         const rows = diffObjects(prev, req.data, VENDOR_LABELS);
-        const docUrl  = String(req.data.aadharDocUrl ?? '').trim();
-        const aadharNo = String(req.data.aadharNumber ?? '').trim();
         return (
-          <div key={i}>
-            <ChangeTable
-              rows={rows}
-              title={multiple ? `Change request #${i + 1}` : 'Requested profile changes — review before approving'}
-              submittedAt={req.submittedAt || vendor.updatedAt}
-              formatValue={fmt}
-            />
-            {/* Aadhaar / KYC document — always shown when this request carries one,
-                so the admin can open & review it even if it wasn't a changed field. */}
-            {docUrl && (
-              <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900/40">
-                <ShieldCheck className="h-4 w-4 text-brand-500" />
-                <span className="font-medium text-slate-700 dark:text-slate-200">Aadhaar / KYC document</span>
-                {aadharNo && <span className="font-mono text-xs text-slate-500">· {aadharNo}</span>}
-                <a href={docUrl} target="_blank" rel="noreferrer"
-                   className="ml-auto inline-flex items-center gap-1 rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700">
-                  <ExternalLink className="h-3.5 w-3.5" /> View document
-                </a>
-              </div>
-            )}
-          </div>
+          <ChangeTable
+            key={i}
+            rows={rows}
+            title={multiple ? `Change request #${i + 1}` : 'Requested profile changes — review before approving'}
+            submittedAt={req.submittedAt || vendor.updatedAt}
+            formatValue={fmt}
+          />
         );
       })}
 

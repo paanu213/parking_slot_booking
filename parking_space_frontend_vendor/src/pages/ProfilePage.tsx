@@ -324,6 +324,28 @@ export const ProfilePage = () => {
   const pendingData    = hasPending ? mergeProfileRequests(profile.pendingProfileData) : null;
   const pendingCount   = parseProfileRequests(profile.pendingProfileData).length;
   const canEdit        = isApproved;
+
+  // Only the fields the vendor actually asked to change (pending value differs
+  // from the current approved value) — so the banner shows just the request, not
+  // a dump of the whole profile.
+  const PROFILE_LABELS: [string, string][] = [
+    ['Full Name', 'fullName'], ['Personal Phone', 'phone'], ['Email', 'email'],
+    ['Business Name', 'businessName'], ['Contact Phone', 'contactPhone'], ['Address', 'address'],
+    ['GST Number', 'gstNumber'], ['PAN Number', 'panNumber'], ['Payout UPI ID', 'payoutUpiId'],
+    ['Aadhar Number', 'aadharNumber'], ['Aadhar Document', 'aadharDocUrl'],
+  ];
+  const currentVal: Record<string, string> = {
+    fullName: profile.user.fullName ?? '', phone: profile.user.phone ?? '', email: profile.user.email ?? '',
+    businessName: profile.businessName ?? '', contactPhone: profile.contactPhone ?? '', address: profile.address ?? '',
+    gstNumber: profile.gstNumber ?? '', panNumber: profile.panNumber ?? '', payoutUpiId: profile.payoutUpiId ?? '',
+    aadharNumber: profile.aadharNumber ?? '', aadharDocUrl: profile.aadharDocUrl ?? '',
+  };
+  const changedFields = pendingData
+    ? PROFILE_LABELS.filter(([, k]) => {
+        const next = String(pendingData[k] ?? '').trim();
+        return next && next !== String(currentVal[k] ?? '').trim();
+      })
+    : [];
   // Aadhaar verification state — single source of truth is the vendor record.
   const hasAadharDoc      = Boolean(profile.aadharDocUrl);
   const aadharVerified    = Boolean(profile.aadharDocUrl && profile.aadharVerifiedAt);
@@ -362,19 +384,13 @@ export const ProfilePage = () => {
       {/* ── Pending profile edit banner ── */}
       {hasPending && !editing && (
         <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-800/50 dark:bg-blue-900/20">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                {pendingCount > 1
-                  ? `${pendingCount} profile changes awaiting admin approval`
-                  : 'Profile edit awaiting admin approval'}
-              </p>
-              <p className="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
-                Your changes are under review. The values below reflect your currently approved profile.
-                You can keep making more edits (they'll be added to this request), or withdraw the request.
-              </p>
-            </div>
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+            <p className="flex-1 text-sm font-semibold text-blue-700 dark:text-blue-300">
+              {pendingCount > 1
+                ? `${pendingCount} profile changes awaiting admin approval`
+                : 'Profile change awaiting admin approval'}
+            </p>
             <button
               onClick={() => { if (confirm('Withdraw all pending profile changes? This cannot be undone.')) withdraw.mutate(); }}
               disabled={withdraw.isPending}
@@ -383,35 +399,20 @@ export const ProfilePage = () => {
               <X className="h-3.5 w-3.5" /> {withdraw.isPending ? 'Withdrawing…' : 'Withdraw'}
             </button>
           </div>
-          {/* Show what's pending */}
-          {pendingData && (
-            <div className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
-              {[
-                ['Full Name',      'fullName'],
-                ['Personal Phone', 'phone'],
-                ['Email',          'email'],
-                ['Business Name',  'businessName'],
-                ['Contact Phone',  'contactPhone'],
-                ['Address',        'address'],
-                ['GST Number',     'gstNumber'],
-                ['PAN Number',     'panNumber'],
-                ['Payout UPI ID',  'payoutUpiId'],
-                ['Aadhar Number',  'aadharNumber'],
-              ].map(([label, key]) =>
-                pendingData[key] ? (
-                  <div key={key} className="flex gap-1.5">
-                    <span className="w-28 shrink-0 text-blue-400">{label}:</span>
-                    <span className="font-medium text-blue-700 dark:text-blue-200 break-all">{pendingData[key]}</span>
-                  </div>
-                ) : null,
-              )}
-              {pendingData.aadharDocUrl && (
-                <div className="flex gap-1.5">
-                  <span className="w-28 shrink-0 text-blue-400">Aadhar Doc:</span>
-                  <a href={pendingData.aadharDocUrl} target="_blank" rel="noreferrer"
-                    className="font-medium text-blue-600 underline dark:text-blue-300">View</a>
+          {/* Only the fields the vendor actually requested to change. */}
+          {changedFields.length > 0 && (
+            <div className="mt-2 grid gap-x-6 gap-y-1 border-t border-blue-200/60 pt-2 text-xs dark:border-blue-800/40 sm:grid-cols-2">
+              {changedFields.map(([label, key]) => (
+                <div key={key} className="flex gap-1.5">
+                  <span className="w-28 shrink-0 text-blue-400">{label}:</span>
+                  {key === 'aadharDocUrl' ? (
+                    <a href={pendingData![key]} target="_blank" rel="noreferrer"
+                       className="font-medium text-blue-600 underline dark:text-blue-300">View document</a>
+                  ) : (
+                    <span className="font-medium text-blue-700 dark:text-blue-200 break-all">{pendingData![key]}</span>
+                  )}
                 </div>
-              )}
+              ))}
             </div>
           )}
         </div>

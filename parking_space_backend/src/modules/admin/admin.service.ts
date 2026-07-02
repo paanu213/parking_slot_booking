@@ -60,6 +60,8 @@ export const getStats = async (startQ?: string, endQ?: string) => {
     recentPendingSpaces,
     recentSpaceEdits,
     recentProfileEdits,
+    pendingListingLeads,
+    recentListingLeads,
   ] = await prisma.$transaction([
     prisma.vendor.count(),
     prisma.vendor.count({ where: { status: 'PENDING' } }),
@@ -109,11 +111,19 @@ export const getStats = async (startQ?: string, endQ?: string) => {
       orderBy: { updatedAt: 'desc' },
       include: { user: { select: { fullName: true, email: true } } },
     }),
+    // "List your space" submissions from the customer site awaiting review.
+    prisma.vendorLead.count({ where: { status: 'PENDING', leadType: 'PARKING' } }),
+    prisma.vendorLead.findMany({
+      where: { status: 'PENDING', leadType: 'PARKING' },
+      take: 2,
+      orderBy: { createdAt: 'desc' },
+    }),
   ]);
 
   return {
     vendors: { total: totalVendors, pending: pendingVendors, approved: approvedVendors, pendingProfileEdits },
     spaces:  { total: totalSpaces,  pending: pendingSpaces,  approved: approvedSpaces, pendingEdits: pendingSpaceEdits },
+    leads:   { pending: pendingListingLeads },
     range: {
       bookings:  rangeBookingsTotal,
       confirmed: rangeBookingsConfirmed,
@@ -126,6 +136,7 @@ export const getStats = async (startQ?: string, endQ?: string) => {
       pendingSpaces:  recentPendingSpaces,
       spaceEdits:     recentSpaceEdits,
       profileEdits:   recentProfileEdits,
+      listingLeads:   recentListingLeads,
     },
   };
 };

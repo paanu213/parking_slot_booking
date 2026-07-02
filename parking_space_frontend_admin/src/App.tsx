@@ -701,6 +701,57 @@ const Overview = () => {
         </SectionCard>
       </div>
 
+      {/* "List your space" submissions from the customer website */}
+      <SectionCard
+        icon={FileText}
+        iconCls="text-emerald-500"
+        title="Space Listing Requests"
+        badge={stats?.leads?.pending}
+        tag="All time"
+        linkTo="/requests"
+        linkLabel="View all →"
+      >
+        {isLoading ? (
+          <div className="space-y-2 p-4">
+            <div className="skeleton h-12" /><div className="skeleton h-12" />
+          </div>
+        ) : (stats?.recent?.listingLeads ?? []).length === 0 ? (
+          <div className="flex items-center gap-2 px-4 py-6 text-sm text-slate-400">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            All clear — no new listing requests
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {stats.recent.listingLeads.map((l: any) => (
+              <div key={l.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-medium">{l.businessName}</p>
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                      New
+                    </span>
+                  </div>
+                  <p className="truncate text-xs text-slate-400">
+                    {l.fullName} · {l.city} · {l.phone}
+                  </p>
+                  {(l.email || l.slotsApprox) && (
+                    <p className="truncate text-xs text-slate-400">
+                      {l.email}{l.slotsApprox ? ` · ~${l.slotsApprox} slots` : ''}
+                    </p>
+                  )}
+                </div>
+                <Link
+                  to="/requests"
+                  className="btn-ghost shrink-0 text-xs text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
+                >
+                  View details →
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
       {/* Recent bookings — always all-time, not filtered by period */}
       <SectionCard
         icon={CalendarCheck}
@@ -1270,6 +1321,26 @@ const Vendors = () => {
                 ? pendingRequests.reduce((acc, r) => ({ ...acc, ...((r?.data ?? r) as Record<string, string>) }), {} as Record<string, string>)
                 : null;
               const pendingCount = pendingRequests.length;
+              // Only the fields the vendor actually asked to change (pending value
+              // differs from current). Vendor details already show elsewhere, so
+              // the review panel lists just the requested changes.
+              const vendorCurrent: Record<string, string> = {
+                fullName: v.user?.fullName ?? '', phone: v.user?.phone ?? '', email: v.user?.email ?? '',
+                businessName: v.businessName ?? '', contactPhone: v.contactPhone ?? '', address: v.address ?? '',
+                gstNumber: v.gstNumber ?? '', panNumber: v.panNumber ?? '', payoutUpiId: v.payoutUpiId ?? '',
+                aadharNumber: v.aadharNumber ?? '', aadharDocUrl: v.aadharDocUrl ?? '',
+              };
+              const changedProfile: [string, string][] = pending
+                ? ([
+                    ['Full Name', 'fullName'], ['Owner Phone', 'phone'], ['Email', 'email'],
+                    ['Business Name', 'businessName'], ['Contact Phone', 'contactPhone'], ['Address', 'address'],
+                    ['Aadhar Number', 'aadharNumber'], ['GST Number', 'gstNumber'],
+                    ['PAN Number', 'panNumber'], ['Payout UPI ID', 'payoutUpiId'], ['Aadhar Document', 'aadharDocUrl'],
+                  ] as [string, string][]).filter(([, k]) => {
+                    const nx = String(pending[k] ?? '').trim();
+                    return nx && nx !== String(vendorCurrent[k] ?? '').trim();
+                  })
+                : [];
 
               return (
                 <div key={v.id} className="card overflow-hidden">
@@ -1420,34 +1491,25 @@ const Vendors = () => {
                   {hasPendingProfile && pending && (
                     <div className="border-t border-blue-100 bg-blue-50/60 p-4 dark:border-blue-900/30 dark:bg-blue-900/10">
                       <p className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
-                        <AlertCircle className="h-3.5 w-3.5" /> Vendor submitted profile edits — review before approving
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        {pendingCount > 1
+                          ? `${pendingCount} profile changes — review before approving`
+                          : 'Vendor requested a profile change — review before approving'}
                       </p>
                       <div className="mb-3 grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
-                        {[
-                          ['Business Name',  'businessName'],
-                          ['Contact Phone',  'contactPhone'],
-                          ['Address',        'address'],
-                          ['Aadhar Number',  'aadharNumber'],
-                          ['GST Number',     'gstNumber'],
-                          ['PAN Number',     'panNumber'],
-                          ['Payout UPI ID',  'payoutUpiId'],
-                        ].map(([label, key]) =>
-                          pending[key] ? (
-                            <div key={key} className="flex gap-1.5">
-                              <span className="w-28 shrink-0 text-slate-400">{label}:</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-200 break-all">{pending[key]}</span>
-                            </div>
-                          ) : null,
-                        )}
-                        {pending.aadharDocUrl && (
-                          <div className="flex gap-1.5 sm:col-span-2">
-                            <span className="w-28 shrink-0 text-slate-400">Aadhar Doc:</span>
-                            <a href={pending.aadharDocUrl} target="_blank" rel="noreferrer"
-                              className="font-medium text-brand-600 underline dark:text-brand-400">
-                              View document
-                            </a>
+                        {changedProfile.length === 0 ? (
+                          <span className="text-slate-400">No field changes.</span>
+                        ) : changedProfile.map(([label, key]) => (
+                          <div key={key} className="flex gap-1.5">
+                            <span className="w-28 shrink-0 text-slate-400">{label}:</span>
+                            {key === 'aadharDocUrl' ? (
+                              <a href={pending![key]} target="_blank" rel="noreferrer"
+                                className="font-medium text-brand-600 underline dark:text-brand-400">View document</a>
+                            ) : (
+                              <span className="font-medium text-slate-700 dark:text-slate-200 break-all">{pending![key]}</span>
+                            )}
                           </div>
-                        )}
+                        ))}
                       </div>
 
                       {isRejectingProfile ? (
