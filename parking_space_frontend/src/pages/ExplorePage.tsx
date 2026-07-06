@@ -33,6 +33,7 @@ import { CardSkeleton } from '@/components/Skeleton';
 import { Footer } from '@/components/Footer';
 import { Select } from '@/components/Select';
 import { SaveButton } from '@/components/SaveButton';
+import { useCities } from '@/hooks/useCities';
 import { cn } from '@/lib/cn';
 import { VENDOR_URL } from '@/lib/config';
 
@@ -46,7 +47,8 @@ export interface Location {
   slots?: { hourlyPrice: number; vehicleType?: string }[];
 }
 
-export const CITIES = ['Hyderabad', 'Vizag', 'Vijayawada', 'Rajahmundry'];
+// Cities are loaded dynamically from the API (see useCities) so the filter
+// always reflects what's really in the catalog.
 
 // Short vehicle-type badges shown on cards so users can tell at a glance what
 // kind of parking a space offers without opening the detail page.
@@ -141,6 +143,7 @@ export const ExplorePage = () => {
   const [q, setQ] = useState('');
   const [city, setCity] = useState<string | null>(null);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const cities = useCities();
 
   const { data, isLoading } = useQuery({
     queryKey: ['locations', q, city],
@@ -200,7 +203,7 @@ export const ExplorePage = () => {
                 <Select
                   value={city ?? ''}
                   onChange={(v) => setCity(v || null)}
-                  options={CITIES.map((c) => ({ value: c, label: c }))}
+                  options={cities.map((c) => ({ value: c, label: c }))}
                   placeholder="All cities"
                   ariaLabel="City"
                   leadingIcon={<MapPin className="h-4 w-4 text-slate-500" />}
@@ -220,7 +223,7 @@ export const ExplorePage = () => {
             {/* Quick city chips */}
             <div className="mt-3 flex flex-wrap items-center gap-2 px-1 pb-1">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Popular:</span>
-              {CITIES.slice(0, 5).map((c) => (
+              {cities.slice(0, 5).map((c) => (
                 <button
                   key={c}
                   onClick={() => setCity(c === city ? null : c)}
@@ -280,7 +283,7 @@ export const ExplorePage = () => {
               <Select
                 value={city ?? ''}
                 onChange={(v) => setCity(v || null)}
-                options={CITIES.map((c) => ({ value: c, label: c }))}
+                options={cities.map((c) => ({ value: c, label: c }))}
                 placeholder="All cities"
                 ariaLabel="Change city"
                 leadingIcon={<MapPin className="h-3.5 w-3.5 text-brand-500" />}

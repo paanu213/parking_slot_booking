@@ -10,6 +10,7 @@ import * as ctrl from './locations.controller.js';
 const r = Router();
 
 r.get('/', validate(searchSchema, 'query'), ctrl.search);
+r.get('/cities', ctrl.cities); // must precede '/:id'
 r.get('/:id', ctrl.getOne);
 r.get('/:id/availability', validate(availabilitySchema, 'query'), ctrl.getAvailability);
 

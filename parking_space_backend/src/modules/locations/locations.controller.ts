@@ -10,6 +10,14 @@ export const search: RequestHandler = async (req, res, next) => {
   }
 };
 
+export const cities: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json({ cities: await service.listCities() });
+  } catch (e) {
+    next(e);
+  }
+};
+
 export const getOne: RequestHandler = async (req, res, next) => {
   try {
     res.json(await service.getLocation(req.params.id));

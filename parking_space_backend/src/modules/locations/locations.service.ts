@@ -80,6 +80,29 @@ export const searchLocations = async (input: SearchInput) => {
   return { items, total, page, pageSize, areas };
 };
 
+/**
+ * Cities that currently have bookable spaces, ordered by how many spaces each
+ * has (most first) — used to populate the customer city filters dynamically, so
+ * options always match real stored values and the busiest cities lead the list.
+ * Counted in JS (Prisma groupBy + _count orderBy has surfaced MySQL engine
+ * quirks on this host — same reason the areas list is de-duped in JS).
+ */
+export const listCities = async (): Promise<string[]> => {
+  const rows = await prisma.parkingLocation.findMany({
+    where: publicLocationFilter,
+    select: { city: true },
+  });
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const c = r.city?.trim();
+    if (!c) continue;
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])) // count desc, then A→Z for ties
+    .map(([city]) => city);
+};
+
 export const getLocation = async (id: string) => {
   const location = await prisma.parkingLocation.findFirst({
     where: { id, ...publicLocationFilter },

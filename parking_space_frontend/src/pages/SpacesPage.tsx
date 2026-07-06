@@ -6,7 +6,8 @@ import { api } from '@/lib/api';
 import { CardSkeleton } from '@/components/Skeleton';
 import { Footer } from '@/components/Footer';
 import { Select } from '@/components/Select';
-import { CITIES, LocationCard, type Location } from '@/pages/ExplorePage';
+import { LocationCard, type Location } from '@/pages/ExplorePage';
+import { useCities } from '@/hooks/useCities';
 import { cn } from '@/lib/cn';
 
 const PAGE_SIZE = 50;
@@ -28,6 +29,7 @@ interface ApiResponse {
  */
 export const SpacesPage = () => {
   const [params, setParams] = useSearchParams();
+  const cities = useCities();
 
   // Pull initial filter state from the URL.
   const urlCity = params.get('city') ?? '';
@@ -142,7 +144,7 @@ export const SpacesPage = () => {
               <Select
                 value={urlCity}
                 onChange={(v) => setCity(v)}
-                options={CITIES.map((c) => ({ value: c, label: c }))}
+                options={cities.map((c) => ({ value: c, label: c }))}
                 placeholder="All cities"
                 ariaLabel="Filter by city"
                 leadingIcon={<MapPin className="h-4 w-4 text-slate-500" />}
