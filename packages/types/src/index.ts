@@ -127,3 +127,94 @@ export const calculateBookingAmount = (input: BookingCalcInput): BookingCalcResu
 export const formatINR = (n: number | string | null | undefined) =>
   `₹${Number(n ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
+// ── QR Calling ────────────────────────────────────────────────────────────────
+// Data contracts for the scan-to-call feature (common QR · full-plate lookup ·
+// click-to-call masking · opt-in emergency ICE card). See the QR Calling Blueprint.
+
+/** Indian number plate → normalized uppercase, no spaces/dashes. */
+export const normalizePlate = (raw: string) =>
+  String(raw ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+const plateField = z.string().trim().min(6).max(16)
+  .transform(normalizePlate)
+  .refine((p) => /^[A-Z0-9]{6,12}$/.test(p), 'Enter a valid car number');
+
+const phoneField = z.string().trim().min(8).max(20)
+  .refine((p) => /^\+?[0-9]{8,15}$/.test(p.replace(/[\s-]/g, '')), 'Enter a valid phone number');
+
+export const EmergencyContactInput = z.object({
+  name:       z.string().trim().min(1).max(80),
+  relation:   z.string().trim().max(40).optional(),
+  phone:      phoneField,
+  showPublic: z.boolean().default(true),
+});
+export type EmergencyContactInput = z.infer<typeof EmergencyContactInput>;
+
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:mm').optional();
+
+/** Owner registers / edits a car for QR calling. */
+export const RegisterVehicleInput = z.object({
+  plateNumber:     plateField,
+  contactPhone:    phoneField,
+  ownerName:       z.string().trim().max(80).optional(),
+  silentFrom:      hhmm,
+  silentTo:        hhmm,
+  dailyReceiveCap: z.number().int().min(1).max(100).optional(),
+  // ICE — all opt-in
+  emergencyPublic:  z.boolean().default(false),
+  bloodGroup:       z.enum(['A+','A-','B+','B-','AB+','AB-','O+','O-']).optional(),
+  medicalNotes:     z.string().trim().max(500).optional(),
+  emergencyContacts: z.array(EmergencyContactInput).max(5).optional(),
+});
+export type RegisterVehicleInput = z.infer<typeof RegisterVehicleInput>;
+
+/**
+ * Public: scanner submits the full car number.
+ * `botToken` is a honeypot: a hidden field real users never fill in, so any
+ * non-empty value here marks the submission as bot traffic server-side.
+ */
+export const LookupInput = z.object({
+  plate:    plateField,
+  botToken: z.string().optional(),
+});
+export type LookupInput = z.infer<typeof LookupInput>;
+
+/**
+ * Public: scanner enters their own number to be bridged.
+ * `idempotencyKey` is client-generated (once per tap of "Call") so a
+ * double-tap or an automatic retry resolves to the same CallSession instead
+ * of placing two calls.
+ */
+export const InitiateCallInput = z.object({
+  permit:         z.string().min(1),
+  callerNumber:   phoneField,
+  idempotencyKey: z.string().trim().min(1).max(100).optional(),
+});
+export type InitiateCallInput = z.infer<typeof InitiateCallInput>;
+
+/** OTP verification of the owner's contact number. */
+export const VerifyContactInput = z.object({ otp: z.string().trim().min(4).max(8) });
+export type VerifyContactInput = z.infer<typeof VerifyContactInput>;
+
+export const CallStatus = z.enum([
+  'INITIATED','RINGING_CALLER','CALLER_ANSWERED','RINGING_OWNER','BRIDGED',
+  'COMPLETED','NO_ANSWER','BUSY','OWNER_REJECTED','FAILED','BLOCKED','CANCELLED',
+]);
+export type CallStatus = z.infer<typeof CallStatus>;
+
+/** Public lookup response — never contains a phone number or owner identity. */
+export interface LookupResult {
+  found: boolean;
+  confirm?: string;        // plate echoed back, e.g. "AP16HJ7956"
+  hasEmergency?: boolean;  // is an ICE card available?
+  permit?: string;         // short-lived token to place a call / fetch ICE
+}
+
+/** The ICE card revealed only after a correct plate + owner opt-in. */
+export interface EmergencyCard {
+  ownerName?: string;
+  bloodGroup?: string;
+  medicalNotes?: string;
+  contacts: { name: string; relation?: string; phone: string }[];
+}
+

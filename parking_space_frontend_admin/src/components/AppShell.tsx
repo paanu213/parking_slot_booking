@@ -15,6 +15,7 @@ import {
   Sun,
   Moon,
   Sparkles,
+  PhoneCall,
 } from 'lucide-react';
 import { ProfileMenu } from '@/components/ProfileMenu';
 import { useTheme } from '@/store/theme';
@@ -30,6 +31,7 @@ const NAV: { to: string; label: string; icon: React.ComponentType<{ className?: 
   { to: '/bookings', label: 'Bookings', icon: CalendarCheck },
   { to: '/commissions', label: 'Commissions', icon: Percent },
   { to: '/payments', label: 'Payments', icon: Wallet },
+  { to: '/qr-calling', label: 'QR Calling', icon: PhoneCall },
   { to: '/admins', label: 'Admins', icon: ShieldCheck },
   { to: '/amenities', label: 'Amenities', icon: Sparkles },
 ];

@@ -1,4 +1,6 @@
 import rateLimit from 'express-rate-limit';
+import { prisma } from '../lib/prisma.js';
+import { hmacHash } from '../lib/crypto.js';
 
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -13,4 +15,24 @@ export const authLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: { code: 'RATE_LIMITED', message: 'Too many auth attempts' } },
+});
+
+// QR Calling public plate lookup — "15/hour + bot-check" per the blueprint's
+// limits matrix. Logs the block to LookupAttempt (for admin abuse visibility
+// later) before responding, best-effort so a logging hiccup never blocks the 429.
+export const scanLookupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 15,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: async (req, res) => {
+    try {
+      await prisma.lookupAttempt.create({
+        data: { ipHash: hmacHash(req.ip ?? 'unknown'), outcome: 'RATE_LIMITED' },
+      });
+    } catch {
+      /* logging is best-effort */
+    }
+    res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many lookups — try again later' } });
+  },
 });

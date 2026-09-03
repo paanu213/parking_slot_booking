@@ -32,6 +32,18 @@ const schema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
 
+  // AES-256-GCM key for QR Calling PII (plate/phone/medical notes) + keyed
+  // lookup hashes — 64 hex chars (32 bytes). Generate with `openssl rand -hex 32`.
+  QR_DATA_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'QR_DATA_KEY must be a 64-character hex string (openssl rand -hex 32)'),
+
+  // QR Calling telephony — swappable adapter (lib/callProviders). 'mock' needs
+  // no vendor account and simulates a real call lifecycle; set to a real
+  // provider's name once one is chosen and its adapter is added.
+  CALL_PROVIDER: z.string().default('mock'),
+  // Platform-wide cost guard — total calls/day across all cars, independent
+  // of the per-registration/per-caller/per-IP limits below it in calls.service.
+  CALL_GLOBAL_DAILY_CAP: z.coerce.number().int().positive().default(2000),
+
   COOKIE_DOMAIN: z.string().default('localhost'),
   COOKIE_SECURE: boolFromString.default(false),
 
@@ -89,6 +101,9 @@ if (env.NODE_ENV === 'production') {
   }
   if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
     problems.push('JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different values');
+  }
+  if (/^0{64}$|^1{64}$|replace_with|change.?me|example/i.test(env.QR_DATA_KEY)) {
+    problems.push('QR_DATA_KEY still looks like a placeholder — set a real random key (openssl rand -hex 32)');
   }
   if (problems.length > 0) {
     console.error('Refusing to start — production environment is misconfigured:');

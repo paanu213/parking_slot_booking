@@ -33,3 +33,11 @@ export const PRICING = {
   PLATFORM_FEE_PCT: 5,
   GST_PCT: 18,
 } as const;
+
+/**
+ * QR Calling — sticker + call-service pricing, shown on the landing page and
+ * order form. Must match the snapshot the backend stores on QrOrder
+ * (STICKER_PRICE_PAISE / MONTHLY_PRICE_PAISE in qrOrders.service.ts).
+ */
+export const QR_STICKER_PRICE = 299;  // ₹, one-time
+export const QR_MONTHLY_PRICE = 50;   // ₹/month, call-service subscription

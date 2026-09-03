@@ -119,6 +119,8 @@ model User {
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]
   savedSpaces   SavedSpace[]
+  vehicles      VehicleRegistration[]
+  qrOrders      QrOrder[]
 
   @@index([role, status])
 }
@@ -383,4 +385,193 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ── QR Calling ────────────────────────────────────────────────────────────────
+// A single COMMON QR (one static URL on every sticker) routes a scanner to the
+// "enter the plate" page; the full plate resolves to one of these registrations.
+// The plate is looked up by a keyed hash (exact match) so the plaintext plate can
+// stay encrypted. All phone numbers + the plate + medical notes are encrypted at
+// the app layer before being written to the *_enc-style columns below.
+
+enum RegistrationStatus {
+  ACTIVE
+  PAUSED
+  TRANSFERRED
+  DELETED
+}
+
+enum CallStatus {
+  INITIATED
+  RINGING_CALLER
+  CALLER_ANSWERED
+  RINGING_OWNER
+  BRIDGED
+  COMPLETED
+  NO_ANSWER
+  BUSY
+  OWNER_REJECTED
+  FAILED
+  BLOCKED
+  CANCELLED
+}
+
+enum LookupOutcome {
+  FOUND
+  NOT_FOUND
+  RATE_LIMITED
+  BOT_BLOCKED
+}
+
+enum BlockScope {
+  REGISTRATION
+  GLOBAL
+}
+
+model VehicleRegistration {
+  id              String             @id @default(cuid())
+  userId          String
+  plateHash       String             @unique              // HMAC of normalized plate — exact-match lookup
+  plateNumber     String             @db.Text             // encrypted; for display / confirmation
+  contactPhone    String             @db.Text             // encrypted; the number bridged to
+  contactVerified Boolean            @default(false)      // OTP-verified
+  status          RegistrationStatus @default(ACTIVE)
+  isActive        Boolean            @default(true)
+  dailyReceiveCap Int                @default(15)
+  silentFrom      String?                                 // "HH:mm" local
+  silentTo        String?
+  // ICE (In Case of Emergency) — every field opt-in, off by default
+  emergencyPublic Boolean            @default(false)
+  ownerName       String?
+  bloodGroup      String?
+  medicalNotes    String?            @db.Text             // encrypted
+  deactivatedAt   DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emergencyContacts EmergencyContact[]
+  calls             CallSession[]
+  qrOrders          QrOrder[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model EmergencyContact {
+  id             String   @id @default(cuid())
+  registrationId String
+  name           String
+  relation       String?
+  phone          String   @db.Text                        // encrypted
+  showPublic     Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  registration VehicleRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@index([registrationId])
+}
+
+model CallSession {
+  id              String     @id @default(cuid())
+  registrationId  String
+  provider        String                                  // 'mock' | 'exotel' | 'tata' | ...
+  providerCallId  String?
+  virtualNumber   String?
+  callerPhone     String     @db.Text                     // encrypted
+  callerPhoneHash String?                                 // HMAC — for per-caller rate limits / blocking
+  callerIpHash    String?
+  status          CallStatus @default(INITIATED)
+  hangupCause     String?
+  idempotencyKey  String?    @unique                      // double-tap / retry safe
+  initiatedAt     DateTime   @default(now())
+  answeredAt      DateTime?
+  endedAt         DateTime?
+  durationSec     Int?
+  recordingUrl    String?    @db.Text
+  costPaise       Int?
+  rawPayload      String?    @db.Text                      // last provider payload (audit / debugging)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  registration VehicleRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@index([registrationId])
+  @@index([status])
+  @@index([providerCallId])
+  @@index([callerPhoneHash])
+  @@index([createdAt])
+}
+
+model LookupAttempt {
+  id        String        @id @default(cuid())
+  plateHash String?
+  ipHash    String
+  outcome   LookupOutcome
+  createdAt DateTime      @default(now())
+
+  @@index([ipHash, createdAt])
+}
+
+model BlockedNumber {
+  id             String     @id @default(cuid())
+  phoneHash      String
+  scope          BlockScope @default(REGISTRATION)
+  registrationId String?
+  reason         String?
+  createdById    String?
+  createdAt      DateTime   @default(now())
+
+  @@index([phoneHash])
+  @@index([registrationId])
+}
+
+model VirtualNumber {
+  id        String   @id @default(cuid())
+  e164      String   @unique
+  provider  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+enum QrOrderStatus {
+  PENDING    // submitted — awaiting admin follow-up to collect payment
+  CONFIRMED  // admin confirmed payment received (offline — no gateway wired yet)
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+// A request for a physical QR sticker — collected while online payment is
+// paused sitewide (see CheckoutPage.tsx), so this is "request only": no
+// gateway charge happens here. Price fields are a snapshot of what the
+// customer was shown at request time, so a later price change never rewrites
+// history. Admin fulfills manually (confirm payment -> ship -> deliver).
+model QrOrder {
+  id                String        @id @default(cuid())
+  userId            String
+  registrationId    String?                                  // null if the linked car was later deleted
+  stickerPricePaise Int                                       // one-time price shown at request time
+  monthlyPricePaise Int                                       // call-service subscription price shown at request time
+  status            QrOrderStatus @default(PENDING)
+  shippingName      String
+  shippingPhone     String
+  addressLine       String        @db.Text
+  city              String
+  state             String
+  pincode           String
+  note              String?       @db.Text
+  confirmedAt       DateTime?
+  shippedAt         DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registration VehicleRegistration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([registrationId])
 }

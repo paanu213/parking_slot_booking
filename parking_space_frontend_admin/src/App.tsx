@@ -36,6 +36,7 @@ import { VendorDetailsPage } from '@/pages/VendorDetailsPage';
 import { SlotBookingsPage } from '@/pages/SlotBookingsPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { AccountPage } from '@/pages/AccountPage';
+import QrCallingPage from '@/pages/QrCallingPage';
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SUB_ADMIN'];
 
@@ -1915,6 +1916,7 @@ export default function App() {
                     <Route path="/payments" element={<PaymentsPage />} />
                     <Route path="/admins" element={<AdminsPage />} />
                     <Route path="/amenities" element={<AmenitiesPage />} />
+                    <Route path="/qr-calling" element={<QrCallingPage />} />
                   </Routes>
                 </AppShell>
               </AuthGuard>

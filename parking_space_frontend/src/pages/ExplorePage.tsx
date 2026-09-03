@@ -27,6 +27,8 @@ import {
   SprayCan,
   Handshake,
   Phone,
+  QrCode,
+  Fingerprint,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { CardSkeleton } from '@/components/Skeleton';
@@ -483,7 +485,48 @@ export const ExplorePage = () => {
         </div>
       </section>
 
-      
+      {/* QR CALLING BANNER */}
+      <section className="mx-auto max-w-6xl px-4 py-10">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-slate-900 p-8 text-white sm:p-12">
+          <div
+            aria-hidden
+            className="absolute inset-0 opacity-25 [background:radial-gradient(600px_300px_at_100%_0%,rgba(255,255,255,0.6),transparent_60%)]"
+          />
+          <div className="relative grid items-center gap-6 md:grid-cols-[1.5fr,1fr]">
+            <div>
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white ring-1 ring-white/20 backdrop-blur">
+                <QrCode className="h-3.5 w-3.5" /> New
+              </span>
+              <h2 className="mt-3 font-display text-2xl font-bold sm:text-3xl">
+                A QR sticker that reaches you — without ever sharing your number
+              </h2>
+              <p className="mt-2 max-w-lg text-sm text-white/80 sm:text-base">
+                Stick it on your car. Anyone who needs to reach you scans it and gets a masked
+                call — your real number stays private, always.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link to="/qr-calling" className="btn bg-white text-brand-700 hover:bg-slate-100">
+                  <QrCode className="mr-2 h-4 w-4" /> Get your QR sticker
+                </Link>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-5 ring-1 ring-white/20 backdrop-blur">
+              <ul className="space-y-2 text-sm">
+                {[
+                  'Calls are always masked',
+                  'Optional emergency (ICE) card',
+                  '₹299 one-time · ₹50/month',
+                ].map((t) => (
+                  <li key={t} className="flex items-center gap-2">
+                    <Fingerprint className="h-4 w-4 text-emerald-300" />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* TESTIMONIALS */}
       <section className="mx-auto max-w-6xl px-4 py-12">

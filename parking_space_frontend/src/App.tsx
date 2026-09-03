@@ -17,6 +17,9 @@ import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { HelpPage } from '@/pages/HelpPage';
 import { SavedSpacesPage } from '@/pages/SavedSpacesPage';
+import { MyVehiclesPage } from '@/pages/MyVehiclesPage';
+import { ScanPage } from '@/pages/ScanPage';
+import { QrCallingLandingPage } from '@/pages/QrCallingLandingPage';
 import { useAuth } from '@/store/auth';
 import { useSaved } from '@/store/savedSpaces';
 import { api } from '@/lib/api';
@@ -114,6 +117,8 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/help" element={<HelpPage />} />
+          <Route path="/c" element={<ScanPage />} />
+          <Route path="/qr-calling" element={<QrCallingLandingPage />} />
           <Route
             path="/profile"
             element={
@@ -135,6 +140,14 @@ export default function App() {
             element={
               <Protected>
                 <SavedSpacesPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/vehicles"
+            element={
+              <Protected>
+                <MyVehiclesPage />
               </Protected>
             }
           />

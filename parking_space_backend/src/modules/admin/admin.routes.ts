@@ -27,6 +27,9 @@ import {
   createAdminSchema,
   commissionRateSchema,
   commissionStatusSchema,
+  reassignVehicleSchema,
+  blockCallGloballySchema,
+  setQrOrderStatusSchema,
 } from './admin.schema.js';
 import * as ctrl from './admin.controller.js';
 
@@ -123,5 +126,18 @@ r.patch('/settings/commission', validate(commissionRateSchema), ctrl.updateCommi
 r.patch('/bookings/:id/commission', validate(commissionStatusSchema), ctrl.setBookingCommissionStatus);
 r.get('/commission/summary', ctrl.commissionSummary);
 r.get('/commission/bookings', ctrl.commissionBookings);
+
+// --- QR Calling: registrations, disputes, call log/abuse, spend ---
+// NOTE: literal /qr/vehicles/... and /qr/calls/... paths before /qr/vehicles/:id.
+r.get('/qr/overview', ctrl.qrOverview);
+r.get('/qr/vehicles', ctrl.listQrVehicles);
+r.get('/qr/vehicles/:id', ctrl.getQrVehicle);
+r.post('/qr/vehicles/:id/reassign', validate(reassignVehicleSchema), ctrl.reassignQrVehicle);
+r.get('/qr/calls', ctrl.listQrCalls);
+r.post('/qr/calls/:id/block', validate(blockCallGloballySchema), ctrl.blockQrCallGlobally);
+r.get('/qr/blocked', ctrl.listQrBlockedNumbers);
+r.delete('/qr/blocked/:id', ctrl.unblockQrNumber);
+r.get('/qr/orders', ctrl.listQrOrders);
+r.patch('/qr/orders/:id/status', validate(setQrOrderStatusSchema), ctrl.setQrOrderStatus);
 
 export default r;

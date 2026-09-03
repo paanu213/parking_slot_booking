@@ -111,6 +111,22 @@ export const commissionRateSchema = z.object({ rate: z.coerce.number().min(0).ma
 
 export const commissionStatusSchema = z.object({ status: z.enum(['PAID', 'PENDING']) });
 
+// ── QR Calling (admin) ──────────────────────────────────────────────────────
+
+/** Dispute resolution — reassign a plate's registration to its real owner. */
+export const reassignVehicleSchema = z.object({
+  ownerEmail: z.string().email(),
+  note:       z.string().trim().max(300).optional(),
+});
+
+export const blockCallGloballySchema = z.object({
+  reason: z.string().trim().max(200).optional(),
+});
+
+export const setQrOrderStatusSchema = z.object({
+  status: z.enum(['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED']),
+});
+
 export type UpdateVendorInput = z.infer<typeof updateVendorSchema>;
 export type VendorLeadStatusInput = z.infer<typeof vendorLeadStatusSchema>;
 export type CreateVendorInput = z.infer<typeof createVendorSchema>;
@@ -125,3 +141,6 @@ export type UpdateGuestCustomerInput = z.infer<typeof updateGuestCustomerSchema>
 export type CreateAdminInput = z.infer<typeof createAdminSchema>;
 export type CommissionRateInput = z.infer<typeof commissionRateSchema>;
 export type CommissionStatusInput = z.infer<typeof commissionStatusSchema>;
+export type ReassignVehicleInput = z.infer<typeof reassignVehicleSchema>;
+export type BlockCallGloballyInput = z.infer<typeof blockCallGloballySchema>;
+export type SetQrOrderStatusInput = z.infer<typeof setQrOrderStatusSchema>;

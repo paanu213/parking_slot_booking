@@ -5,13 +5,14 @@
  * All persistence goes through Prisma; no HTTP concerns live here.
  */
 import { prisma } from '../../lib/prisma.js';
-import { BadRequest, NotFound } from '../../lib/http.js';
+import { BadRequest, Conflict, NotFound } from '../../lib/http.js';
 import { hashPassword } from '../../lib/password.js';
 import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, setCommissionRate } from '../../lib/commission.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { storeImageBuffer, deleteImageByUrl, deleteDocumentByUrl } from '../../lib/images.js';
 import { parsePendingEdits, mergePendingEdits } from '../../lib/pendingEdits.js';
+import { decryptField } from '../../lib/crypto.js';
 import type {
   UpdateVendorInput,
   VendorLeadStatusInput,
@@ -26,6 +27,7 @@ import type {
   UpdateGuestCustomerInput,
   CreateAdminInput,
   CommissionStatusInput,
+  ReassignVehicleInput,
 } from './admin.schema.js';
 
 const ADMIN_USER_SELECT = { fullName: true, email: true, phone: true, status: true } as const;
@@ -1543,4 +1545,325 @@ export const commissionBookings = async (
       spaceName: b.slot?.location?.name ?? '—',
     })),
   };
+};
+
+// ── QR Calling — admin console ──────────────────────────────────────────────
+// Registrations, dispute reassignment, call log / abuse review, spend.
+// Same convention as the rest of this file: bounded `take`, no cursor paging.
+// Plate/phone/medical-notes are application-encrypted (lib/crypto.ts) — every
+// list here decrypts for display, which is why plate/owner-name search below
+// runs in memory after decrypt rather than as a SQL `contains`.
+
+const qrMaskPhone = (p: string): string => (p.length > 4 ? `••••${p.slice(-4)}` : '••••');
+
+export const qrOverview = async () => {
+  const today = resolveDateRange('day')!;
+  const last30Days = { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
+
+  const [
+    totalRegistrations, activeRegistrations, pausedRegistrations, emergencyEnabled,
+    callsToday, callsTotal, answeredTotal, failedTotal, blockedNumbersCount,
+    durationAgg, spendTodayAgg, busiestCarsRaw, topCallersRaw,
+  ] = await Promise.all([
+    prisma.vehicleRegistration.count({ where: { status: { not: 'DELETED' } } }),
+    prisma.vehicleRegistration.count({ where: { status: 'ACTIVE' } }),
+    prisma.vehicleRegistration.count({ where: { status: 'PAUSED' } }),
+    prisma.vehicleRegistration.count({ where: { status: { not: 'DELETED' }, emergencyPublic: true } }),
+    prisma.callSession.count({ where: { createdAt: { gte: today.gte, lte: today.lte } } }),
+    prisma.callSession.count(),
+    prisma.callSession.count({ where: { answeredAt: { not: null } } }),
+    prisma.callSession.count({ where: { status: { in: ['FAILED', 'NO_ANSWER', 'BUSY', 'OWNER_REJECTED', 'BLOCKED'] } } }),
+    prisma.blockedNumber.count(),
+    prisma.callSession.aggregate({ _avg: { durationSec: true }, where: { durationSec: { not: null } } }),
+    prisma.callSession.aggregate({ _sum: { costPaise: true }, where: { createdAt: { gte: today.gte, lte: today.lte } } }),
+    prisma.callSession.groupBy({
+      by: ['registrationId'],
+      _count: { _all: true },
+      orderBy: { _count: { registrationId: 'desc' } },
+      take: 5,
+    }),
+    prisma.callSession.groupBy({
+      by: ['callerPhoneHash'],
+      where: { callerPhoneHash: { not: null }, createdAt: last30Days },
+      _count: { _all: true },
+      orderBy: { _count: { callerPhoneHash: 'desc' } },
+      take: 5,
+    }),
+  ]);
+
+  const busiestCars = await Promise.all(
+    busiestCarsRaw.map(async (g) => {
+      const reg = await prisma.vehicleRegistration.findUnique({ where: { id: g.registrationId } });
+      return { registrationId: g.registrationId, plate: reg ? decryptField(reg.plateNumber) : '—', calls: g._count._all };
+    }),
+  );
+
+  const topCallers = await Promise.all(
+    topCallersRaw
+      .filter((g): g is typeof g & { callerPhoneHash: string } => !!g.callerPhoneHash)
+      .map(async (g) => {
+        const sample = await prisma.callSession.findFirst({
+          where:   { callerPhoneHash: g.callerPhoneHash },
+          orderBy: { createdAt: 'desc' },
+        });
+        return {
+          callerPhoneHash: g.callerPhoneHash,
+          callerMasked:    sample ? qrMaskPhone(decryptField(sample.callerPhone)) : '••••',
+          calls:           g._count._all,
+          sampleCallId:    sample?.id ?? null,
+        };
+      }),
+  );
+
+  return {
+    totalRegistrations, activeRegistrations, pausedRegistrations, emergencyEnabled,
+    callsToday, callsTotal,
+    answerRate:     callsTotal > 0 ? Math.round((answeredTotal / callsTotal) * 100) : 0,
+    avgDurationSec: durationAgg._avg.durationSec ? Math.round(durationAgg._avg.durationSec) : 0,
+    failedTotal, blockedNumbersCount,
+    spendTodayPaise: spendTodayAgg._sum.costPaise ?? 0,
+    busiestCars, topCallers,
+  };
+};
+
+export const listQrVehicles = async (search?: string, status?: string) => {
+  const rows = await prisma.vehicleRegistration.findMany({
+    where: status ? { status: status as any } : { status: { not: 'DELETED' } },
+    include: {
+      user:   { select: { id: true, fullName: true, email: true, phone: true } },
+      _count: { select: { calls: true, emergencyContacts: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 300,
+  });
+
+  const items = rows.map((r) => ({
+    id:                    r.id,
+    plateNumber:           decryptField(r.plateNumber),
+    contactPhone:          decryptField(r.contactPhone),
+    contactVerified:       r.contactVerified,
+    status:                r.status,
+    emergencyPublic:       r.emergencyPublic,
+    ownerName:             r.ownerName,
+    dailyReceiveCap:       r.dailyReceiveCap,
+    callCount:             r._count.calls,
+    emergencyContactCount: r._count.emergencyContacts,
+    owner:                 r.user,
+    createdAt:             r.createdAt,
+  }));
+
+  const q = (search ?? '').trim().toLowerCase();
+  if (!q) return { items };
+  return {
+    items: items.filter((v) =>
+      v.plateNumber.toLowerCase().includes(q) ||
+      v.owner.email.toLowerCase().includes(q) ||
+      v.owner.fullName.toLowerCase().includes(q) ||
+      (v.ownerName ?? '').toLowerCase().includes(q),
+    ),
+  };
+};
+
+export const getQrVehicle = async (id: string) => {
+  const r = await prisma.vehicleRegistration.findUnique({
+    where:   { id },
+    include: {
+      user:              { select: { id: true, fullName: true, email: true, phone: true } },
+      emergencyContacts: { orderBy: { sortOrder: 'asc' } },
+      calls:             { orderBy: { initiatedAt: 'desc' }, take: 50 },
+    },
+  });
+  if (!r) throw NotFound('Vehicle not found');
+
+  return {
+    id:              r.id,
+    plateNumber:     decryptField(r.plateNumber),
+    contactPhone:    decryptField(r.contactPhone),
+    contactVerified: r.contactVerified,
+    status:          r.status,
+    isActive:        r.isActive,
+    dailyReceiveCap: r.dailyReceiveCap,
+    silentFrom:      r.silentFrom,
+    silentTo:        r.silentTo,
+    emergencyPublic: r.emergencyPublic,
+    ownerName:       r.ownerName,
+    bloodGroup:      r.bloodGroup,
+    medicalNotes:    r.medicalNotes ? decryptField(r.medicalNotes) : null,
+    owner:           r.user,
+    emergencyContacts: r.emergencyContacts.map((c) => ({
+      id: c.id, name: c.name, relation: c.relation, phone: decryptField(c.phone), showPublic: c.showPublic,
+    })),
+    calls: r.calls.map((c) => ({
+      id: c.id, status: c.status, provider: c.provider,
+      initiatedAt: c.initiatedAt, answeredAt: c.answeredAt, endedAt: c.endedAt, durationSec: c.durationSec,
+      callerMasked: qrMaskPhone(decryptField(c.callerPhone)),
+    })),
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+};
+
+/** Dispute resolution — plate belongs to a different real owner than whoever registered it first. */
+export const reassignQrVehicle = async (id: string, actorId: string, input: ReassignVehicleInput) => {
+  const registration = await prisma.vehicleRegistration.findUnique({ where: { id } });
+  if (!registration) throw NotFound('Vehicle not found');
+
+  const newOwner = await prisma.user.findUnique({ where: { email: input.ownerEmail } });
+  if (!newOwner) throw NotFound('No account found with that email — the new owner needs an AutoSahay account first');
+  if (newOwner.id === registration.userId) throw Conflict('This car is already registered to that account');
+
+  const updated = await prisma.vehicleRegistration.update({ where: { id }, data: { userId: newOwner.id } });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action:   'QR_VEHICLE_REASSIGN',
+      entity:   'VehicleRegistration',
+      entityId: id,
+      metadata: JSON.stringify({ fromUserId: registration.userId, toUserId: newOwner.id, note: input.note ?? null }),
+    },
+  });
+
+  return getQrVehicle(updated.id);
+};
+
+export const listQrCalls = async (statusFilter?: string) => {
+  const rows = await prisma.callSession.findMany({
+    where: statusFilter ? { status: statusFilter as any } : {},
+    include: {
+      registration: { select: { plateNumber: true, user: { select: { email: true } } } },
+    },
+    orderBy: { initiatedAt: 'desc' },
+    take: 500,
+  });
+
+  return {
+    items: rows.map((c) => ({
+      id:           c.id,
+      status:       c.status,
+      provider:     c.provider,
+      initiatedAt:  c.initiatedAt,
+      answeredAt:   c.answeredAt,
+      endedAt:      c.endedAt,
+      durationSec:  c.durationSec,
+      costPaise:    c.costPaise,
+      callerMasked: qrMaskPhone(decryptField(c.callerPhone)),
+      plate:        decryptField(c.registration.plateNumber),
+      ownerEmail:   c.registration.user.email,
+    })),
+  };
+};
+
+/** Admin-side global block — scoped to a specific call so no raw phone entry is needed. */
+export const blockQrCallGlobally = async (callId: string, actorId: string, reason?: string) => {
+  const session = await prisma.callSession.findUnique({ where: { id: callId } });
+  if (!session || !session.callerPhoneHash) throw NotFound('Call not found');
+
+  const existing = await prisma.blockedNumber.findFirst({
+    where: { phoneHash: session.callerPhoneHash, scope: 'GLOBAL' },
+  });
+  if (!existing) {
+    await prisma.blockedNumber.create({
+      data: { phoneHash: session.callerPhoneHash, scope: 'GLOBAL', reason: reason ?? null, createdById: actorId },
+    });
+    await prisma.auditLog.create({
+      data: { actorId, action: 'QR_NUMBER_BLOCK_GLOBAL', entity: 'CallSession', entityId: callId },
+    });
+  }
+  return { blocked: true };
+};
+
+// BlockedNumber has no Prisma relations (plain registrationId/createdById
+// columns) — resolve display names with a couple of batched lookups instead.
+export const listQrBlockedNumbers = async () => {
+  const rows = await prisma.blockedNumber.findMany({ orderBy: { createdAt: 'desc' }, take: 300 });
+
+  const regIds   = [...new Set(rows.map((r) => r.registrationId).filter((x): x is string => !!x))];
+  const adminIds = [...new Set(rows.map((r) => r.createdById).filter((x): x is string => !!x))];
+
+  const [regs, admins] = await Promise.all([
+    regIds.length   ? prisma.vehicleRegistration.findMany({ where: { id: { in: regIds } } }) : Promise.resolve([]),
+    adminIds.length ? prisma.user.findMany({ where: { id: { in: adminIds } }, select: { id: true, fullName: true } }) : Promise.resolve([]),
+  ]);
+  const regMap   = new Map(regs.map((r) => [r.id, decryptField(r.plateNumber)]));
+  const adminMap = new Map(admins.map((a) => [a.id, a.fullName]));
+
+  return {
+    items: rows.map((r) => ({
+      id:        r.id,
+      scope:     r.scope,
+      reason:    r.reason,
+      plate:     r.registrationId ? (regMap.get(r.registrationId) ?? '—') : null,
+      blockedBy: r.createdById ? (adminMap.get(r.createdById) ?? '—') : 'Owner',
+      createdAt: r.createdAt,
+    })),
+  };
+};
+
+export const unblockQrNumber = async (id: string, actorId: string) => {
+  const row = await prisma.blockedNumber.findUnique({ where: { id } });
+  if (!row) throw NotFound('Block entry not found');
+  await prisma.blockedNumber.delete({ where: { id } });
+  await prisma.auditLog.create({
+    data: { actorId, action: 'QR_NUMBER_UNBLOCK', entity: 'BlockedNumber', entityId: id },
+  });
+  return { unblocked: true };
+};
+
+// ── QR sticker requests — fulfilment queue ──────────────────────────────────
+// Requests come in with no online charge (payment paused sitewide); admin
+// confirms payment was collected offline, then ships.
+
+export const listQrOrders = async (status?: string) => {
+  const rows = await prisma.qrOrder.findMany({
+    where: status ? { status: status as any } : {},
+    include: {
+      user:         { select: { fullName: true, email: true } },
+      registration: { select: { plateNumber: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 300,
+  });
+
+  return {
+    items: rows.map((r) => ({
+      id:                r.id,
+      status:            r.status,
+      stickerPricePaise: r.stickerPricePaise,
+      monthlyPricePaise: r.monthlyPricePaise,
+      plate:             r.registration ? decryptField(r.registration.plateNumber) : null,
+      ownerName:         r.user.fullName,
+      ownerEmail:        r.user.email,
+      shippingName:      r.shippingName,
+      shippingPhone:     r.shippingPhone,
+      addressLine:       r.addressLine,
+      city:              r.city,
+      state:             r.state,
+      pincode:           r.pincode,
+      note:              r.note,
+      createdAt:         r.createdAt,
+    })),
+  };
+};
+
+export const setQrOrderStatus = async (id: string, actorId: string, status: string) => {
+  const order = await prisma.qrOrder.findUnique({ where: { id } });
+  if (!order) throw NotFound('Order not found');
+
+  const timestamps =
+    status === 'CONFIRMED' ? { confirmedAt: new Date() } :
+    status === 'SHIPPED'   ? { shippedAt: new Date() } :
+    status === 'DELIVERED' ? { deliveredAt: new Date() } :
+    {};
+
+  const updated = await prisma.qrOrder.update({
+    where: { id },
+    data:  { status: status as any, ...timestamps },
+  });
+
+  await prisma.auditLog.create({
+    data: { actorId, action: `QR_ORDER_${status}`, entity: 'QrOrder', entityId: id },
+  });
+
+  return updated;
 };
