@@ -27,8 +27,8 @@ import {
   SprayCan,
   Handshake,
   Phone,
-  QrCode,
-  Fingerprint,
+  Lock,
+  ShieldCheck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { CardSkeleton } from '@/components/Skeleton';
@@ -159,7 +159,106 @@ export const ExplorePage = () => {
 
   return (
     <>
-      {/* HERO */}
+      {/* QR CALLING HERO — carries the h1. Matches the approved reference
+          mockup: light background, blue used only as accent (badge/CTA/
+          overlay), real product photo on the right. */}
+      <section className="border-b border-slate-200/60 bg-white dark:border-slate-800/60 dark:bg-slate-950">
+        <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-10 sm:py-14 md:grid-cols-[1.15fr,1fr] md:gap-8 lg:gap-12">
+          {/* Left: copy */}
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full bg-brand-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
+                New
+              </span>
+              <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+                AutoSahay QR for Cars &amp; Bikes
+              </span>
+            </div>
+
+            <h1 className="mt-4 font-display text-4xl font-extrabold leading-[1.1] tracking-tight text-slate-900 dark:text-white sm:text-5xl">
+              Park with confidence.
+              <br />
+              Stay reachable.
+            </h1>
+
+            <p className="mt-4 max-w-md text-base text-slate-500 dark:text-slate-400">
+              A simple QR code sticker for your vehicle. Let anyone scan and call you,
+              your number stays private.
+            </p>
+
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              <Link to="/qr-calling" className="btn gap-2 bg-brand-600 text-white hover:bg-brand-700">
+                Get your QR sticker <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                to="/qr-calling#how-it-works"
+                className="btn gap-2 border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+              >
+                How it works
+              </Link>
+            </div>
+
+            {/* Feature strip */}
+            <div className="mt-9 grid grid-cols-2 gap-x-4 gap-y-6 lg:grid-cols-4">
+              {[
+                { icon: Lock, iconCls: 'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300', title: 'Call masking', desc: 'Your number stays private' },
+                { icon: Phone, iconCls: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300', title: 'Instant calling', desc: 'Scan & call directly' },
+                { icon: ShieldCheck, iconCls: 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300', title: 'Safe & secure', desc: 'No number shared' },
+                { icon: Car, iconCls: 'bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300', title: 'For cars & bikes', desc: 'Works for all vehicles' },
+              ].map(({ icon: Icon, iconCls, title, desc }) => (
+                <div key={title}>
+                  <span className={cn('flex h-10 w-10 items-center justify-center rounded-full', iconCls)}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: product photo + floating badges */}
+          <div className="relative mx-auto w-full max-w-md">
+            <img
+              src="/images/qr-hero-scan.jpg"
+              srcSet="/images/qr-hero-scan.jpg 900w, /images/qr-hero-scan@2x.jpg 1400w"
+              sizes="(min-width: 768px) 480px, 90vw"
+              alt="Scanning an AutoSahay QR sticker on a car to place a masked call"
+              width={1400}
+              height={933}
+              className="w-full rounded-3xl object-cover shadow-xl shadow-slate-900/10"
+              loading="eager"
+              fetchPriority="high"
+            />
+
+            {/* Top-left floating badge */}
+            <div className="absolute -top-4 left-4 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 shadow-lg ring-1 ring-slate-900/5 sm:left-6 dark:bg-slate-900 dark:ring-white/10">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300">
+                <ShieldCheck className="h-4 w-4" />
+              </span>
+              <p className="text-[11px] font-bold leading-tight text-slate-900 dark:text-slate-100">
+                Private.
+                <br />
+                Secure.
+                <br />
+                Connected.
+              </p>
+            </div>
+
+            {/* Bottom-right floating badge */}
+            <div className="absolute bottom-3 right-3 max-w-[140px] rounded-xl bg-brand-600 p-2.5 text-white shadow-lg sm:bottom-4 sm:right-6 sm:max-w-[190px] sm:rounded-2xl sm:p-3">
+              <div className="flex items-center gap-1.5">
+                <Car className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <Bike className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              </div>
+              <p className="mt-1.5 text-[11px] font-bold leading-tight sm:text-xs">One QR. Any vehicle.</p>
+              <p className="text-[11px] leading-tight text-white/80 sm:text-xs">Always reachable.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* PARKING SEARCH HERO */}
       <section className="relative overflow-hidden border-b border-slate-200/60 dark:border-slate-800/60">
         {/* Background layers */}
         <div aria-hidden className="absolute inset-0 bg-gradient-to-br from-brand-600 via-brand-700 to-slate-900" />
@@ -176,13 +275,13 @@ export const ExplorePage = () => {
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide ring-1 ring-white/20 backdrop-blur">
             <Sparkles className="h-3.5 w-3.5" /> Now live in 6 cities
           </span>
-          <h1 className="mt-4 font-display text-4xl font-bold leading-tight sm:text-5xl lg:text-6xl">
+          <h2 className="mt-4 font-display text-4xl font-bold leading-tight sm:text-5xl lg:text-6xl">
             Never hunt for parking
             <br />
             <span className="bg-gradient-to-r from-amber-200 via-orange-200 to-rose-200 bg-clip-text text-transparent">
               ever again.
             </span>
-          </h1>
+          </h2>
           <p className="mt-4 max-w-xl text-base text-white/80 sm:text-lg">
             Book verified, secure parking by the hour, day, or month, near your office, the mall, or
             tonight's concert. Instant zero drama.
@@ -258,8 +357,6 @@ export const ExplorePage = () => {
           </div>
         </div>
       </section>
-
-
 
       {/* FEATURED LOCATIONS */}
       <section id="results" className="mx-auto max-w-6xl px-4 py-8">
@@ -476,49 +573,6 @@ export const ExplorePage = () => {
                 ].map((t) => (
                   <li key={t} className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* QR CALLING BANNER */}
-      <section className="mx-auto max-w-6xl px-4 py-10">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-slate-900 p-8 text-white sm:p-12">
-          <div
-            aria-hidden
-            className="absolute inset-0 opacity-25 [background:radial-gradient(600px_300px_at_100%_0%,rgba(255,255,255,0.6),transparent_60%)]"
-          />
-          <div className="relative grid items-center gap-6 md:grid-cols-[1.5fr,1fr]">
-            <div>
-              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white ring-1 ring-white/20 backdrop-blur">
-                <QrCode className="h-3.5 w-3.5" /> New
-              </span>
-              <h2 className="mt-3 font-display text-2xl font-bold sm:text-3xl">
-                A QR sticker that reaches you — without ever sharing your number
-              </h2>
-              <p className="mt-2 max-w-lg text-sm text-white/80 sm:text-base">
-                Stick it on your car. Anyone who needs to reach you scans it and gets a masked
-                call — your real number stays private, always.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Link to="/qr-calling" className="btn bg-white text-brand-700 hover:bg-slate-100">
-                  <QrCode className="mr-2 h-4 w-4" /> Get your QR sticker
-                </Link>
-              </div>
-            </div>
-            <div className="rounded-2xl bg-white/10 p-5 ring-1 ring-white/20 backdrop-blur">
-              <ul className="space-y-2 text-sm">
-                {[
-                  'Calls are always masked',
-                  'Optional emergency (ICE) card',
-                  '₹299 one-time · ₹50/month',
-                ].map((t) => (
-                  <li key={t} className="flex items-center gap-2">
-                    <Fingerprint className="h-4 w-4 text-emerald-300" />
                     {t}
                   </li>
                 ))}
