@@ -15,8 +15,16 @@ import type {
   CreateAdminInput,
   CommissionStatusInput,
   ReassignVehicleInput,
+  CallDailyCapInput,
+  SetVehicleValidityInput,
+  QrVehicleStatusInput,
+  QrVehicleContactInput,
   BlockCallGloballyInput,
   SetQrOrderStatusInput,
+  DispatchStickerInput,
+  GenerateQrBatchInput,
+  UpdateQrBatchInput,
+  QrStickerDisableInput,
 } from './admin.schema.js';
 
 // ── Dashboard stats ─────────────────────────────────────────────────────────
@@ -539,6 +547,43 @@ export const reassignQrVehicle: RequestHandler = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+export const getCallDailyCapSetting: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json(await service.getCallDailyCapSetting());
+  } catch (e) { next(e); }
+};
+
+export const updateCallDailyCapSetting: RequestHandler = async (req, res, next) => {
+  try {
+    const { dailyCap } = req.body as CallDailyCapInput;
+    res.json(await service.updateCallDailyCapSetting(req.user!.sub, dailyCap));
+  } catch (e) { next(e); }
+};
+
+export const setVehicleValidity: RequestHandler = async (req, res, next) => {
+  try {
+    const { validUntil } = req.body as SetVehicleValidityInput;
+    const vehicle = await service.setVehicleValidity(req.params.id, req.user!.sub, validUntil);
+    res.json({ vehicle });
+  } catch (e) { next(e); }
+};
+
+export const setQrVehicleStatus: RequestHandler = async (req, res, next) => {
+  try {
+    const { status } = req.body as QrVehicleStatusInput;
+    const vehicle = await service.setQrVehicleStatus(req.params.id, req.user!.sub, status);
+    res.json({ vehicle });
+  } catch (e) { next(e); }
+};
+
+export const updateQrVehicleContact: RequestHandler = async (req, res, next) => {
+  try {
+    const { contactPhone } = req.body as QrVehicleContactInput;
+    const vehicle = await service.updateQrVehicleContact(req.params.id, req.user!.sub, contactPhone);
+    res.json({ vehicle });
+  } catch (e) { next(e); }
+};
+
 export const listQrCalls: RequestHandler = async (req, res, next) => {
   try {
     res.json(await service.listQrCalls(req.query.status as string | undefined));
@@ -549,6 +594,12 @@ export const blockQrCallGlobally: RequestHandler = async (req, res, next) => {
   try {
     const { reason } = req.body as BlockCallGloballyInput;
     res.json(await service.blockQrCallGlobally(req.params.id, req.user!.sub, reason));
+  } catch (e) { next(e); }
+};
+
+export const revealQrCallerNumber: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.revealQrCallerNumber(req.params.id, req.user!.sub));
   } catch (e) { next(e); }
 };
 
@@ -566,13 +617,118 @@ export const unblockQrNumber: RequestHandler = async (req, res, next) => {
 
 export const listQrOrders: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await service.listQrOrders(req.query.status as string | undefined));
+    res.json(await service.listQrOrders({
+      status:        req.query.status as string | undefined,
+      paymentStatus: req.query.paymentStatus as string | undefined,
+    }));
+  } catch (e) { next(e); }
+};
+
+export const listQrPayments: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.listQrPayments(
+      req.query.status as string | undefined,
+      req.query.q as string | undefined,
+    ));
   } catch (e) { next(e); }
 };
 
 export const setQrOrderStatus: RequestHandler = async (req, res, next) => {
   try {
-    const { status } = req.body as SetQrOrderStatusInput;
-    res.json(await service.setQrOrderStatus(req.params.id, req.user!.sub, status));
+    const { status, note } = req.body as SetQrOrderStatusInput;
+    res.json(await service.setQrOrderStatus(req.params.id, req.user!.sub, status, note));
+  } catch (e) { next(e); }
+};
+
+export const refundQrOrder: RequestHandler = async (req, res, next) => {
+  try {
+    const { amount, note } = req.body as RefundInput;
+    res.json(await service.refundQrOrder(req.params.id, req.user!.sub, amount, note));
+  } catch (e) { next(e); }
+};
+
+export const dispatchQrOrderSticker: RequestHandler = async (req, res, next) => {
+  try {
+    const { token } = req.body as DispatchStickerInput;
+    res.json(await service.dispatchQrOrderSticker(req.params.id, req.user!.sub, token));
+  } catch (e) { next(e); }
+};
+
+export const listQrOrderEvents: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.listQrOrderEvents(req.params.id));
+  } catch (e) { next(e); }
+};
+
+// ── QR sticker batches ──────────────────────────────────────────────────────
+export const generateQrBatch: RequestHandler = async (req, res, next) => {
+  try {
+    res.status(201).json(await service.generateQrBatch(req.user!.sub, req.body as GenerateQrBatchInput));
+  } catch (e) { next(e); }
+};
+
+export const listQrBatches: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json(await service.listQrBatches());
+  } catch (e) { next(e); }
+};
+
+export const updateQrBatch: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.updateQrBatch(req.params.id, req.user!.sub, req.body as UpdateQrBatchInput));
+  } catch (e) { next(e); }
+};
+
+export const exportQrBatch: RequestHandler = async (req, res, next) => {
+  try {
+    const { filename, csv } = await service.exportQrBatch(req.params.id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (e) { next(e); }
+};
+
+export const listQrBatchTokens: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.listQrBatchTokens(req.params.id));
+  } catch (e) { next(e); }
+};
+
+export const listQrStickers: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.listQrStickers({
+      q:       req.query.q as string | undefined,
+      status:  req.query.status as string | undefined,
+      batchId: req.query.batchId as string | undefined,
+    }));
+  } catch (e) { next(e); }
+};
+
+export const unbindQrSticker: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.unbindQrSticker(req.params.id, req.user!.sub));
+  } catch (e) { next(e); }
+};
+
+export const setQrStickerDisabled: RequestHandler = async (req, res, next) => {
+  try {
+    const { disabled, reason } = req.body as QrStickerDisableInput;
+    res.json(await service.setQrStickerDisabled(req.params.id, req.user!.sub, disabled, reason));
+  } catch (e) { next(e); }
+};
+
+export const listAuditLogs: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.listAuditLogs({
+      q:      req.query.q as string | undefined,
+      entity: req.query.entity as string | undefined,
+      action: req.query.action as string | undefined,
+    }));
+  } catch (e) { next(e); }
+};
+
+export const listAuditLogEntities: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json(await service.listAuditLogEntities());
   } catch (e) { next(e); }
 };

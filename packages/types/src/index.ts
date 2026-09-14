@@ -152,14 +152,17 @@ export type EmergencyContactInput = z.infer<typeof EmergencyContactInput>;
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:mm').optional();
 
-/** Owner registers / edits a car for QR calling. */
+/**
+ * Owner registers / edits a car for QR calling. The daily received-call cap
+ * is a platform-wide admin setting (see backend lib/callDailyCap.ts), not
+ * something an individual owner can set — deliberately not a field here.
+ */
 export const RegisterVehicleInput = z.object({
   plateNumber:     plateField,
   contactPhone:    phoneField,
   ownerName:       z.string().trim().max(80).optional(),
   silentFrom:      hhmm,
   silentTo:        hhmm,
-  dailyReceiveCap: z.number().int().min(1).max(100).optional(),
   // ICE — all opt-in
   emergencyPublic:  z.boolean().default(false),
   bloodGroup:       z.enum(['A+','A-','B+','B-','AB+','AB-','O+','O-']).optional(),

@@ -17,6 +17,18 @@ export const authLimiter = rateLimit({
   message: { error: { code: 'RATE_LIMITED', message: 'Too many auth attempts' } },
 });
 
+// Payment checkout/verify — generous enough for a genuine customer retrying
+// a few times after a card decline or a flaky network, tight enough that a
+// script can't hammer Razorpay order-creation (real cost, real API) or brute
+// force the verify endpoint's signature check.
+export const paymentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: { code: 'RATE_LIMITED', message: 'Too many payment attempts — please wait a few minutes and try again' } },
+});
+
 // QR Calling public plate lookup — "15/hour + bot-check" per the blueprint's
 // limits matrix. Logs the block to LookupAttempt (for admin abuse visibility
 // later) before responding, best-effort so a logging hiccup never blocks the 429.

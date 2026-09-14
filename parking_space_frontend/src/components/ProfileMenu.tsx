@@ -15,6 +15,7 @@ import {
   UserPlus,
   Sparkles,
   Car,
+  Package,
 } from 'lucide-react';
 import { Avatar, gradientFor } from '@ps/ui';
 import { useAuth } from '@/store/auth';
@@ -35,6 +36,7 @@ type MenuLink = {
 const LINKS: MenuLink[] = [
   { to: '/profile', label: 'My profile', icon: UserCircle2, description: 'Name, contact, preferences' },
   { to: '/vehicles', label: 'My vehicles', icon: Car, description: 'Scan-to-call & emergency card' },
+  { to: '/qr-orders', label: 'QR sticker orders', icon: Package, description: 'Order & payment history' },
   { to: '/saved', label: 'Saved spaces', icon: Heart, description: 'Spaces you bookmarked' },
   { to: '/bookings', label: 'My bookings', icon: CalendarCheck, description: 'Upcoming and past' },
   { to: '/settings', label: 'Settings', icon: Settings, description: 'Appearance & security' },

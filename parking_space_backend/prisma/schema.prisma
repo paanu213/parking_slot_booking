@@ -121,6 +121,7 @@ model User {
   savedSpaces   SavedSpace[]
   vehicles      VehicleRegistration[]
   qrOrders      QrOrder[]
+  qrOrderStatusEvents QrOrderStatusEvent[]
 
   @@index([role, status])
 }
@@ -342,15 +343,31 @@ model Booking {
   @@index([slotId, startAt, endAt])
 }
 
+// A payment "attempt" — one row per Razorpay order we create. A retried
+// checkout after a failure/cancel creates a fresh row (the old one keeps its
+// FAILED/CREATED status), so this table is naturally a full attempt log, not
+// just current state. Exactly one of bookingId / qrOrderId is set, depending
+// on what's being paid for — the two flows share this table and the
+// signature-verification code (lib/paymentGateway) rather than duplicating it.
 model Payment {
   id                 String        @id @default(cuid())
-  bookingId          String
+  bookingId          String?
+  qrOrderId          String?
   provider           String        @default("razorpay")
   providerOrderId    String?
   providerPaymentId  String?
   amount             Decimal       @db.Decimal(10, 2)
   currency           String        @default("INR")
   status             PaymentStatus @default(CREATED)
+  // Populated on FAILED — bank decline, network error, user cancel, or a
+  // signature that didn't verify. failureCode is the gateway's short code
+  // (or USER_CANCELLED / NETWORK_ERROR / INVALID_SIGNATURE for our own);
+  // failureReason is the human-readable message shown to the customer/admin.
+  failureCode        String?
+  failureReason      String?       @db.Text
+  // Who attempted this — for admin abuse/fraud review, not shown to the customer.
+  ipHash             String?
+  userAgent          String?       @db.Text
   rawResponse        String?       @db.Text
   // Refund tracking for online payments
   refundAmount       Decimal?      @db.Decimal(10, 2)
@@ -359,9 +376,13 @@ model Payment {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
-  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  qrOrder QrOrder? @relation(fields: [qrOrderId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
+  @@index([qrOrderId])
+  @@index([providerOrderId])
+  @@index([providerPaymentId])
 }
 
 model AuditLog {
@@ -428,6 +449,19 @@ enum BlockScope {
   GLOBAL
 }
 
+enum QrStickerStatus {
+  UNCLAIMED
+  CLAIMED
+  DISABLED
+}
+
+enum QrPaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
 model VehicleRegistration {
   id              String             @id @default(cuid())
   userId          String
@@ -445,6 +479,11 @@ model VehicleRegistration {
   ownerName       String?
   bloodGroup      String?
   medicalNotes    String?            @db.Text             // encrypted
+  // QR sticker validity — the sticker purchase is a one-time, lifetime fee by
+  // default (validUntil null). Admin can set an end date per customer/car
+  // under individual commercial terms; past that date the sticker stops
+  // resolving (scan.service treats it like a paused registration).
+  validUntil      DateTime?
   deactivatedAt   DateTime?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
@@ -453,6 +492,7 @@ model VehicleRegistration {
   emergencyContacts EmergencyContact[]
   calls             CallSession[]
   qrOrders          QrOrder[]
+  qrStickers        QrSticker[]
 
   @@index([userId])
   @@index([status])
@@ -536,18 +576,19 @@ model VirtualNumber {
 }
 
 enum QrOrderStatus {
-  PENDING    // submitted — awaiting admin follow-up to collect payment
-  CONFIRMED  // admin confirmed payment received (offline — no gateway wired yet)
-  SHIPPED
-  DELIVERED
-  CANCELLED
+  PENDING           // submitted — awaiting payment
+  CONFIRMED         // payment received, order confirmed — yet to be picked up for dispatch
+  PICKED_UP         // sticker picked up from the store
+  OUT_FOR_DELIVERY  // on the way to the customer
+  DELIVERED         // delivered to the customer
+  RETURNED          // sticker sent back — damaged/issue, awaiting a decision to resend
+  CANCELLED         // order cancelled
 }
 
-// A request for a physical QR sticker — collected while online payment is
-// paused sitewide (see CheckoutPage.tsx), so this is "request only": no
-// gateway charge happens here. Price fields are a snapshot of what the
-// customer was shown at request time, so a later price change never rewrites
-// history. Admin fulfills manually (confirm payment -> ship -> deliver).
+// A request for a physical QR sticker, paid for online via Razorpay (see
+// lib/paymentGateway). Price fields are a snapshot of what the customer was
+// shown at request time, so a later price change never rewrites history.
+// Fulfilment (confirm -> ship -> deliver) is still manual, driven by `status`.
 model QrOrder {
   id                String        @id @default(cuid())
   userId            String
@@ -563,15 +604,96 @@ model QrOrder {
   pincode           String
   note              String?       @db.Text
   confirmedAt       DateTime?
-  shippedAt         DateTime?
+  pickedUpAt        DateTime?
+  outForDeliveryAt  DateTime?
   deliveredAt       DateTime?
+  returnedAt        DateTime?
+  // Bumped by 1 every time a RETURNED order is resent — lets the UI label
+  // a resend cycle's events ("Attempt 2") without re-deriving it from history.
+  deliveryAttempt   Int           @default(1)
+  // Which physical sticker (by its printed token) admin put in the package —
+  // recorded at dispatch, independent of qrSticker.status/claimedAt below
+  // (which only flips once the *customer* scans and configures it). Lets
+  // admin trace a specific inventory item to the order it was sent for.
+  dispatchedStickerId String?     @unique
+  dispatchedAt        DateTime?
+  // Payment summary — the source of truth for individual attempts is the
+  // Payment rows below; these three fields are just the current net state,
+  // kept in sync by qrOrders.service whenever a Payment transitions.
+  paymentStatus     QrPaymentStatus @default(PENDING)
+  paidAt            DateTime?
+  paymentRef        String?                                  // Razorpay payment id once paid
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  registration VehicleRegistration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registration     VehicleRegistration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  payments         Payment[]
+  statusEvents     QrOrderStatusEvent[]
+  dispatchedSticker QrSticker?          @relation(fields: [dispatchedStickerId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([status])
+  @@index([registrationId])
+}
+
+// Full fulfilment timeline for a QrOrder — one row per status change, so a
+// RETURNED -> resend -> DELIVERED loop still shows every stage it passed
+// through instead of just the current state. Shown to both the admin
+// (full detail) and the customer (their order's own timeline).
+model QrOrderStatusEvent {
+  id        String        @id @default(cuid())
+  qrOrderId String
+  status    QrOrderStatus
+  note      String?       @db.Text
+  actorId   String?
+  createdAt DateTime      @default(now())
+
+  order QrOrder @relation(fields: [qrOrderId], references: [id], onDelete: Cascade)
+  actor User?   @relation(fields: [actorId], references: [id])
+
+  @@index([qrOrderId])
+  @@index([actorId])
+}
+
+// A batch / print run of unique QR stickers.
+model QrBatch {
+  id          String    @id @default(cuid())
+  label       String
+  quantity    Int
+  note        String?   @db.Text
+  createdById String?
+  printedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  stickers QrSticker[]
+
+  @@index([createdAt])
+}
+
+// One physical sticker's identity. `token` is the random value carried in the
+// QR URL (…/c/<token>). UNCLAIMED until an owner scans + configures it, then
+// CLAIMED and bound to a VehicleRegistration. Admin can unbind (back to
+// UNCLAIMED) or DISABLE without touching the physical sticker.
+model QrSticker {
+  id              String          @id @default(cuid())
+  batchId         String
+  token           String          @unique
+  status          QrStickerStatus @default(UNCLAIMED)
+  registrationId  String?
+  claimedByUserId String?
+  claimedAt       DateTime?
+  disabledAt      DateTime?
+  disabledReason  String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  batch          QrBatch              @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  registration   VehicleRegistration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  dispatchedFor  QrOrder?
+
+  @@index([batchId])
   @@index([status])
   @@index([registrationId])
 }

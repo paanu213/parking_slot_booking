@@ -16,6 +16,12 @@ export const get: RequestHandler = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+export const getByPlate: RequestHandler = async (req, res, next) => {
+  try {
+    res.json({ vehicle: await service.getVehicleByPlate(req.user!.sub, req.params.plate) });
+  } catch (e) { next(e); }
+};
+
 export const create: RequestHandler = async (req, res, next) => {
   try {
     const vehicle = await service.registerVehicle(req.user!.sub, req.body as RegisterVehicleInput);

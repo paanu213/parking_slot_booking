@@ -119,12 +119,61 @@ export const reassignVehicleSchema = z.object({
   note:       z.string().trim().max(300).optional(),
 });
 
+/** Platform-wide setting — not per-vehicle, customers never see or set this. */
+export const callDailyCapSchema = z.object({
+  dailyCap: z.coerce.number().int().min(1).max(500),
+});
+
 export const blockCallGloballySchema = z.object({
   reason: z.string().trim().max(200).optional(),
 });
 
+/**
+ * Per-vehicle QR validity end date — null clears it back to lifetime.
+ * z.null() MUST be tried before z.coerce.date(): `new Date(null)` coerces to
+ * the epoch (1970-01-01) instead of failing, so the reverse order would
+ * silently turn "clear to lifetime" into "expired since 1970".
+ */
+export const setVehicleValiditySchema = z.object({
+  validUntil: z.union([z.null(), z.coerce.date()]),
+});
+
 export const setQrOrderStatusSchema = z.object({
-  status: z.enum(['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED']),
+  status: z.enum(['PENDING', 'CONFIRMED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'RETURNED', 'CANCELLED']),
+  note:   z.string().trim().max(300).optional(),
+});
+
+/** Admin records which physical sticker (by its printed token) went into the package at dispatch. */
+export const dispatchStickerSchema = z.object({
+  token: z.string().trim().min(4).max(40),
+});
+
+/** Admin pause/resume — same effect as the owner's own toggle in My Vehicles. */
+export const qrVehicleStatusSchema = z.object({
+  status: z.enum(['ACTIVE', 'PAUSED']),
+});
+
+/** Admin correcting the number a scan rings — e.g. the owner lost that phone. */
+export const qrVehicleContactSchema = z.object({
+  contactPhone: z.string().trim().min(8).max(20),
+});
+
+/** Generate a print run of unique QR sticker tokens. */
+export const generateQrBatchSchema = z.object({
+  label:    z.string().trim().min(1).max(120),
+  quantity: z.coerce.number().int().min(1).max(2000),
+  note:     z.string().trim().max(500).optional(),
+});
+
+export const updateQrBatchSchema = z.object({
+  label:       z.string().trim().min(1).max(120).optional(),
+  note:        z.string().trim().max(500).nullable().optional(),
+  markPrinted: z.boolean().optional(),
+});
+
+export const qrStickerDisableSchema = z.object({
+  disabled: z.boolean(),
+  reason:   z.string().trim().max(200).optional(),
 });
 
 export type UpdateVendorInput = z.infer<typeof updateVendorSchema>;
@@ -142,5 +191,13 @@ export type CreateAdminInput = z.infer<typeof createAdminSchema>;
 export type CommissionRateInput = z.infer<typeof commissionRateSchema>;
 export type CommissionStatusInput = z.infer<typeof commissionStatusSchema>;
 export type ReassignVehicleInput = z.infer<typeof reassignVehicleSchema>;
+export type CallDailyCapInput = z.infer<typeof callDailyCapSchema>;
 export type BlockCallGloballyInput = z.infer<typeof blockCallGloballySchema>;
+export type SetVehicleValidityInput = z.infer<typeof setVehicleValiditySchema>;
+export type QrVehicleStatusInput = z.infer<typeof qrVehicleStatusSchema>;
+export type QrVehicleContactInput = z.infer<typeof qrVehicleContactSchema>;
 export type SetQrOrderStatusInput = z.infer<typeof setQrOrderStatusSchema>;
+export type DispatchStickerInput = z.infer<typeof dispatchStickerSchema>;
+export type GenerateQrBatchInput = z.infer<typeof generateQrBatchSchema>;
+export type UpdateQrBatchInput = z.infer<typeof updateQrBatchSchema>;
+export type QrStickerDisableInput = z.infer<typeof qrStickerDisableSchema>;

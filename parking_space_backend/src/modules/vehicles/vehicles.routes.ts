@@ -14,6 +14,8 @@ r.use(requireAuth);
 
 r.get('/', ctrl.list);
 r.post('/', validate(registerVehicleSchema), ctrl.create);
+// Literal /by-plate/:plate before the parametric /:id — same convention as admin.routes.ts.
+r.get('/by-plate/:plate', ctrl.getByPlate);
 r.get('/:id', ctrl.get);
 r.put('/:id', validate(updateVehicleSchema), ctrl.update);
 r.patch('/:id/pause', ctrl.pause);

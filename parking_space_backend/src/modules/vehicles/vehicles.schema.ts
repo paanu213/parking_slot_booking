@@ -22,7 +22,6 @@ export const updateVehicleSchema = z.object({
   ownerName:         s.ownerName.nullable().optional(),
   silentFrom:        s.silentFrom.nullable(),
   silentTo:          s.silentTo.nullable(),
-  dailyReceiveCap:   s.dailyReceiveCap.optional(),
   emergencyPublic:   z.boolean().optional(),
   bloodGroup:        s.bloodGroup.nullable().optional(),
   medicalNotes:      s.medicalNotes.nullable().optional(),

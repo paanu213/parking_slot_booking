@@ -15,6 +15,8 @@ import { simulateMockProgress } from '../../lib/callProviders/mock.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { env } from '../../config/env.js';
 import { BadRequest, Forbidden, NotFound, TooMany } from '../../lib/http.js';
+import { isUsable } from '../scan/scan.service.js';
+import { getCallDailyCap } from '../../lib/callDailyCap.js';
 
 const TERMINAL_STATUSES = new Set([
   'COMPLETED', 'NO_ANSWER', 'BUSY', 'OWNER_REJECTED', 'FAILED', 'BLOCKED', 'CANCELLED',
@@ -54,7 +56,7 @@ export const initiateCall = async (
 ) => {
   const registrationId = verifyPermit(permit);
   const registration = await prisma.vehicleRegistration.findUnique({ where: { id: registrationId } });
-  if (!registration || registration.status !== 'ACTIVE') throw NotFound('This car is not available to call');
+  if (!registration || !isUsable(registration)) throw NotFound('This car is not available to call');
 
   const callerNumber = callerNumberRaw.trim();
   const callerPhoneHash = hmacHash(callerNumber);
@@ -81,10 +83,11 @@ export const initiateCall = async (
 
   const today = resolveDateRange('day')!;
 
-  const receivedToday = await prisma.callSession.count({
-    where: { registrationId, createdAt: { gte: today.gte, lte: today.lte } },
-  });
-  if (receivedToday >= registration.dailyReceiveCap) {
+  const [receivedToday, dailyCap] = await Promise.all([
+    prisma.callSession.count({ where: { registrationId, createdAt: { gte: today.gte, lte: today.lte } } }),
+    getCallDailyCap(),
+  ]);
+  if (receivedToday >= dailyCap) {
     throw TooMany('This car has reached its call limit for today. Please try again tomorrow.');
   }
 

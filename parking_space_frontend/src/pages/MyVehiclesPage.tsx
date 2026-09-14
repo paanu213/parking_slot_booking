@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Car, ChevronDown, History, Moon, Pause, Pencil, Phone,
-  Play, Plus, ShieldCheck, Trash2, Users,
+  ArrowLeft, Car, CalendarClock, ChevronDown, History, Infinity as InfinityIcon, Link2, Moon, Pause, Pencil, Phone,
+  Play, Plus, QrCode, ShieldCheck, Trash2, Users,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/components/Toast';
@@ -51,13 +51,15 @@ export interface Vehicle {
   contactPhone: string;
   contactVerified: boolean;
   status: 'ACTIVE' | 'PAUSED' | 'TRANSFERRED' | 'DELETED';
-  dailyReceiveCap: number;
   silentFrom: string | null;
   silentTo: string | null;
   emergencyPublic: boolean;
   ownerName: string | null;
   bloodGroup: string | null;
   medicalNotes: string | null;
+  validUntil: string | null;
+  qrLinked: boolean;
+  qrLinkedAt: string | null;
   emergencyContacts: VehicleContact[];
   createdAt: string;
   updatedAt: string;
@@ -210,6 +212,15 @@ const VehicleCard = ({
             <span className={cn('h-1.5 w-1.5 rounded-full', isActive ? 'bg-emerald-500' : 'bg-amber-500')} />
             {isActive ? 'Active' : 'Paused'}
           </span>
+          {v.qrLinked ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+              <Link2 className="h-3 w-3" /> QR linked
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              <QrCode className="h-3 w-3" /> No QR scanned yet
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1">
@@ -233,7 +244,10 @@ const VehicleCard = ({
             Silent {v.silentFrom ?? '—'} → {v.silentTo ?? '—'}
           </span>
         )}
-        <span className="text-xs text-slate-400">Up to {v.dailyReceiveCap} calls/day</span>
+      </div>
+
+      <div className="mt-2">
+        <QrValidityBadge validUntil={v.validUntil} />
       </div>
 
       <div className="mt-3 flex items-center gap-2">
@@ -314,6 +328,31 @@ const CallHistory = ({ vehicleId }: { vehicleId: string }) => {
         </div>
       ))}
     </div>
+  );
+};
+
+/** The one-time sticker fee is lifetime by default; admin can set a per-vehicle end date. */
+const QrValidityBadge = ({ validUntil }: { validUntil: string | null }) => {
+  if (!validUntil) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+        <InfinityIcon className="h-3.5 w-3.5" /> QR validity: Lifetime
+      </span>
+    );
+  }
+  const expired = new Date(validUntil).getTime() < Date.now();
+  const dateStr = new Date(validUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold',
+        expired
+          ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300'
+          : 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+      )}
+    >
+      <CalendarClock className="h-3.5 w-3.5" /> {expired ? `QR validity expired ${dateStr}` : `QR valid until ${dateStr}`}
+    </span>
   );
 };
 

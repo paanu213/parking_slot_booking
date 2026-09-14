@@ -35,9 +35,10 @@ export const PRICING = {
 } as const;
 
 /**
- * QR Calling — sticker + call-service pricing, shown on the landing page and
- * order form. Must match the snapshot the backend stores on QrOrder
- * (STICKER_PRICE_PAISE / MONTHLY_PRICE_PAISE in qrOrders.service.ts).
+ * QR Calling — one-time sticker fee, shown on the landing page and order
+ * form. Must match the snapshot the backend stores on QrOrder
+ * (STICKER_PRICE_PAISE in qrOrders.service.ts). Lifetime validity by
+ * default; admin can set a per-vehicle expiry under individual terms
+ * (VehicleRegistration.validUntil) — there's no recurring charge.
  */
-export const QR_STICKER_PRICE = 299;  // ₹, one-time
-export const QR_MONTHLY_PRICE = 50;   // ₹/month, call-service subscription
+export const QR_STICKER_PRICE = 500; // ₹, one-time, lifetime

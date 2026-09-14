@@ -1,17 +1,22 @@
 import { Fragment, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle, Ban, Car, IndianRupee, Package, PhoneCall, Search,
-  ShieldCheck, TrendingUp, Truck, Users, X,
+  AlertTriangle, Ban, Car, IndianRupee, Pencil, PhoneCall,
+  Search, ShieldCheck, TrendingUp, Undo2, Wallet,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { statusCls, fmtDateTime, errMsg } from '@/lib/qrCallingFormat';
+import { MaskedPhone } from '@/components/MaskedPhone';
+import { VehicleActionsMenu } from '@/components/VehicleActionsMenu';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface QrOverview {
   totalRegistrations: number; activeRegistrations: number; pausedRegistrations: number; emergencyEnabled: number;
   callsToday: number; callsTotal: number; answerRate: number; avgDurationSec: number;
   failedTotal: number; blockedNumbersCount: number; spendTodayPaise: number;
+  revenuePaise: number; refundedPaise: number;
   busiestCars: { registrationId: string; plate: string; calls: number }[];
   topCallers: { callerPhoneHash: string; callerMasked: string; calls: number; sampleCallId: string | null }[];
 }
@@ -21,16 +26,9 @@ interface VehicleOwner { id: string; fullName: string; email: string; phone: str
 interface VehicleRow {
   id: string; plateNumber: string; contactPhone: string; contactVerified: boolean;
   status: 'ACTIVE' | 'PAUSED' | 'TRANSFERRED' | 'DELETED';
-  emergencyPublic: boolean; ownerName: string | null; dailyReceiveCap: number;
+  emergencyPublic: boolean; ownerName: string | null;
+  validUntil: string | null;
   callCount: number; emergencyContactCount: number; owner: VehicleOwner; createdAt: string;
-}
-
-interface VehicleDetail extends Omit<VehicleRow, 'callCount' | 'emergencyContactCount'> {
-  isActive: boolean; silentFrom: string | null; silentTo: string | null;
-  bloodGroup: string | null; medicalNotes: string | null;
-  emergencyContacts: { id: string; name: string; relation: string | null; phone: string; showPublic: boolean }[];
-  calls: { id: string; status: string; provider: string; initiatedAt: string; answeredAt: string | null; endedAt: string | null; durationSec: number | null; callerMasked: string }[];
-  updatedAt: string;
 }
 
 interface CallRow {
@@ -44,41 +42,23 @@ interface BlockedRow {
   plate: string | null; blockedBy: string; createdAt: string;
 }
 
-interface OrderRow {
-  id: string; status: 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
-  stickerPricePaise: number; monthlyPricePaise: number;
-  plate: string | null; ownerName: string; ownerEmail: string;
-  shippingName: string; shippingPhone: string; addressLine: string;
-  city: string; state: string; pincode: string; note: string | null; createdAt: string;
+interface PaymentRow {
+  id: string; status: 'CREATED' | 'PAID' | 'FAILED' | 'REFUNDED';
+  provider: string; amount: string; currency: string;
+  providerOrderId: string | null; providerPaymentId: string | null;
+  failureCode: string | null; failureReason: string | null;
+  createdAt: string; updatedAt: string; qrOrderId: string | null;
+  customer: { userId: string; name: string; email: string; accountPhone: string | null; shippingPhone: string; plate: string | null } | null;
 }
 
-const STATUS_CLS: Record<string, string> = {
-  ACTIVE:    'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-  PAUSED:    'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-  COMPLETED: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-  BRIDGED:   'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-300',
-  DELIVERED: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-  SHIPPED:   'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-300',
-  CONFIRMED: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-  PENDING:   'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
-  CANCELLED: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
-};
-const statusCls = (s: string) => STATUS_CLS[s] ?? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
-
-const fmtDateTime = (d: string) =>
-  new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-
-const errMsg = (e: unknown, fallback: string) =>
-  (e as any)?.response?.data?.error?.message ?? fallback;
-
 // ── Page shell ───────────────────────────────────────────────────────────────
-type Tab = 'overview' | 'vehicles' | 'calls' | 'blocked' | 'orders';
+type Tab = 'overview' | 'vehicles' | 'calls' | 'blocked' | 'payments';
 const TABS: { value: Tab; label: string }[] = [
   { value: 'overview', label: 'Overview' },
   { value: 'vehicles', label: 'Vehicles' },
   { value: 'calls',    label: 'Call log' },
   { value: 'blocked',  label: 'Blocked numbers' },
-  { value: 'orders',   label: 'Sticker orders' },
+  { value: 'payments', label: 'Payments' },
 ];
 
 export default function QrCallingPage() {
@@ -114,7 +94,7 @@ export default function QrCallingPage() {
       {tab === 'vehicles' && <VehiclesTab />}
       {tab === 'calls' && <CallsTab />}
       {tab === 'blocked' && <BlockedTab />}
-      {tab === 'orders' && <OrdersTab />}
+      {tab === 'payments' && <PaymentsTab />}
     </section>
   );
 }
@@ -130,6 +110,84 @@ const StatCard = ({ label, value, sub, icon: Icon }: { label: string; value: str
     {sub && <p className="text-xs text-slate-400">{sub}</p>}
   </div>
 );
+
+// Platform-wide setting — not per-vehicle. Customers never see or set this;
+// only admin can change the number that applies to every car.
+const DailyCapSetting = () => {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState('');
+
+  const { data } = useQuery<{ dailyCap: number }>({
+    queryKey: ['admin-qr-daily-cap'],
+    queryFn: async () => (await api.get('/admin/qr/settings/daily-cap')).data,
+  });
+
+  const update = useMutation({
+    mutationFn: (dailyCap: number) => api.patch('/admin/qr/settings/daily-cap', { dailyCap }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-qr-daily-cap'] });
+      setEditing(false);
+    },
+  });
+
+  return (
+    <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
+      <div className="flex flex-wrap items-center gap-3">
+        <PhoneCall className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+        <h2 className="text-sm font-semibold">Daily call cap</h2>
+        {editing ? (
+          <span className="inline-flex items-center gap-1">
+            <input
+              type="number"
+              min={1}
+              max={500}
+              className="input h-7 w-20 text-sm"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              autoFocus
+            />
+            <span className="text-sm text-slate-500">calls/day</span>
+            <button
+              type="button"
+              className="rounded-lg bg-brand-600 px-2 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              disabled={update.isPending || !input}
+              onClick={() => update.mutate(Number(input))}
+            >
+              {update.isPending ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+              {data?.dailyCap ?? '—'} calls/day
+            </span>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-xs text-brand-700 hover:underline dark:text-brand-400"
+              onClick={() => { setInput(String(data?.dailyCap ?? 15)); setEditing(true); }}
+            >
+              <Pencil className="h-3 w-3" /> Edit
+            </button>
+          </span>
+        )}
+      </div>
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        Applies to every car platform-wide — the most masked calls one car can receive in a day. Not customer-editable.
+      </p>
+      {update.isError && (
+        <p className="mt-1 text-xs text-rose-600">{errMsg(update.error, 'Could not update the daily call cap.')}</p>
+      )}
+    </div>
+  );
+};
 
 const OverviewTab = () => {
   const qc = useQueryClient();
@@ -150,6 +208,8 @@ const OverviewTab = () => {
 
   return (
     <div className="space-y-6">
+      <DailyCapSetting />
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <StatCard label="Active cars" value={data.activeRegistrations} sub={`${data.totalRegistrations} total · ${data.pausedRegistrations} paused`} icon={Car} />
         <StatCard label="Emergency card on" value={data.emergencyEnabled} icon={ShieldCheck} />
@@ -158,6 +218,8 @@ const OverviewTab = () => {
         <StatCard label="Failed / no-answer" value={data.failedTotal} icon={AlertTriangle} />
         <StatCard label="Numbers blocked" value={data.blockedNumbersCount} icon={Ban} />
         <StatCard label="Spend today" value={`₹${(data.spendTodayPaise / 100).toFixed(2)}`} sub="cost guard — sums CallSession.costPaise" icon={IndianRupee} />
+        <StatCard label="Sticker revenue" value={`₹${(data.revenuePaise / 100).toFixed(2)}`} sub="received from QR sticker orders" icon={Wallet} />
+        <StatCard label="Refunded" value={`₹${(data.refundedPaise / 100).toFixed(2)}`} sub="refunded from sticker orders" icon={Undo2} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -190,7 +252,7 @@ const OverviewTab = () => {
               <tbody>
                 {data.topCallers.map((c) => (
                   <tr key={c.callerPhoneHash}>
-                    <td className="font-mono">{c.callerMasked}</td>
+                    <td><MaskedPhone masked={c.callerMasked} callId={c.sampleCallId} /></td>
                     <td>{c.calls}</td>
                     <td className="text-right">
                       {c.sampleCallId && (
@@ -217,15 +279,17 @@ const OverviewTab = () => {
 
 // ── Vehicles ─────────────────────────────────────────────────────────────────
 const VehiclesTab = () => {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<{ items: VehicleRow[] }>({
     queryKey: ['admin-qr-vehicles', search, status],
     queryFn: async () => (await api.get('/admin/qr/vehicles', { params: { search: search || undefined, status: status || undefined } })).data,
   });
   const items = data?.items ?? [];
+  const refresh = () => qc.invalidateQueries({ queryKey: ['admin-qr-vehicles'] });
 
   return (
     <div className="space-y-4">
@@ -251,17 +315,19 @@ const VehiclesTab = () => {
           <thead>
             <tr>
               <th>Plate</th><th>Owner</th><th>Contact</th><th>Status</th>
-              <th>ICE</th><th>Calls</th><th>Registered</th>
+              <th>ICE</th><th>QR validity</th><th>Calls</th><th>Registered</th><th />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={7} className="py-6 text-center text-slate-400">Loading…</td></tr>
+              <tr><td colSpan={9} className="py-6 text-center text-slate-400">Loading…</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={7} className="py-6 text-center text-slate-400">No vehicles found.</td></tr>
+              <tr><td colSpan={9} className="py-6 text-center text-slate-400">No vehicles found.</td></tr>
             ) : (
-              items.map((v) => (
-                <tr key={v.id} onClick={() => setSelectedId(v.id)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+              items.map((v) => {
+                const expired = v.validUntil ? new Date(v.validUntil).getTime() < Date.now() : false;
+                return (
+                <tr key={v.id} onClick={() => navigate(`/qr-calling/vehicles/${v.id}`)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
                   <td className="font-mono font-semibold">{v.plateNumber}</td>
                   <td>
                     <p className="font-medium">{v.owner.fullName}</p>
@@ -270,157 +336,37 @@ const VehiclesTab = () => {
                   <td>{v.contactPhone}</td>
                   <td><span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(v.status))}>{v.status}</span></td>
                   <td>{v.emergencyPublic ? <ShieldCheck className="h-4 w-4 text-rose-500" /> : '—'}</td>
+                  <td>
+                    {v.validUntil ? (
+                      <span className={cn('text-xs font-semibold', expired ? 'text-rose-600' : 'text-amber-700 dark:text-amber-400')}>
+                        {expired ? 'Expired ' : 'Until '}{new Date(v.validUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400">Lifetime</span>
+                    )}
+                  </td>
                   <td>{v.callCount}</td>
                   <td className="text-xs text-slate-400">{fmtDateTime(v.createdAt)}</td>
+                  <td className="text-right">
+                    <VehicleActionsMenu
+                      vehicle={{ id: v.id, status: v.status, contactPhone: v.contactPhone, validUntil: v.validUntil }}
+                      onChanged={refresh}
+                    />
+                  </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {selectedId && <VehicleDetailModal id={selectedId} onClose={() => setSelectedId(null)} />}
     </div>
   );
 };
 
-const VehicleDetailModal = ({ id, onClose }: { id: string; onClose: () => void }) => {
-  const qc = useQueryClient();
-  const [reassignEmail, setReassignEmail] = useState('');
-  const [showReassign, setShowReassign] = useState(false);
-
-  const { data, isLoading } = useQuery<{ vehicle: VehicleDetail }>({
-    queryKey: ['admin-qr-vehicle', id],
-    queryFn: async () => (await api.get(`/admin/qr/vehicles/${id}`)).data,
-  });
-  const v = data?.vehicle;
-
-  const reassign = useMutation({
-    mutationFn: () => api.post(`/admin/qr/vehicles/${id}/reassign`, { ownerEmail: reassignEmail.trim() }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-qr-vehicle', id] });
-      qc.invalidateQueries({ queryKey: ['admin-qr-vehicles'] });
-      setShowReassign(false);
-      setReassignEmail('');
-    },
-  });
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-        <button onClick={onClose} className="absolute right-4 top-4 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
-          <X className="h-4 w-4" />
-        </button>
-
-        {isLoading || !v ? (
-          <p className="text-sm text-slate-500">Loading…</p>
-        ) : (
-          <div className="space-y-5">
-            <div>
-              <span className="rounded-lg border-2 border-slate-800 bg-white px-3 py-1.5 font-mono text-base font-bold tracking-wider dark:border-slate-300 dark:bg-slate-800">
-                {v.plateNumber}
-              </span>
-              <span className={cn('ml-2 rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(v.status))}>{v.status}</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <Field label="Owner account" value={`${v.owner.fullName} · ${v.owner.email}`} />
-              <Field label="Contact number" value={v.contactPhone} />
-              <Field label="Owner name (ICE)" value={v.ownerName ?? '—'} />
-              <Field label="Silent hours" value={v.silentFrom || v.silentTo ? `${v.silentFrom ?? '—'} → ${v.silentTo ?? '—'}` : '—'} />
-              <Field label="Daily call cap" value={String(v.dailyReceiveCap)} />
-              <Field label="Emergency card" value={v.emergencyPublic ? 'On' : 'Off'} />
-            </div>
-
-            {v.emergencyPublic && (
-              <div>
-                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Emergency card</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <Field label="Blood group" value={v.bloodGroup ?? '—'} />
-                  <Field label="Medical notes" value={v.medicalNotes ?? '—'} />
-                </div>
-                {v.emergencyContacts.length > 0 && (
-                  <ul className="mt-2 space-y-1 text-sm">
-                    {v.emergencyContacts.map((c) => (
-                      <li key={c.id} className="flex items-center gap-2">
-                        <Users className="h-3.5 w-3.5 text-slate-400" />
-                        {c.name}{c.relation ? ` (${c.relation})` : ''} — {c.phone}
-                        {!c.showPublic && <span className="text-xs text-slate-400">(hidden)</span>}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-
-            <div>
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Recent calls</h3>
-              {v.calls.length === 0 ? (
-                <p className="text-xs text-slate-400">No calls yet.</p>
-              ) : (
-                <table className="table">
-                  <thead><tr><th>Caller</th><th>Status</th><th>When</th><th>Duration</th></tr></thead>
-                  <tbody>
-                    {v.calls.slice(0, 10).map((c) => (
-                      <tr key={c.id}>
-                        <td className="font-mono">{c.callerMasked}</td>
-                        <td><span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(c.status))}>{c.status}</span></td>
-                        <td className="text-xs text-slate-400">{fmtDateTime(c.initiatedAt)}</td>
-                        <td>{c.durationSec != null ? `${c.durationSec}s` : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            <div className="border-t border-slate-200 pt-4 dark:border-slate-800">
-              {!showReassign ? (
-                <button type="button" onClick={() => setShowReassign(true)} className="btn-ghost text-sm">
-                  Reassign to a different owner (dispute)
-                </button>
-              ) : (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-slate-500">
-                    New owner's account email — they must already have an AutoSahay account.
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      value={reassignEmail}
-                      onChange={(e) => setReassignEmail(e.target.value)}
-                      placeholder="owner@example.com"
-                      className="input flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => reassign.mutate()}
-                      disabled={!reassignEmail.trim() || reassign.isPending}
-                      className="btn-primary shrink-0"
-                    >
-                      {reassign.isPending ? 'Reassigning…' : 'Reassign'}
-                    </button>
-                    <button type="button" onClick={() => setShowReassign(false)} className="btn-ghost shrink-0">Cancel</button>
-                  </div>
-                  {reassign.isError && (
-                    <p className="text-xs text-rose-600">{errMsg(reassign.error, 'Could not reassign — check the email is correct.')}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const Field = ({ label, value }: { label: string; value: string }) => (
-  <div>
-    <p className="text-xs text-slate-400">{label}</p>
-    <p className="font-medium">{value}</p>
-  </div>
-);
+// Vehicle detail now lives at its own route — see QrVehicleDetailPage.tsx
+// (was a modal here; moved so it's linkable and back/forward-navigable).
 
 // ── Call log ─────────────────────────────────────────────────────────────────
 const CALL_STATUS_OPTIONS = ['COMPLETED', 'BRIDGED', 'NO_ANSWER', 'BUSY', 'OWNER_REJECTED', 'FAILED', 'BLOCKED', 'CANCELLED'];
@@ -465,7 +411,7 @@ const CallsTab = () => {
                 <tr key={c.id}>
                   <td className="font-mono">{c.plate}</td>
                   <td className="text-xs text-slate-400">{c.ownerEmail}</td>
-                  <td className="font-mono">{c.callerMasked}</td>
+                  <td><MaskedPhone masked={c.callerMasked} callId={c.id} /></td>
                   <td><span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(c.status))}>{c.status}</span></td>
                   <td className="text-xs text-slate-400">{fmtDateTime(c.initiatedAt)}</td>
                   <td>{c.durationSec != null ? `${c.durationSec}s` : '—'}</td>
@@ -543,100 +489,100 @@ const BlockedTab = () => {
   );
 };
 
-// ── Sticker orders (fulfilment queue) ───────────────────────────────────────
-const ORDER_STATUS_FLOW: OrderRow['status'][] = ['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED'];
-
-const OrdersTab = () => {
-  const qc = useQueryClient();
+// ── Payments — every attempt (paid or failed), with contact details so
+// support can call a customer stuck mid-payment. ─────────────────────────────
+const PaymentsTab = () => {
   const [status, setStatus] = useState('');
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [q, setQ] = useState('');
+  const [qInput, setQInput] = useState('');
 
-  const { data, isLoading } = useQuery<{ items: OrderRow[] }>({
-    queryKey: ['admin-qr-orders', status],
-    queryFn: async () => (await api.get('/admin/qr/orders', { params: { status: status || undefined } })).data,
+  const { data, isLoading } = useQuery<{ items: PaymentRow[] }>({
+    queryKey: ['admin-qr-payments', status, q],
+    queryFn: async () => (await api.get('/admin/qr/payments', { params: { status: status || undefined, q: q || undefined } })).data,
   });
   const items = data?.items ?? [];
 
-  const setOrderStatus = useMutation({
-    mutationFn: ({ id, next }: { id: string; next: string }) =>
-      api.patch(`/admin/qr/orders/${id}/status`, { status: next }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-qr-orders'] }),
-  });
-
-  const nextStatus = (current: OrderRow['status']): OrderRow['status'] | null => {
-    const i = ORDER_STATUS_FLOW.indexOf(current);
-    return i >= 0 && i < ORDER_STATUS_FLOW.length - 1 ? ORDER_STATUS_FLOW[i + 1] : null;
-  };
-  const nextLabel: Record<string, string> = { CONFIRMED: 'Confirm payment', SHIPPED: 'Mark shipped', DELIVERED: 'Mark delivered' };
+  const summary = items.reduce(
+    (acc, p) => {
+      if (p.status === 'PAID') { acc.paidCount++; acc.paidTotal += Number(p.amount); }
+      else if (p.status === 'FAILED') acc.failedCount++;
+      return acc;
+    },
+    { paidCount: 0, paidTotal: 0, failedCount: 0 },
+  );
 
   return (
     <div className="space-y-4">
-      <select value={status} onChange={(e) => setStatus(e.target.value)} className="input w-48">
-        <option value="">All statuses</option>
-        {['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'].map((s) => <option key={s} value={s}>{s}</option>)}
-      </select>
+      <div className="flex flex-wrap items-center gap-3">
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="input w-48">
+          <option value="">All statuses</option>
+          {['CREATED', 'PAID', 'FAILED', 'REFUNDED'].map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <form
+          onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); }}
+          className="flex items-center gap-2"
+        >
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              placeholder="Search name, email, phone, plate, order id…"
+              className="input w-72 pl-8"
+            />
+          </div>
+          <button type="submit" className="btn-ghost text-sm">Search</button>
+          {q && <button type="button" onClick={() => { setQ(''); setQInput(''); }} className="text-xs font-semibold text-slate-500 hover:underline">Clear</button>}
+        </form>
+        <span className="ml-auto text-xs text-slate-400">
+          {summary.paidCount} paid (₹{summary.paidTotal.toFixed(0)}) · {summary.failedCount} failed, of {items.length} shown
+        </span>
+      </div>
 
       <div className="card overflow-x-auto">
         <table className="table">
           <thead>
-            <tr><th>Plate</th><th>Requested by</th><th>Price</th><th>Status</th><th>Requested</th><th /></tr>
+            <tr><th>Customer</th><th>Plate</th><th>Amount</th><th>Status</th><th>Gateway ref</th><th>When</th></tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr><td colSpan={6} className="py-6 text-center text-slate-400">Loading…</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={6} className="py-6 text-center text-slate-400">No sticker requests yet.</td></tr>
+              <tr><td colSpan={6} className="py-6 text-center text-slate-400">No payment attempts yet.</td></tr>
             ) : (
-              items.map((o) => {
-                const next = nextStatus(o.status);
-                return (
-                  <Fragment key={o.id}>
-                    <tr onClick={() => setExpanded((e) => (e === o.id ? null : o.id))} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                      <td className="font-mono font-semibold">{o.plate ?? '—'}</td>
-                      <td>
-                        <p className="font-medium">{o.ownerName}</p>
-                        <p className="text-xs text-slate-400">{o.ownerEmail}</p>
-                      </td>
-                      <td>₹{(o.stickerPricePaise / 100).toFixed(0)} + ₹{(o.monthlyPricePaise / 100).toFixed(0)}/mo</td>
-                      <td><span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(o.status))}>{o.status}</span></td>
-                      <td className="text-xs text-slate-400">{fmtDateTime(o.createdAt)}</td>
-                      <td className="text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-end gap-2">
-                          {next && (
-                            <button
-                              type="button"
-                              onClick={() => setOrderStatus.mutate({ id: o.id, next })}
-                              disabled={setOrderStatus.isPending}
-                              className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline disabled:opacity-50"
-                            >
-                              {next === 'SHIPPED' ? <Truck className="h-3 w-3" /> : <Package className="h-3 w-3" />} {nextLabel[next]}
-                            </button>
-                          )}
-                          {o.status !== 'CANCELLED' && o.status !== 'DELIVERED' && (
-                            <button
-                              type="button"
-                              onClick={() => setOrderStatus.mutate({ id: o.id, next: 'CANCELLED' })}
-                              disabled={setOrderStatus.isPending}
-                              className="text-xs font-semibold text-rose-600 hover:underline disabled:opacity-50"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    {expanded === o.id && (
-                      <tr className="bg-slate-50 dark:bg-slate-800/30">
-                        <td colSpan={6} className="px-3 py-3 text-sm">
-                          <p className="font-semibold">{o.shippingName} · {o.shippingPhone}</p>
-                          <p className="text-slate-500 dark:text-slate-400">{o.addressLine}, {o.city}, {o.state} — {o.pincode}</p>
-                          {o.note && <p className="mt-1 text-xs text-slate-400">Note: {o.note}</p>}
-                        </td>
-                      </tr>
+              items.map((p) => (
+                <tr key={p.id} className="align-top">
+                  <td>
+                    {p.customer ? (
+                      <>
+                        <p className="font-medium">{p.customer.name}</p>
+                        <p className="text-xs text-slate-400">{p.customer.email}</p>
+                        <p className="text-xs text-slate-400">
+                          {[p.customer.accountPhone, p.customer.shippingPhone].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).map((ph) => (
+                            <a key={ph} href={`tel:${ph}`} className="mr-2 text-brand-600 hover:underline">{ph}</a>
+                          ))}
+                        </p>
+                      </>
+                    ) : (
+                      <span className="text-slate-400">—</span>
                     )}
-                  </Fragment>
-                );
-              })
+                  </td>
+                  <td className="font-mono font-semibold">{p.customer?.plate ?? '—'}</td>
+                  <td>₹{Number(p.amount).toFixed(0)}</td>
+                  <td>
+                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(p.status))}>{p.status}</span>
+                    {p.status === 'FAILED' && p.failureReason && (
+                      <p className="mt-1 max-w-[220px] text-xs text-rose-500">{p.failureCode ? `${p.failureCode}: ` : ''}{p.failureReason}</p>
+                    )}
+                  </td>
+                  <td className="text-xs text-slate-400">
+                    {p.providerPaymentId && <p className="font-mono">{p.providerPaymentId}</p>}
+                    {p.providerOrderId && <p className="font-mono">{p.providerOrderId}</p>}
+                    <p className="mt-0.5 uppercase">{p.provider}</p>
+                  </td>
+                  <td className="text-xs text-slate-400">{fmtDateTime(p.createdAt)}</td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -644,3 +590,4 @@ const OrdersTab = () => {
     </div>
   );
 };
+

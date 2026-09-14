@@ -23,7 +23,6 @@ interface VehicleForm {
   ownerName: string;
   silentFrom: string;
   silentTo: string;
-  dailyReceiveCap: number;
   emergencyPublic: boolean;
   bloodGroup: string;
   medicalNotes: string;
@@ -36,7 +35,6 @@ const EMPTY: VehicleForm = {
   ownerName: '',
   silentFrom: '',
   silentTo: '',
-  dailyReceiveCap: 15,
   emergencyPublic: false,
   bloodGroup: '',
   medicalNotes: '',
@@ -81,7 +79,6 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle | nul
       ownerName:       vehicle.ownerName ?? '',
       silentFrom:      vehicle.silentFrom ?? '',
       silentTo:        vehicle.silentTo ?? '',
-      dailyReceiveCap: vehicle.dailyReceiveCap,
       emergencyPublic: vehicle.emergencyPublic,
       bloodGroup:      vehicle.bloodGroup ?? '',
       medicalNotes:    vehicle.medicalNotes ?? '',
@@ -98,7 +95,6 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle | nul
         ownerName:       vals.ownerName.trim() || undefined,
         silentFrom:      vals.silentFrom || undefined,
         silentTo:        vals.silentTo || undefined,
-        dailyReceiveCap: Number(vals.dailyReceiveCap) || 15,
         emergencyPublic: vals.emergencyPublic,
         bloodGroup:      vals.emergencyPublic ? (vals.bloodGroup || undefined) : undefined,
         medicalNotes:    vals.emergencyPublic ? (vals.medicalNotes.trim() || undefined) : undefined,
@@ -224,23 +220,6 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle | nul
                 <span className="text-slate-400">→</span>
                 <input type="time" className="input w-36 sm:w-40" {...register('silentTo')} />
               </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium">Max calls received per day</label>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                className={cn('input mt-1 w-28', errors.dailyReceiveCap && 'border-rose-500')}
-                {...register('dailyReceiveCap', {
-                  required: true,
-                  min: { value: 1, message: 'At least 1' },
-                  max: { value: 100, message: 'At most 100' },
-                  valueAsNumber: true,
-                })}
-              />
-              <p className="mt-1 text-xs text-slate-400">Caps how many calls you can receive on this car in a day.</p>
             </div>
           </section>
 

@@ -11,14 +11,18 @@
  * is a keyed HMAC used for the exact-match unique lookup so the raw plate is
  * never queried directly.
  */
-import type { EmergencyContact, Prisma, VehicleRegistration } from '@prisma/client';
+import type { EmergencyContact, Prisma, QrSticker, VehicleRegistration } from '@prisma/client';
 import type { RegisterVehicleInput } from '@ps/types';
+import { normalizePlate } from '@ps/types';
 import { prisma } from '../../lib/prisma.js';
 import { BadRequest, Conflict, NotFound } from '../../lib/http.js';
 import { decryptField, encryptField, hmacHash } from '../../lib/crypto.js';
 import type { UpdateVehicleInput } from './vehicles.schema.js';
 
-type RegistrationWithContacts = VehicleRegistration & { emergencyContacts: EmergencyContact[] };
+type RegistrationWithContacts = VehicleRegistration & {
+  emergencyContacts: EmergencyContact[];
+  qrStickers: Pick<QrSticker, 'id' | 'claimedAt'>[];
+};
 
 const toDTO = (row: RegistrationWithContacts) => ({
   id:              row.id,
@@ -26,13 +30,17 @@ const toDTO = (row: RegistrationWithContacts) => ({
   contactPhone:    decryptField(row.contactPhone),
   contactVerified: row.contactVerified,
   status:          row.status,
-  dailyReceiveCap: row.dailyReceiveCap,
   silentFrom:      row.silentFrom,
   silentTo:        row.silentTo,
   emergencyPublic: row.emergencyPublic,
   ownerName:       row.ownerName,
   bloodGroup:      row.bloodGroup,
   medicalNotes:    row.medicalNotes ? decryptField(row.medicalNotes) : null,
+  validUntil:      row.validUntil,
+  // Has the owner actually scanned + configured a physical QR sticker for
+  // this car yet? (Separate from having *bought* one — see qrOrders.)
+  qrLinked:        row.qrStickers.length > 0,
+  qrLinkedAt:      row.qrStickers[0]?.claimedAt ?? null,
   emergencyContacts: [...row.emergencyContacts]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((c) => ({
@@ -46,7 +54,10 @@ const toDTO = (row: RegistrationWithContacts) => ({
   updatedAt: row.updatedAt,
 });
 
-const INCLUDE = { emergencyContacts: true } satisfies Prisma.VehicleRegistrationInclude;
+const INCLUDE = {
+  emergencyContacts: true,
+  qrStickers: { where: { status: 'CLAIMED' }, select: { id: true, claimedAt: true }, take: 1 },
+} satisfies Prisma.VehicleRegistrationInclude;
 
 const findOwned = async (userId: string, id: string) => {
   const row = await prisma.vehicleRegistration.findUnique({ where: { id }, include: INCLUDE });
@@ -66,6 +77,20 @@ export const listVehicles = async (userId: string) => {
 export const getVehicle = async (userId: string, id: string) => {
   const row = await findOwned(userId, id);
   if (row.status === 'DELETED') throw NotFound('Vehicle not found');
+  return toDTO(row);
+};
+
+/**
+ * Used by the QR-sticker first-scan configure flow: once the owner types a
+ * plate, check whether they already have a saved registration for it (added
+ * earlier via My Vehicles, or a previous sticker) so the rest of the form —
+ * silent hours, ICE card — can be pre-filled instead of re-typed. Never
+ * reveals *whether* another account owns the plate, just "not found" either way.
+ */
+export const getVehicleByPlate = async (userId: string, plateRaw: string) => {
+  const plateHash = hmacHash(normalizePlate(plateRaw));
+  const row = await prisma.vehicleRegistration.findUnique({ where: { plateHash }, include: INCLUDE });
+  if (!row || row.userId !== userId || row.status === 'DELETED') throw NotFound('Vehicle not found');
   return toDTO(row);
 };
 
@@ -95,7 +120,8 @@ export const registerVehicle = async (userId: string, input: RegisterVehicleInpu
         ownerName:       input.ownerName || null,
         silentFrom:      input.silentFrom || null,
         silentTo:        input.silentTo || null,
-        dailyReceiveCap: input.dailyReceiveCap ?? 15,
+        // dailyReceiveCap column keeps its DB default — no longer settable
+        // per-car; the daily call cap is a global admin setting (lib/callDailyCap.ts).
         emergencyPublic: input.emergencyPublic,
         bloodGroup:      input.bloodGroup || null,
         medicalNotes:    input.medicalNotes ? encryptField(input.medicalNotes) : null,
@@ -127,7 +153,6 @@ export const updateVehicle = async (userId: string, id: string, input: UpdateVeh
   if (input.ownerName !== undefined)       data.ownerName       = input.ownerName || null;
   if (input.silentFrom !== undefined)      data.silentFrom      = input.silentFrom || null;
   if (input.silentTo !== undefined)        data.silentTo        = input.silentTo || null;
-  if (input.dailyReceiveCap !== undefined) data.dailyReceiveCap = input.dailyReceiveCap;
   if (input.emergencyPublic !== undefined) data.emergencyPublic = input.emergencyPublic;
   if (input.bloodGroup !== undefined)      data.bloodGroup      = input.bloodGroup || null;
   if (input.medicalNotes !== undefined) {

@@ -67,8 +67,14 @@ const schema = z.object({
   APPLE_KEY_ID: z.string().optional(),
   APPLE_PRIVATE_KEY: z.string().optional(),
 
+  // Razorpay — leave all three unset to run the built-in demo payment
+  // gateway (lib/paymentGateway/demo.ts): no real charge, same code paths,
+  // same DB rows. Set all three (dashboard: Settings -> API Keys, and
+  // Settings -> Webhooks for the secret) to switch to real payments — no
+  // code changes needed, see lib/paymentGateway/index.ts.
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
@@ -105,9 +111,24 @@ if (env.NODE_ENV === 'production') {
   if (/^0{64}$|^1{64}$|replace_with|change.?me|example/i.test(env.QR_DATA_KEY)) {
     problems.push('QR_DATA_KEY still looks like a placeholder — set a real random key (openssl rand -hex 32)');
   }
+  // Razorpay: either fully configured (all 3 vars) or fully unset (demo
+  // gateway) — a half-set combo would mean checkout works but verify/webhook
+  // silently breaks, which is worse than either clean state.
+  const rzpVars = [env.RAZORPAY_KEY_ID, env.RAZORPAY_KEY_SECRET, env.RAZORPAY_WEBHOOK_SECRET];
+  const rzpSetCount = rzpVars.filter(Boolean).length;
+  if (rzpSetCount > 0 && rzpSetCount < 3) {
+    problems.push('RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET must be set together, or not at all');
+  }
   if (problems.length > 0) {
     console.error('Refusing to start — production environment is misconfigured:');
     for (const p of problems) console.error(`  • ${p}`);
     process.exit(1);
+  }
+  if (rzpSetCount === 0) {
+    console.warn(
+      '[payments] RAZORPAY_KEY_ID/SECRET/WEBHOOK_SECRET are not set — running the DEMO payment gateway in ' +
+      'production. No real money moves; every "payment" is simulated on request. Set all three Razorpay ' +
+      'env vars to switch to real payments (see lib/paymentGateway).',
+    );
   }
 }
