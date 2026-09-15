@@ -12,6 +12,14 @@ name: Deploy to Vercel
 # entirely — the deploy is authenticated as the token's account, regardless
 # of who authored the commit. See DEPLOY.md for the full branch model.
 #
+# IMPORTANT — run every `vercel` command from the REPO ROOT, never cd'd into
+# the app subfolder. Each Vercel project already has its own Root Directory
+# configured in its dashboard settings (per DEPLOY.md); `vercel pull` fetches
+# that into .vercel/project.json, and `vercel build`/`deploy` apply it
+# relative to the current directory. cd-ing into the subfolder first makes
+# Vercel apply Root Directory AGAIN on top, producing a doubled, nonexistent
+# path (e.g. parking_space_frontend_admin/parking_space_frontend_admin).
+#
 # Required GitHub Secrets (Settings → Secrets and variables → Actions):
 #   VERCEL_TOKEN               Account-wide token (Vercel → Account Settings → Tokens)
 #   VERCEL_ORG_ID               Team ID (or personal "Your ID") that owns the projects
@@ -52,32 +60,26 @@ jobs:
 
       - name: Pull Vercel project settings (production)
         if: github.ref_name == 'main'
-        working-directory: parking_space_frontend_admin
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Pull Vercel project settings (preview)
         if: github.ref_name == 'stage'
-        working-directory: parking_space_frontend_admin
         run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
 
       - name: Build (production)
         if: github.ref_name == 'main'
-        working-directory: parking_space_frontend_admin
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Build (preview)
         if: github.ref_name == 'stage'
-        working-directory: parking_space_frontend_admin
         run: vercel build --token="$VERCEL_TOKEN"
 
       - name: Deploy (production)
         if: github.ref_name == 'main'
-        working-directory: parking_space_frontend_admin
         run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy (preview, tagged as stage branch)
         if: github.ref_name == 'stage'
-        working-directory: parking_space_frontend_admin
         env:
           VERCEL_GIT_COMMIT_REF: stage
           VERCEL_GIT_COMMIT_SHA: ${{ github.sha }}
@@ -98,32 +100,26 @@ jobs:
 
       - name: Pull Vercel project settings (production)
         if: github.ref_name == 'main'
-        working-directory: parking_space_frontend_vendor
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Pull Vercel project settings (preview)
         if: github.ref_name == 'stage'
-        working-directory: parking_space_frontend_vendor
         run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
 
       - name: Build (production)
         if: github.ref_name == 'main'
-        working-directory: parking_space_frontend_vendor
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Build (preview)
         if: github.ref_name == 'stage'
-        working-directory: parking_space_frontend_vendor
         run: vercel build --token="$VERCEL_TOKEN"
 
       - name: Deploy (production)
         if: github.ref_name == 'main'
-        working-directory: parking_space_frontend_vendor
         run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy (preview, tagged as stage branch)
         if: github.ref_name == 'stage'
-        working-directory: parking_space_frontend_vendor
         env:
           VERCEL_GIT_COMMIT_REF: stage
           VERCEL_GIT_COMMIT_SHA: ${{ github.sha }}
@@ -147,13 +143,10 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Pull Vercel project settings (production — stage IS this project's production branch)
-        working-directory: parking_space_frontend
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build
-        working-directory: parking_space_frontend
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy
-        working-directory: parking_space_frontend
         run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
