@@ -1,0 +1,159 @@
+name: Deploy to Vercel
+
+# Deploys admin, vendor, and (stage-only) customer to Vercel via the CLI,
+# authenticated with an account-wide VERCEL_TOKEN — instead of relying on
+# Vercel's own "deploy on git push" integration.
+#
+# Why: the Vercel projects live under a different account (client's) than
+# the GitHub account committers push from. On the Hobby plan, Vercel blocks
+# git-push-triggered deploys from any commit author who isn't that account's
+# own owner/team member on a private repo ("commit author did not have
+# contributing access"). Deploying via API token sidesteps that check
+# entirely — the deploy is authenticated as the token's account, regardless
+# of who authored the commit. See DEPLOY.md for the full branch model.
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   VERCEL_TOKEN               Account-wide token (Vercel → Account Settings → Tokens)
+#   VERCEL_ORG_ID               Team ID (or personal "Your ID") that owns the projects
+#   VERCEL_PROJECT_ID_ADMIN      Admin project's Project ID
+#   VERCEL_PROJECT_ID_VENDOR     Vendor project's Project ID
+#   VERCEL_PROJECT_ID_CUSTOMER   Customer project's Project ID
+#
+# Branch model (matches DEPLOY.md):
+#   push to `main`  → admin + vendor deploy to PRODUCTION (admin/vendor.autosahay.com).
+#                     Customer is NOT deployed here — prod customer lives on
+#                     Hostinger via deploy.yml.
+#   push to `stage` → admin + vendor deploy as PREVIEW deployments, explicitly
+#                     tagged with the `stage` branch so Vercel's "Git Branch"
+#                     domain pinning (stageadmin/stagevendor.autosahay.com)
+#                     picks them up.
+#                     Customer's Vercel project has its OWN Production Branch
+#                     set to `stage` (see DEPLOY.md), so its stage push is a
+#                     PRODUCTION deploy for that project — that's what puts it
+#                     on stagecustomer.autosahay.com.
+
+on:
+  push:
+    branches: [stage, main]
+
+jobs:
+  deploy-admin:
+    name: Admin (Vercel)
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel project settings (production)
+        if: github.ref_name == 'main'
+        working-directory: parking_space_frontend_admin
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Pull Vercel project settings (preview)
+        if: github.ref_name == 'stage'
+        working-directory: parking_space_frontend_admin
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      - name: Build (production)
+        if: github.ref_name == 'main'
+        working-directory: parking_space_frontend_admin
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Build (preview)
+        if: github.ref_name == 'stage'
+        working-directory: parking_space_frontend_admin
+        run: vercel build --token="$VERCEL_TOKEN"
+
+      - name: Deploy (production)
+        if: github.ref_name == 'main'
+        working-directory: parking_space_frontend_admin
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy (preview, tagged as stage branch)
+        if: github.ref_name == 'stage'
+        working-directory: parking_space_frontend_admin
+        env:
+          VERCEL_GIT_COMMIT_REF: stage
+          VERCEL_GIT_COMMIT_SHA: ${{ github.sha }}
+        run: vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+
+  deploy-vendor:
+    name: Vendor (Vercel)
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_VENDOR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel project settings (production)
+        if: github.ref_name == 'main'
+        working-directory: parking_space_frontend_vendor
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Pull Vercel project settings (preview)
+        if: github.ref_name == 'stage'
+        working-directory: parking_space_frontend_vendor
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      - name: Build (production)
+        if: github.ref_name == 'main'
+        working-directory: parking_space_frontend_vendor
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Build (preview)
+        if: github.ref_name == 'stage'
+        working-directory: parking_space_frontend_vendor
+        run: vercel build --token="$VERCEL_TOKEN"
+
+      - name: Deploy (production)
+        if: github.ref_name == 'main'
+        working-directory: parking_space_frontend_vendor
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy (preview, tagged as stage branch)
+        if: github.ref_name == 'stage'
+        working-directory: parking_space_frontend_vendor
+        env:
+          VERCEL_GIT_COMMIT_REF: stage
+          VERCEL_GIT_COMMIT_SHA: ${{ github.sha }}
+        run: vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+
+  deploy-customer:
+    name: Customer (Vercel, stage only)
+    # Customer's OWN Vercel project has Production Branch = `stage` (see
+    # DEPLOY.md) — production customer traffic is served from Hostinger, not
+    # this project, so `main` never touches it here.
+    if: github.ref_name == 'stage'
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_CUSTOMER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel project settings (production — stage IS this project's production branch)
+        working-directory: parking_space_frontend
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build
+        working-directory: parking_space_frontend
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy
+        working-directory: parking_space_frontend
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
