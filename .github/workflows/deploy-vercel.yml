@@ -55,6 +55,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Vercel still inspects git-commit metadata even for CLI/token-triggered
+      # deploys and blocks it under the same Hobby-plan "commit author must be
+      # a contributor" rule that blocks git-push deploys. Removing .git here
+      # leaves nothing for it to inspect — the deploy becomes purely
+      # token-authenticated. Explicit VERCEL_GIT_COMMIT_REF/SHA env vars below
+      # (where set) are what carries branch info now, since there's no git
+      # repo left to infer it from.
+      - name: Strip git metadata
+        run: rm -rf .git
+
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
@@ -94,6 +104,16 @@ jobs:
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_VENDOR }}
     steps:
       - uses: actions/checkout@v4
+
+      # Vercel still inspects git-commit metadata even for CLI/token-triggered
+      # deploys and blocks it under the same Hobby-plan "commit author must be
+      # a contributor" rule that blocks git-push deploys. Removing .git here
+      # leaves nothing for it to inspect — the deploy becomes purely
+      # token-authenticated. Explicit VERCEL_GIT_COMMIT_REF/SHA env vars below
+      # (where set) are what carries branch info now, since there's no git
+      # repo left to infer it from.
+      - name: Strip git metadata
+        run: rm -rf .git
 
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
@@ -138,6 +158,16 @@ jobs:
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_CUSTOMER }}
     steps:
       - uses: actions/checkout@v4
+
+      # Vercel still inspects git-commit metadata even for CLI/token-triggered
+      # deploys and blocks it under the same Hobby-plan "commit author must be
+      # a contributor" rule that blocks git-push deploys. Removing .git here
+      # leaves nothing for it to inspect — the deploy becomes purely
+      # token-authenticated. Explicit VERCEL_GIT_COMMIT_REF/SHA env vars below
+      # (where set) are what carries branch info now, since there's no git
+      # repo left to infer it from.
+      - name: Strip git metadata
+        run: rm -rf .git
 
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
