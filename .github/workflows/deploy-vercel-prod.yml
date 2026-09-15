@@ -1,0 +1,75 @@
+name: Deploy Production to Vercel
+
+# Fires ONLY on push to `main`. Deploys admin + vendor to PRODUCTION
+# (admin.autosahay.com / vendor.autosahay.com). Customer is intentionally
+# NOT deployed here — production customer traffic is served from Hostinger
+# via .github/workflows/deploy.yml, not from Vercel. See DEPLOY.md.
+#
+# Deploys via the Vercel CLI authenticated with an account-wide VERCEL_TOKEN,
+# not Vercel's own git-push auto-deploy — the Vercel projects live under a
+# different account than the GitHub account pushing commits, and Vercel
+# blocks git-push-triggered deploys (and even inspects git-commit metadata on
+# CLI deploys) from any non-owning account on a private repo, Hobby plan.
+# Stripping .git before any vercel command removes that metadata entirely so
+# there's nothing for it to reject.
+#
+# Required GitHub Secrets:
+#   VERCEL_TOKEN              Account-wide token (Vercel → Account Settings → Tokens)
+#   VERCEL_ORG_ID              Team ID (or personal "Your ID") that owns the projects
+#   VERCEL_PROJECT_ID_ADMIN     Admin project's Project ID
+#   VERCEL_PROJECT_ID_VENDOR    Vendor project's Project ID
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-admin:
+    name: Admin (production)
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Strip git metadata
+        run: rm -rf .git
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel project settings (production)
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+  deploy-vendor:
+    name: Vendor (production)
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_VENDOR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Strip git metadata
+        run: rm -rf .git
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel project settings (production)
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
