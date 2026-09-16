@@ -32,6 +32,18 @@ const schema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
 
+  // AES-256-GCM key for QR Calling PII (plate/phone/medical notes) + keyed
+  // lookup hashes — 64 hex chars (32 bytes). Generate with `openssl rand -hex 32`.
+  QR_DATA_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'QR_DATA_KEY must be a 64-character hex string (openssl rand -hex 32)'),
+
+  // QR Calling telephony — swappable adapter (lib/callProviders). 'mock' needs
+  // no vendor account and simulates a real call lifecycle; set to a real
+  // provider's name once one is chosen and its adapter is added.
+  CALL_PROVIDER: z.string().default('mock'),
+  // Platform-wide cost guard — total calls/day across all cars, independent
+  // of the per-registration/per-caller/per-IP limits below it in calls.service.
+  CALL_GLOBAL_DAILY_CAP: z.coerce.number().int().positive().default(2000),
+
   COOKIE_DOMAIN: z.string().default('localhost'),
   COOKIE_SECURE: boolFromString.default(false),
 
@@ -55,8 +67,13 @@ const schema = z.object({
   APPLE_KEY_ID: z.string().optional(),
   APPLE_PRIVATE_KEY: z.string().optional(),
 
+  // Razorpay — required for any payment endpoint to work (getGateway() throws
+  // without them, see lib/paymentGateway/index.ts). Optional at the schema
+  // level only so the server can still boot for unrelated local dev work;
+  // production requires all three (checked below).
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
@@ -89,6 +106,17 @@ if (env.NODE_ENV === 'production') {
   }
   if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
     problems.push('JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different values');
+  }
+  if (/^0{64}$|^1{64}$|replace_with|change.?me|example/i.test(env.QR_DATA_KEY)) {
+    problems.push('QR_DATA_KEY still looks like a placeholder — set a real random key (openssl rand -hex 32)');
+  }
+  // Razorpay: all three required in production — there's no fallback gateway,
+  // so a missing/partial config means every payment endpoint 500s at request
+  // time instead of failing loudly at boot, which is worse.
+  const rzpVars = [env.RAZORPAY_KEY_ID, env.RAZORPAY_KEY_SECRET, env.RAZORPAY_WEBHOOK_SECRET];
+  const rzpSetCount = rzpVars.filter(Boolean).length;
+  if (rzpSetCount < 3) {
+    problems.push('RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET must all be set — there is no demo/fallback gateway');
   }
   if (problems.length > 0) {
     console.error('Refusing to start — production environment is misconfigured:');

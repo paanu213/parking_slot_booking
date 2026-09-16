@@ -4,14 +4,21 @@
  * customers, amenities, admin-user management and commission settings.
  * All persistence goes through Prisma; no HTTP concerns live here.
  */
+import { nanoid } from 'nanoid';
+import { normalizePlate } from '@ps/types';
 import { prisma } from '../../lib/prisma.js';
-import { BadRequest, NotFound } from '../../lib/http.js';
+import { env } from '../../config/env.js';
+import { BadRequest, Conflict, NotFound } from '../../lib/http.js';
 import { hashPassword } from '../../lib/password.js';
 import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, setCommissionRate } from '../../lib/commission.js';
+import { getCallDailyCap, setCallDailyCap } from '../../lib/callDailyCap.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { storeImageBuffer, deleteImageByUrl, deleteDocumentByUrl } from '../../lib/images.js';
 import { parsePendingEdits, mergePendingEdits } from '../../lib/pendingEdits.js';
+import { decryptField, encryptField, hmacHash } from '../../lib/crypto.js';
+import { getGateway } from '../../lib/paymentGateway/index.js';
+import { generateStickerBatchPdf } from '../../lib/stickerPdf.js';
 import type {
   UpdateVendorInput,
   VendorLeadStatusInput,
@@ -26,6 +33,9 @@ import type {
   UpdateGuestCustomerInput,
   CreateAdminInput,
   CommissionStatusInput,
+  ReassignVehicleInput,
+  GenerateQrBatchInput,
+  UpdateQrBatchInput,
 } from './admin.schema.js';
 
 const ADMIN_USER_SELECT = { fullName: true, email: true, phone: true, status: true } as const;
@@ -936,7 +946,9 @@ export const refundBooking = async (id: string, actorId: string, body: RefundInp
   const { amount, note } = body;
   const booking = await prisma.booking.findUniqueOrThrow({
     where: { id },
-    include: { payments: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    // Only ever refund an actually-PAID attempt — a later FAILED/CREATED
+    // retry row must never be the one that gets stamped REFUNDED.
+    include: { payments: { where: { status: 'PAID' }, orderBy: { createdAt: 'desc' }, take: 1 } },
   });
 
   if (amount > Number(booking.totalAmount)) {
@@ -944,8 +956,9 @@ export const refundBooking = async (id: string, actorId: string, body: RefundInp
   }
 
   if (booking.isDirectBooking) {
-    // Use `as any` because Prisma client may not yet be regenerated for the new refund fields
-    const updated = await (prisma.booking.update as any)({
+    // Cash/offline booking — no online payment exists, nothing to refund at
+    // a gateway; this is purely a bookkeeping record.
+    const updated = await prisma.booking.update({
       where: { id },
       data: { refundAmount: amount, refundedAt: new Date(), refundNote: note ?? null },
     });
@@ -959,24 +972,34 @@ export const refundBooking = async (id: string, actorId: string, body: RefundInp
     return updated;
   }
 
-  // Online booking — store refund on the Payment record
+  // Online booking — must actually refund at the gateway before the DB ever
+  // says REFUNDED. Never trust a client/admin click alone to mean money moved.
   const payment = booking.payments[0];
-  if (!payment) throw BadRequest('No payment record found for this booking');
+  if (!payment) throw BadRequest('No paid payment record found for this booking');
+  if (!payment.providerPaymentId) throw BadRequest('Payment has no gateway reference — cannot refund');
 
-  const updatedPayment = await (prisma.payment.update as any)({
+  const gateway = getGateway();
+  const refund = await gateway.refund({
+    paymentId: payment.providerPaymentId,
+    amountPaise: Math.round(amount * 100),
+    notes: { bookingId: booking.id, reason: note ?? '' },
+  });
+
+  const updatedPayment = await prisma.payment.update({
     where: { id: payment.id },
     data: {
-      refundAmount: amount,
-      refundedAt:   new Date(),
-      refundNote:   note ?? null,
-      status:       'REFUNDED',
+      refundAmount:     amount,
+      refundedAt:       new Date(),
+      refundNote:       note ?? null,
+      status:           'REFUNDED',
+      providerRefundId: refund.providerRefundId,
     },
   });
   await prisma.auditLog.create({
     data: {
       actorId, action: 'PAYMENT_REFUND',
       entity: 'Payment', entityId: payment.id,
-      metadata: JSON.stringify({ amount, note }),
+      metadata: JSON.stringify({ amount, note, providerRefundId: refund.providerRefundId, gatewayStatus: refund.status }),
     },
   });
   return updatedPayment;
@@ -1437,6 +1460,20 @@ export const updateCommissionSetting = async (actorId: string, rateRaw: number) 
   return { rate };
 };
 
+// ── QR Calling: global daily call cap (platform-wide, not per-vehicle) ────────
+export const getCallDailyCapSetting = async () => {
+  const dailyCap = await getCallDailyCap();
+  return { dailyCap };
+};
+
+export const updateCallDailyCapSetting = async (actorId: string, dailyCapRaw: number) => {
+  const dailyCap = await setCallDailyCap(Number(dailyCapRaw));
+  await prisma.auditLog.create({
+    data: { actorId, action: 'QR_CALL_DAILY_CAP_UPDATE', entity: 'Setting', entityId: 'qr_call_daily_cap', metadata: JSON.stringify({ dailyCap }) },
+  });
+  return { dailyCap };
+};
+
 export const setBookingCommissionStatus = async (
   id: string,
   actorId: string,
@@ -1543,4 +1580,963 @@ export const commissionBookings = async (
       spaceName: b.slot?.location?.name ?? '—',
     })),
   };
+};
+
+// ── QR Calling — admin console ──────────────────────────────────────────────
+// Registrations, dispute reassignment, call log / abuse review, spend.
+// Same convention as the rest of this file: bounded `take`, no cursor paging.
+// Plate/phone/medical-notes are application-encrypted (lib/crypto.ts) — every
+// list here decrypts for display, which is why plate/owner-name search below
+// runs in memory after decrypt rather than as a SQL `contains`.
+
+const qrMaskPhone = (p: string): string => (p.length > 4 ? `••••${p.slice(-4)}` : '••••');
+
+export const qrOverview = async () => {
+  const today = resolveDateRange('day')!;
+  const last30Days = { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
+
+  const [
+    totalRegistrations, activeRegistrations, pausedRegistrations, emergencyEnabled,
+    callsToday, callsTotal, answeredTotal, failedTotal, blockedNumbersCount,
+    durationAgg, spendTodayAgg, busiestCarsRaw, topCallersRaw,
+    revenueAgg, refundAgg,
+  ] = await Promise.all([
+    prisma.vehicleRegistration.count({ where: { status: { not: 'DELETED' } } }),
+    prisma.vehicleRegistration.count({ where: { status: 'ACTIVE' } }),
+    prisma.vehicleRegistration.count({ where: { status: 'PAUSED' } }),
+    prisma.vehicleRegistration.count({ where: { status: { not: 'DELETED' }, emergencyPublic: true } }),
+    prisma.callSession.count({ where: { createdAt: { gte: today.gte, lte: today.lte } } }),
+    prisma.callSession.count(),
+    prisma.callSession.count({ where: { answeredAt: { not: null } } }),
+    prisma.callSession.count({ where: { status: { in: ['FAILED', 'NO_ANSWER', 'BUSY', 'OWNER_REJECTED', 'BLOCKED'] } } }),
+    prisma.blockedNumber.count(),
+    prisma.callSession.aggregate({ _avg: { durationSec: true }, where: { durationSec: { not: null } } }),
+    prisma.callSession.aggregate({ _sum: { costPaise: true }, where: { createdAt: { gte: today.gte, lte: today.lte } } }),
+    prisma.callSession.groupBy({
+      by: ['registrationId'],
+      _count: { _all: true },
+      orderBy: { _count: { registrationId: 'desc' } },
+      take: 5,
+    }),
+    prisma.callSession.groupBy({
+      by: ['callerPhoneHash'],
+      where: { callerPhoneHash: { not: null }, createdAt: last30Days },
+      _count: { _all: true },
+      orderBy: { _count: { callerPhoneHash: 'desc' } },
+      take: 5,
+    }),
+    // Gross intake from sticker orders — PAID and REFUNDED both actually
+    // received the money at checkout; refundedPaise below is what went back out.
+    prisma.qrOrder.aggregate({
+      where: { paymentStatus: { in: ['PAID', 'REFUNDED'] } },
+      _sum: { stickerPricePaise: true, monthlyPricePaise: true },
+    }),
+    prisma.payment.aggregate({
+      where: { qrOrderId: { not: null }, refundAmount: { not: null } },
+      _sum: { refundAmount: true },
+    }),
+  ]);
+
+  const busiestCars = await Promise.all(
+    busiestCarsRaw.map(async (g) => {
+      const reg = await prisma.vehicleRegistration.findUnique({ where: { id: g.registrationId } });
+      return { registrationId: g.registrationId, plate: reg ? decryptField(reg.plateNumber) : '—', calls: g._count._all };
+    }),
+  );
+
+  const topCallers = await Promise.all(
+    topCallersRaw
+      .filter((g): g is typeof g & { callerPhoneHash: string } => !!g.callerPhoneHash)
+      .map(async (g) => {
+        const sample = await prisma.callSession.findFirst({
+          where:   { callerPhoneHash: g.callerPhoneHash },
+          orderBy: { createdAt: 'desc' },
+        });
+        return {
+          callerPhoneHash: g.callerPhoneHash,
+          callerMasked:    sample ? qrMaskPhone(decryptField(sample.callerPhone)) : '••••',
+          calls:           g._count._all,
+          sampleCallId:    sample?.id ?? null,
+        };
+      }),
+  );
+
+  return {
+    totalRegistrations, activeRegistrations, pausedRegistrations, emergencyEnabled,
+    callsToday, callsTotal,
+    answerRate:     callsTotal > 0 ? Math.round((answeredTotal / callsTotal) * 100) : 0,
+    avgDurationSec: durationAgg._avg.durationSec ? Math.round(durationAgg._avg.durationSec) : 0,
+    failedTotal, blockedNumbersCount,
+    spendTodayPaise: spendTodayAgg._sum.costPaise ?? 0,
+    revenuePaise: (revenueAgg._sum.stickerPricePaise ?? 0) + (revenueAgg._sum.monthlyPricePaise ?? 0),
+    refundedPaise: Math.round(Number(refundAgg._sum.refundAmount ?? 0) * 100),
+    busiestCars, topCallers,
+  };
+};
+
+export const listQrVehicles = async (search?: string, status?: string) => {
+  const rows = await prisma.vehicleRegistration.findMany({
+    where: status ? { status: status as any } : { status: { not: 'DELETED' } },
+    include: {
+      user:   { select: { id: true, fullName: true, email: true, phone: true } },
+      _count: { select: { calls: true, emergencyContacts: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 300,
+  });
+
+  const items = rows.map((r) => ({
+    id:                    r.id,
+    plateNumber:           decryptField(r.plateNumber),
+    contactPhone:          decryptField(r.contactPhone),
+    contactVerified:       r.contactVerified,
+    status:                r.status,
+    emergencyPublic:       r.emergencyPublic,
+    ownerName:             r.ownerName,
+    validUntil:            r.validUntil,
+    callCount:             r._count.calls,
+    emergencyContactCount: r._count.emergencyContacts,
+    owner:                 r.user,
+    createdAt:             r.createdAt,
+  }));
+
+  const q = (search ?? '').trim().toLowerCase();
+  if (!q) return { items };
+  return {
+    items: items.filter((v) =>
+      v.plateNumber.toLowerCase().includes(q) ||
+      v.owner.email.toLowerCase().includes(q) ||
+      v.owner.fullName.toLowerCase().includes(q) ||
+      (v.ownerName ?? '').toLowerCase().includes(q),
+    ),
+  };
+};
+
+export const getQrVehicle = async (id: string) => {
+  const r = await prisma.vehicleRegistration.findUnique({
+    where:   { id },
+    include: {
+      user:              { select: { id: true, fullName: true, email: true, phone: true } },
+      emergencyContacts: { orderBy: { sortOrder: 'asc' } },
+      calls:             { orderBy: { initiatedAt: 'desc' }, take: 50 },
+    },
+  });
+  if (!r) throw NotFound('Vehicle not found');
+
+  return {
+    id:              r.id,
+    plateNumber:     decryptField(r.plateNumber),
+    contactPhone:    decryptField(r.contactPhone),
+    contactVerified: r.contactVerified,
+    status:          r.status,
+    isActive:        r.isActive,
+    silentFrom:      r.silentFrom,
+    silentTo:        r.silentTo,
+    emergencyPublic: r.emergencyPublic,
+    ownerName:       r.ownerName,
+    bloodGroup:      r.bloodGroup,
+    medicalNotes:    r.medicalNotes ? decryptField(r.medicalNotes) : null,
+    validUntil:      r.validUntil,
+    owner:           r.user,
+    emergencyContacts: r.emergencyContacts.map((c) => ({
+      id: c.id, name: c.name, relation: c.relation, phone: decryptField(c.phone), showPublic: c.showPublic,
+    })),
+    calls: r.calls.map((c) => ({
+      id: c.id, status: c.status, provider: c.provider,
+      initiatedAt: c.initiatedAt, answeredAt: c.answeredAt, endedAt: c.endedAt, durationSec: c.durationSec,
+      callerMasked: qrMaskPhone(decryptField(c.callerPhone)),
+    })),
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+};
+
+/** Dispute resolution — plate belongs to a different real owner than whoever registered it first. */
+export const reassignQrVehicle = async (id: string, actorId: string, input: ReassignVehicleInput) => {
+  const registration = await prisma.vehicleRegistration.findUnique({ where: { id } });
+  if (!registration) throw NotFound('Vehicle not found');
+
+  const newOwner = await prisma.user.findUnique({ where: { email: input.ownerEmail } });
+  if (!newOwner) throw NotFound('No account found with that email — the new owner needs an AutoSahay account first');
+  if (newOwner.id === registration.userId) throw Conflict('This car is already registered to that account');
+
+  const updated = await prisma.vehicleRegistration.update({ where: { id }, data: { userId: newOwner.id } });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action:   'QR_VEHICLE_REASSIGN',
+      entity:   'VehicleRegistration',
+      entityId: id,
+      metadata: JSON.stringify({ fromUserId: registration.userId, toUserId: newOwner.id, note: input.note ?? null }),
+    },
+  });
+
+  return getQrVehicle(updated.id);
+};
+
+/**
+ * Sets (or clears, with `null`) the QR sticker's validity end date for this
+ * car — the one-time sticker fee is lifetime by default; this is the
+ * individual-terms override. Past the date, scan.service treats the sticker
+ * like a paused registration (calls stop resolving) until admin extends or
+ * clears it again.
+ */
+export const setVehicleValidity = async (id: string, actorId: string, validUntil: Date | null) => {
+  const registration = await prisma.vehicleRegistration.findUnique({ where: { id } });
+  if (!registration) throw NotFound('Vehicle not found');
+
+  const updated = await prisma.vehicleRegistration.update({ where: { id }, data: { validUntil } });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action:   'QR_VEHICLE_SET_VALIDITY',
+      entity:   'VehicleRegistration',
+      entityId: id,
+      metadata: JSON.stringify({ from: registration.validUntil, to: validUntil }),
+    },
+  });
+
+  return getQrVehicle(updated.id);
+};
+
+/** Admin pause/resume — same effect as the owner's own toggle in My Vehicles. */
+export const setQrVehicleStatus = async (id: string, actorId: string, status: 'ACTIVE' | 'PAUSED') => {
+  const registration = await prisma.vehicleRegistration.findUnique({ where: { id } });
+  if (!registration) throw NotFound('Vehicle not found');
+  if (registration.status === 'DELETED') throw BadRequest('This registration has been deleted');
+
+  const updated = await prisma.vehicleRegistration.update({
+    where: { id },
+    data:  { status, isActive: status === 'ACTIVE' },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId,
+      action:   status === 'PAUSED' ? 'QR_VEHICLE_PAUSE' : 'QR_VEHICLE_RESUME',
+      entity:   'VehicleRegistration',
+      entityId: id,
+    },
+  });
+
+  return getQrVehicle(updated.id);
+};
+
+/** Admin correcting the number a scan rings — e.g. the owner lost that phone. */
+export const updateQrVehicleContact = async (id: string, actorId: string, contactPhone: string) => {
+  const registration = await prisma.vehicleRegistration.findUnique({ where: { id } });
+  if (!registration) throw NotFound('Vehicle not found');
+  if (registration.status === 'DELETED') throw BadRequest('This registration has been deleted');
+
+  const updated = await prisma.vehicleRegistration.update({
+    where: { id },
+    data:  { contactPhone: encryptField(contactPhone) },
+  });
+
+  await prisma.auditLog.create({
+    data: { actorId, action: 'QR_VEHICLE_CONTACT_UPDATE', entity: 'VehicleRegistration', entityId: id },
+  });
+
+  return getQrVehicle(updated.id);
+};
+
+export const listQrCalls = async (statusFilter?: string) => {
+  const rows = await prisma.callSession.findMany({
+    where: statusFilter ? { status: statusFilter as any } : {},
+    include: {
+      registration: { select: { plateNumber: true, user: { select: { email: true } } } },
+    },
+    orderBy: { initiatedAt: 'desc' },
+    take: 500,
+  });
+
+  return {
+    items: rows.map((c) => ({
+      id:           c.id,
+      status:       c.status,
+      provider:     c.provider,
+      initiatedAt:  c.initiatedAt,
+      answeredAt:   c.answeredAt,
+      endedAt:      c.endedAt,
+      durationSec:  c.durationSec,
+      costPaise:    c.costPaise,
+      callerMasked: qrMaskPhone(decryptField(c.callerPhone)),
+      plate:        decryptField(c.registration.plateNumber),
+      ownerEmail:   c.registration.user.email,
+    })),
+  };
+};
+
+/**
+ * On-demand reveal of a caller's full number (normally shown masked to
+ * everyone except when explicitly requested). Never bulk-shipped in list
+ * responses — one call, one row, logged to the audit trail each time so
+ * there's a record of who looked up a customer's number and when.
+ */
+export const revealQrCallerNumber = async (callId: string, actorId: string) => {
+  const session = await prisma.callSession.findUnique({ where: { id: callId } });
+  if (!session) throw NotFound('Call not found');
+  const callerNumber = decryptField(session.callerPhone);
+  await prisma.auditLog.create({
+    data: { actorId, action: 'QR_CALLER_NUMBER_REVEAL', entity: 'CallSession', entityId: callId },
+  });
+  return { callerNumber };
+};
+
+/** Admin-side global block — scoped to a specific call so no raw phone entry is needed. */
+export const blockQrCallGlobally = async (callId: string, actorId: string, reason?: string) => {
+  const session = await prisma.callSession.findUnique({ where: { id: callId } });
+  if (!session || !session.callerPhoneHash) throw NotFound('Call not found');
+
+  const existing = await prisma.blockedNumber.findFirst({
+    where: { phoneHash: session.callerPhoneHash, scope: 'GLOBAL' },
+  });
+  if (!existing) {
+    await prisma.blockedNumber.create({
+      data: { phoneHash: session.callerPhoneHash, scope: 'GLOBAL', reason: reason ?? null, createdById: actorId },
+    });
+    await prisma.auditLog.create({
+      data: { actorId, action: 'QR_NUMBER_BLOCK_GLOBAL', entity: 'CallSession', entityId: callId },
+    });
+  }
+  return { blocked: true };
+};
+
+// BlockedNumber has no Prisma relations (plain registrationId/createdById
+// columns) — resolve display names with a couple of batched lookups instead.
+export const listQrBlockedNumbers = async () => {
+  const rows = await prisma.blockedNumber.findMany({ orderBy: { createdAt: 'desc' }, take: 300 });
+
+  const regIds   = [...new Set(rows.map((r) => r.registrationId).filter((x): x is string => !!x))];
+  const adminIds = [...new Set(rows.map((r) => r.createdById).filter((x): x is string => !!x))];
+
+  const [regs, admins] = await Promise.all([
+    regIds.length   ? prisma.vehicleRegistration.findMany({ where: { id: { in: regIds } } }) : Promise.resolve([]),
+    adminIds.length ? prisma.user.findMany({ where: { id: { in: adminIds } }, select: { id: true, fullName: true } }) : Promise.resolve([]),
+  ]);
+  const regMap   = new Map(regs.map((r) => [r.id, decryptField(r.plateNumber)]));
+  const adminMap = new Map(admins.map((a) => [a.id, a.fullName]));
+
+  return {
+    items: rows.map((r) => ({
+      id:        r.id,
+      scope:     r.scope,
+      reason:    r.reason,
+      plate:     r.registrationId ? (regMap.get(r.registrationId) ?? '—') : null,
+      blockedBy: r.createdById ? (adminMap.get(r.createdById) ?? '—') : 'Owner',
+      createdAt: r.createdAt,
+    })),
+  };
+};
+
+export const unblockQrNumber = async (id: string, actorId: string) => {
+  const row = await prisma.blockedNumber.findUnique({ where: { id } });
+  if (!row) throw NotFound('Block entry not found');
+  await prisma.blockedNumber.delete({ where: { id } });
+  await prisma.auditLog.create({
+    data: { actorId, action: 'QR_NUMBER_UNBLOCK', entity: 'BlockedNumber', entityId: id },
+  });
+  return { unblocked: true };
+};
+
+// ── QR sticker requests — fulfilment queue ──────────────────────────────────
+// Requests come in with no online charge (payment paused sitewide); admin
+// confirms payment was collected offline, then ships.
+
+export const listQrOrders = async (params: { status?: string; paymentStatus?: string }) => {
+  const { status, paymentStatus } = params;
+  // paymentStatus accepts a comma-separated list (e.g. "PAID,REFUNDED") so the
+  // fulfilment queue can show both without a second round trip.
+  const paymentStatuses = paymentStatus ? paymentStatus.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+  const rows = await prisma.qrOrder.findMany({
+    where: {
+      ...(status ? { status: status as any } : {}),
+      ...(paymentStatuses ? { paymentStatus: { in: paymentStatuses as any } } : {}),
+    },
+    include: {
+      user: { select: { fullName: true, email: true, phone: true } },
+      registration: {
+        select: {
+          plateNumber: true,
+          // Most recently claimed sticker for this car — whether the
+          // physical sticker has actually been scanned + configured yet is
+          // separate from order fulfilment (a delivered sticker can sit
+          // unscanned for a while before the owner sets it up).
+          qrStickers: {
+            where:   { status: 'CLAIMED' },
+            orderBy: { claimedAt: 'desc' },
+            take:    1,
+            select:  { token: true, claimedAt: true },
+          },
+        },
+      },
+      // Which physical sticker admin recorded as put in the package — set at
+      // dispatch time, independent of whether the customer has since claimed it.
+      dispatchedSticker: { select: { token: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 300,
+  });
+
+  return {
+    items: rows.map((r) => {
+      const sticker = r.registration?.qrStickers?.[0] ?? null;
+      return {
+        id:                r.id,
+        status:            r.status,
+        paymentStatus:     r.paymentStatus,
+        paidAt:            r.paidAt,
+        paymentRef:        r.paymentRef,
+        stickerPricePaise: r.stickerPricePaise,
+        monthlyPricePaise: r.monthlyPricePaise,
+        plate:             r.registration ? decryptField(r.registration.plateNumber) : null,
+        ownerName:         r.user.fullName,
+        ownerEmail:        r.user.email,
+        ownerPhone:        r.user.phone,
+        shippingName:      r.shippingName,
+        shippingPhone:     r.shippingPhone,
+        addressLine:       r.addressLine,
+        city:              r.city,
+        state:             r.state,
+        pincode:           r.pincode,
+        note:              r.note,
+        confirmedAt:       r.confirmedAt,
+        pickedUpAt:        r.pickedUpAt,
+        outForDeliveryAt:  r.outForDeliveryAt,
+        deliveredAt:       r.deliveredAt,
+        returnedAt:        r.returnedAt,
+        deliveryAttempt:   r.deliveryAttempt,
+        qrConfigured:      !!sticker,
+        qrToken:           sticker?.token ?? null,
+        qrConfiguredAt:    sticker?.claimedAt ?? null,
+        dispatchedStickerToken: r.dispatchedSticker?.token ?? null,
+        dispatchedAt:           r.dispatchedAt,
+        createdAt:         r.createdAt,
+      };
+    }),
+  };
+};
+
+/**
+ * Records which physical sticker (by its printed token) admin put in the
+ * package for this order — a dispatch-time inventory record, independent of
+ * qrSticker.status/claimedAt (which only flips once the customer scans and
+ * configures it themselves via the public /c/:token flow). One sticker can
+ * only ever be recorded as dispatched for one order.
+ */
+export const dispatchQrOrderSticker = async (id: string, actorId: string, token: string) => {
+  const order = await prisma.qrOrder.findUnique({ where: { id } });
+  if (!order) throw NotFound('Order not found');
+
+  const sticker = await prisma.qrSticker.findUnique({ where: { token: token.trim() } });
+  if (!sticker) throw NotFound('No sticker found with that code');
+  if (sticker.status === 'DISABLED') throw BadRequest('That sticker has been disabled');
+
+  const alreadyAssigned = await prisma.qrOrder.findFirst({
+    where: { dispatchedStickerId: sticker.id, NOT: { id } },
+  });
+  if (alreadyAssigned) throw Conflict('This sticker code is already recorded against another order');
+
+  const [updated] = await prisma.$transaction([
+    prisma.qrOrder.update({
+      where: { id },
+      data: { dispatchedStickerId: sticker.id, dispatchedAt: new Date() },
+    }),
+    prisma.qrOrderStatusEvent.create({
+      data: {
+        qrOrderId: id, status: order.status, actorId,
+        note: `Sticker ${sticker.token} recorded as dispatched`,
+      },
+    }),
+    prisma.auditLog.create({
+      data: {
+        actorId, action: 'QR_ORDER_STICKER_DISPATCHED', entity: 'QrOrder', entityId: id,
+        metadata: JSON.stringify({ token: sticker.token }),
+      },
+    }),
+  ]);
+
+  return updated;
+};
+
+/** Full fulfilment timeline for one order — every status change, oldest first. */
+export const listQrOrderEvents = async (qrOrderId: string) => {
+  const order = await prisma.qrOrder.findUnique({ where: { id: qrOrderId } });
+  if (!order) throw NotFound('Order not found');
+
+  const rows = await prisma.qrOrderStatusEvent.findMany({
+    where:   { qrOrderId },
+    orderBy: { createdAt: 'asc' },
+    include: { actor: { select: { fullName: true, email: true } } },
+  });
+
+  return {
+    items: rows.map((e) => ({
+      id:        e.id,
+      status:    e.status,
+      note:      e.note,
+      createdAt: e.createdAt,
+      actor:     e.actor ? { fullName: e.actor.fullName, email: e.actor.email } : null,
+    })),
+  };
+};
+
+/**
+ * Every QR sticker payment attempt (success AND failure), with the customer
+ * details a support agent needs to call about a stuck/failed payment —
+ * name, email, both phone numbers on file, and the plate. Scoped to
+ * qrOrderId != null so this never mixes in booking payments.
+ */
+export const listQrPayments = async (status?: string, searchRaw?: string) => {
+  const search = (searchRaw ?? '').trim();
+  const rows = await prisma.payment.findMany({
+    where: {
+      qrOrderId: { not: null },
+      ...(status ? { status: status as any } : {}),
+      ...(search
+        ? {
+            OR: [
+              { providerOrderId:   { contains: search } },
+              { providerPaymentId: { contains: search } },
+              { qrOrder: { shippingPhone: { contains: search } } },
+              { qrOrder: { shippingName:  { contains: search } } },
+              { qrOrder: { user: { fullName: { contains: search } } } },
+              { qrOrder: { user: { email:    { contains: search } } } },
+              { qrOrder: { user: { phone:    { contains: search } } } },
+            ],
+          }
+        : {}),
+    },
+    include: {
+      qrOrder: {
+        include: {
+          user:         { select: { id: true, fullName: true, email: true, phone: true } },
+          registration: { select: { plateNumber: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 500,
+  });
+
+  return {
+    items: rows.map((p) => ({
+      id:                 p.id,
+      status:             p.status,
+      provider:           p.provider,
+      amount:             p.amount,
+      currency:           p.currency,
+      providerOrderId:    p.providerOrderId,
+      providerPaymentId:  p.providerPaymentId,
+      failureCode:        p.failureCode,
+      failureReason:      p.failureReason,
+      createdAt:          p.createdAt,
+      updatedAt:          p.updatedAt,
+      qrOrderId:          p.qrOrderId,
+      customer: p.qrOrder
+        ? {
+            userId:        p.qrOrder.user.id,
+            name:          p.qrOrder.user.fullName,
+            email:         p.qrOrder.user.email,
+            accountPhone:  p.qrOrder.user.phone,
+            shippingPhone: p.qrOrder.shippingPhone,
+            plate:         p.qrOrder.registration ? decryptField(p.qrOrder.registration.plateNumber) : null,
+          }
+        : null,
+    })),
+  };
+};
+
+/**
+ * Fulfilment state machine. CONFIRMED is normally reached automatically the
+ * moment payment succeeds (see qrOrders.service's confirmQrOrderOnPayment) —
+ * admin only drives the physical pickup/dispatch/delivery stages from here,
+ * plus the RETURNED -> CONFIRMED "resend" loop for damaged/misdelivered
+ * stickers, which restarts pickup/dispatch/delivery from scratch.
+ */
+const QR_ORDER_TRANSITIONS: Record<string, string[]> = {
+  PENDING:          ['CANCELLED'],
+  CONFIRMED:        ['PICKED_UP', 'CANCELLED'],
+  PICKED_UP:        ['OUT_FOR_DELIVERY', 'RETURNED'],
+  OUT_FOR_DELIVERY: ['DELIVERED', 'RETURNED'],
+  DELIVERED:        ['RETURNED'],
+  RETURNED:         ['CONFIRMED'],
+  CANCELLED:        [],
+};
+
+export const setQrOrderStatus = async (id: string, actorId: string, status: string, note?: string) => {
+  const order = await prisma.qrOrder.findUnique({ where: { id } });
+  if (!order) throw NotFound('Order not found');
+
+  const allowed = QR_ORDER_TRANSITIONS[order.status] ?? [];
+  if (!allowed.includes(status)) {
+    throw BadRequest(`Cannot move an order from ${order.status} to ${status}`);
+  }
+
+  const isResend = order.status === 'RETURNED' && status === 'CONFIRMED';
+  const now = new Date();
+
+  const timestamps: Record<string, Date | null> =
+    status === 'CONFIRMED'        ? (isResend ? { confirmedAt: now, pickedUpAt: null, outForDeliveryAt: null, deliveredAt: null, returnedAt: null } : { confirmedAt: now }) :
+    status === 'PICKED_UP'        ? { pickedUpAt: now } :
+    status === 'OUT_FOR_DELIVERY' ? { outForDeliveryAt: now } :
+    status === 'DELIVERED'        ? { deliveredAt: now } :
+    status === 'RETURNED'         ? { returnedAt: now } :
+    {};
+
+  const [updated] = await prisma.$transaction([
+    prisma.qrOrder.update({
+      where: { id },
+      data: {
+        status: status as any,
+        ...timestamps,
+        ...(isResend ? { deliveryAttempt: { increment: 1 } } : {}),
+      },
+    }),
+    prisma.qrOrderStatusEvent.create({
+      data: {
+        qrOrderId: id,
+        status:    status as any,
+        note:      note ?? (isResend ? 'Sticker resent after return' : null),
+        actorId,
+      },
+    }),
+    prisma.auditLog.create({
+      data: {
+        actorId, action: `QR_ORDER_${status}`, entity: 'QrOrder', entityId: id,
+        metadata: note ? JSON.stringify({ note }) : null,
+      },
+    }),
+  ]);
+
+  return updated;
+};
+
+/**
+ * Refund is a financial action, independent of the fulfilment state machine
+ * above — a paid order can be refunded whatever stage it's at (even
+ * DELIVERED or RETURNED), so this bypasses QR_ORDER_TRANSITIONS entirely and
+ * always lands the order on CANCELLED. Mirrors refundBooking's online-payment
+ * path: the amount/note land on the underlying Payment row (same
+ * refundAmount/refundedAt/refundNote fields, same REFUNDED status), so
+ * refunded totals stay consistent with how booking refunds are tracked.
+ */
+export const refundQrOrder = async (id: string, actorId: string, amount: number, note?: string) => {
+  const order = await prisma.qrOrder.findUnique({
+    where: { id },
+    include: { payments: { where: { status: 'PAID' }, orderBy: { createdAt: 'desc' }, take: 1 } },
+  });
+  if (!order) throw NotFound('Order not found');
+  if (order.paymentStatus !== 'PAID') throw BadRequest('Only a paid order can be refunded');
+
+  const maxRefund = (order.stickerPricePaise + order.monthlyPricePaise) / 100;
+  if (amount <= 0 || amount > maxRefund) {
+    throw BadRequest(`Refund amount must be between ₹1 and ₹${maxRefund}`);
+  }
+
+  const payment = order.payments[0];
+  if (!payment) throw BadRequest('No payment record found for this order');
+  if (!payment.providerPaymentId) throw BadRequest('Payment has no gateway reference — cannot refund');
+
+  // Must actually refund at the gateway before the DB ever says REFUNDED.
+  const gateway = getGateway();
+  const refund = await gateway.refund({
+    paymentId: payment.providerPaymentId,
+    amountPaise: Math.round(amount * 100),
+    notes: { qrOrderId: id, reason: note ?? '' },
+  });
+
+  const [, , updated] = await prisma.$transaction([
+    prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: 'REFUNDED', refundAmount: amount, refundedAt: new Date(), refundNote: note ?? null,
+        providerRefundId: refund.providerRefundId,
+      },
+    }),
+    prisma.qrOrderStatusEvent.create({
+      data: {
+        qrOrderId: id, status: 'CANCELLED', actorId,
+        note: `Refunded ₹${amount}${note ? ` — ${note}` : ''}`,
+      },
+    }),
+    prisma.qrOrder.update({
+      where: { id },
+      data: { status: 'CANCELLED', paymentStatus: 'REFUNDED' },
+    }),
+    prisma.auditLog.create({
+      data: {
+        actorId, action: 'QR_ORDER_REFUND', entity: 'QrOrder', entityId: id,
+        metadata: JSON.stringify({ amount, note, providerRefundId: refund.providerRefundId, gatewayStatus: refund.status }),
+      },
+    }),
+  ]);
+
+  return updated;
+};
+
+// ── QR stickers — batch generation & lifecycle ─────────────────────────────
+// Each sticker carries a random high-entropy token in its printed URL
+// (<customer site>/c/<token>). Tokens are minted here before printing; a
+// sticker is UNCLAIMED until an owner scans + configures it.
+
+const stickerUrl = (token: string) => `${env.FRONTEND_CUSTOMER_URL}/c/${token}`;
+
+export const generateQrBatch = async (actorId: string, input: GenerateQrBatchInput) => {
+  const tokens = new Set<string>();
+  // 8 chars, nanoid's 64-symbol alphabet -> ~48 bits (~2.8x10^14 combinations).
+  // Brute-forcing a live token is infeasible under the rate limit on
+  // GET /c/t/:token (see scan.routes.ts) — short enough to read/type off a
+  // sticker if the QR itself gets damaged, still far too large to guess.
+  while (tokens.size < input.quantity) tokens.add(nanoid(8));
+
+  const batch = await prisma.$transaction(async (tx) => {
+    const b = await tx.qrBatch.create({
+      data: { label: input.label, quantity: input.quantity, note: input.note ?? null, createdById: actorId },
+    });
+    await tx.qrSticker.createMany({
+      data: [...tokens].map((token) => ({ batchId: b.id, token })),
+    });
+    return b;
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId, action: 'QR_BATCH_GENERATE', entity: 'QrBatch', entityId: batch.id,
+      metadata: JSON.stringify({ label: batch.label, quantity: batch.quantity }),
+    },
+  });
+
+  return batch;
+};
+
+export const listQrBatches = async () => {
+  const [batches, counts] = await Promise.all([
+    prisma.qrBatch.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
+    prisma.qrSticker.groupBy({ by: ['batchId', 'status'], _count: { _all: true } }),
+  ]);
+
+  const byBatch = new Map<string, { unclaimed: number; claimed: number; disabled: number }>();
+  for (const c of counts) {
+    const row = byBatch.get(c.batchId) ?? { unclaimed: 0, claimed: 0, disabled: 0 };
+    if (c.status === 'UNCLAIMED') row.unclaimed = c._count._all;
+    if (c.status === 'CLAIMED')   row.claimed   = c._count._all;
+    if (c.status === 'DISABLED')  row.disabled  = c._count._all;
+    byBatch.set(c.batchId, row);
+  }
+
+  return {
+    items: batches.map((b) => ({
+      id:        b.id,
+      label:     b.label,
+      quantity:  b.quantity,
+      note:      b.note,
+      printedAt: b.printedAt,
+      createdAt: b.createdAt,
+      ...(byBatch.get(b.id) ?? { unclaimed: 0, claimed: 0, disabled: 0 }),
+    })),
+  };
+};
+
+export const updateQrBatch = async (id: string, actorId: string, input: UpdateQrBatchInput) => {
+  const batch = await prisma.qrBatch.findUnique({ where: { id } });
+  if (!batch) throw NotFound('Batch not found');
+
+  const data: { label?: string; note?: string | null; printedAt?: Date | null } = {};
+  if (input.label !== undefined) data.label = input.label;
+  if (input.note !== undefined) data.note = input.note;
+  if (input.markPrinted !== undefined) data.printedAt = input.markPrinted ? new Date() : null;
+
+  const updated = await prisma.qrBatch.update({ where: { id }, data });
+  await prisma.auditLog.create({
+    data: { actorId, action: 'QR_BATCH_UPDATE', entity: 'QrBatch', entityId: id },
+  });
+  return updated;
+};
+
+/** CSV export for the print vendor: token + full printed URL, one row per sticker. */
+export const exportQrBatch = async (id: string) => {
+  const batch = await prisma.qrBatch.findUnique({ where: { id } });
+  if (!batch) throw NotFound('Batch not found');
+
+  const stickers = await prisma.qrSticker.findMany({
+    where:   { batchId: id },
+    select:  { token: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const rows = ['token,url', ...stickers.map((s) => `${s.token},${stickerUrl(s.token)}`)];
+  const safeLabel = batch.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/^-+|-+$/g, '');
+  return { filename: `qr-batch-${safeLabel || batch.id}.csv`, csv: rows.join('\n') + '\n' };
+};
+
+/**
+ * Print-ready PDF for a batch — one page per sticker, each the full branded
+ * design (not just the bare QR) sized to the physical sticker itself. See
+ * lib/stickerPdf.ts.
+ */
+export const generateStickerPdf = async (id: string) => {
+  const batch = await prisma.qrBatch.findUnique({ where: { id } });
+  if (!batch) throw NotFound('Batch not found');
+
+  const stickers = await prisma.qrSticker.findMany({
+    where:   { batchId: id },
+    select:  { token: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const pdf = await generateStickerBatchPdf(stickers.map((s) => ({ token: s.token, url: stickerUrl(s.token) })));
+  const safeLabel = batch.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/^-+|-+$/g, '');
+  return { filename: `qr-stickers-${safeLabel || batch.id}.pdf`, pdf };
+};
+
+/** Every token + printable URL for a batch — used by the admin QR viewer/downloader. */
+export const listQrBatchTokens = async (id: string) => {
+  const batch = await prisma.qrBatch.findUnique({ where: { id } });
+  if (!batch) throw NotFound('Batch not found');
+  const stickers = await prisma.qrSticker.findMany({
+    where:   { batchId: id },
+    select:  { token: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  return {
+    batch: { id: batch.id, label: batch.label },
+    items: stickers.map((s) => ({ token: s.token, url: stickerUrl(s.token) })),
+  };
+};
+
+export const listQrStickers = async (opts: { q?: string; status?: string; batchId?: string }) => {
+  const q = (opts.q ?? '').trim();
+  const where: Record<string, unknown> = {};
+  if (opts.status) where.status = opts.status;
+  if (opts.batchId) where.batchId = opts.batchId;
+
+  // `q` matches a token fragment OR an exact plate (via its keyed hash).
+  if (q) {
+    const plate = normalizePlate(q);
+    const or: Record<string, unknown>[] = [{ token: { contains: q } }];
+    if (/^[A-Z0-9]{4,16}$/.test(plate)) {
+      or.push({ registration: { plateHash: hmacHash(plate) } });
+    }
+    where.OR = or;
+  }
+
+  const rows = await prisma.qrSticker.findMany({
+    where,
+    include: {
+      batch:        { select: { label: true } },
+      registration: { select: { plateNumber: true, user: { select: { email: true } } } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 200,
+  });
+
+  return {
+    items: rows.map((s) => ({
+      id:         s.id,
+      token:      s.token,
+      url:        stickerUrl(s.token),
+      status:     s.status,
+      batchLabel: s.batch.label,
+      plate:      s.registration ? decryptField(s.registration.plateNumber) : null,
+      ownerEmail: s.registration?.user.email ?? null,
+      claimedAt:  s.claimedAt,
+      createdAt:  s.createdAt,
+    })),
+  };
+};
+
+/** Safety action — return a claimed sticker to UNCLAIMED without touching the physical object. */
+export const unbindQrSticker = async (id: string, actorId: string) => {
+  const sticker = await prisma.qrSticker.findUnique({ where: { id } });
+  if (!sticker) throw NotFound('Sticker not found');
+
+  const updated = await prisma.qrSticker.update({
+    where: { id },
+    data:  {
+      status:          'UNCLAIMED',
+      registrationId:  null,
+      claimedByUserId: null,
+      claimedAt:       null,
+      disabledAt:      null,
+      disabledReason:  null,
+    },
+  });
+  await prisma.auditLog.create({
+    data: {
+      actorId, action: 'QR_STICKER_UNBIND', entity: 'QrSticker', entityId: id,
+      metadata: JSON.stringify({ previousRegistrationId: sticker.registrationId }),
+    },
+  });
+  return updated;
+};
+
+export const setQrStickerDisabled = async (
+  id: string,
+  actorId: string,
+  disabled: boolean,
+  reason?: string,
+) => {
+  const sticker = await prisma.qrSticker.findUnique({ where: { id } });
+  if (!sticker) throw NotFound('Sticker not found');
+
+  const nextStatus = disabled ? 'DISABLED' : sticker.registrationId ? 'CLAIMED' : 'UNCLAIMED';
+  const updated = await prisma.qrSticker.update({
+    where: { id },
+    data:  {
+      status:         nextStatus,
+      disabledAt:     disabled ? new Date() : null,
+      disabledReason: disabled ? (reason ?? null) : null,
+    },
+  });
+  await prisma.auditLog.create({
+    data: { actorId, action: disabled ? 'QR_STICKER_DISABLE' : 'QR_STICKER_ENABLE', entity: 'QrSticker', entityId: id },
+  });
+  return updated;
+};
+
+// ── Audit log — every admin action across the app writes a row here via
+// prisma.auditLog.create(); this is the one place to read them back. ───────
+export const listAuditLogs = async (params: { q?: string; entity?: string; action?: string }) => {
+  const { q, entity, action } = params;
+  const search = (q ?? '').trim().toLowerCase();
+
+  const rows = await prisma.auditLog.findMany({
+    where: {
+      ...(entity ? { entity } : {}),
+      ...(action ? { action } : {}),
+    },
+    include: { actor: { select: { fullName: true, email: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 300,
+  });
+
+  const items = rows.map((r) => ({
+    id:        r.id,
+    action:    r.action,
+    entity:    r.entity,
+    entityId:  r.entityId,
+    metadata:  r.metadata,
+    createdAt: r.createdAt,
+    actor:     r.actor ? { fullName: r.actor.fullName, email: r.actor.email } : null,
+  }));
+
+  if (!search) return { items };
+  return {
+    items: items.filter((r) =>
+      r.action.toLowerCase().includes(search) ||
+      r.entity.toLowerCase().includes(search) ||
+      (r.entityId ?? '').toLowerCase().includes(search) ||
+      (r.actor?.fullName ?? '').toLowerCase().includes(search) ||
+      (r.actor?.email ?? '').toLowerCase().includes(search),
+    ),
+  };
+};
+
+/** Distinct entity types seen in the log, for the filter dropdown. */
+export const listAuditLogEntities = async () => {
+  const rows = await prisma.auditLog.findMany({ distinct: ['entity'], select: { entity: true }, orderBy: { entity: 'asc' } });
+  return { items: rows.map((r) => r.entity) };
 };

@@ -27,6 +27,17 @@ import {
   createAdminSchema,
   commissionRateSchema,
   commissionStatusSchema,
+  reassignVehicleSchema,
+  callDailyCapSchema,
+  setVehicleValiditySchema,
+  qrVehicleStatusSchema,
+  qrVehicleContactSchema,
+  blockCallGloballySchema,
+  setQrOrderStatusSchema,
+  dispatchStickerSchema,
+  generateQrBatchSchema,
+  updateQrBatchSchema,
+  qrStickerDisableSchema,
 } from './admin.schema.js';
 import * as ctrl from './admin.controller.js';
 
@@ -123,5 +134,43 @@ r.patch('/settings/commission', validate(commissionRateSchema), ctrl.updateCommi
 r.patch('/bookings/:id/commission', validate(commissionStatusSchema), ctrl.setBookingCommissionStatus);
 r.get('/commission/summary', ctrl.commissionSummary);
 r.get('/commission/bookings', ctrl.commissionBookings);
+
+// --- QR Calling: registrations, disputes, call log/abuse, spend ---
+// NOTE: literal /qr/vehicles/... and /qr/calls/... paths before /qr/vehicles/:id.
+r.get('/qr/overview', ctrl.qrOverview);
+r.get('/qr/vehicles', ctrl.listQrVehicles);
+r.get('/qr/vehicles/:id', ctrl.getQrVehicle);
+r.post('/qr/vehicles/:id/reassign', validate(reassignVehicleSchema), ctrl.reassignQrVehicle);
+r.patch('/qr/vehicles/:id/validity', validate(setVehicleValiditySchema), ctrl.setVehicleValidity);
+r.patch('/qr/vehicles/:id/status', validate(qrVehicleStatusSchema), ctrl.setQrVehicleStatus);
+r.patch('/qr/vehicles/:id/contact', validate(qrVehicleContactSchema), ctrl.updateQrVehicleContact);
+r.get('/qr/settings/daily-cap', ctrl.getCallDailyCapSetting);
+r.patch('/qr/settings/daily-cap', validate(callDailyCapSchema), ctrl.updateCallDailyCapSetting);
+r.get('/qr/calls', ctrl.listQrCalls);
+r.post('/qr/calls/:id/block', validate(blockCallGloballySchema), ctrl.blockQrCallGlobally);
+r.get('/qr/calls/:id/reveal', ctrl.revealQrCallerNumber);
+r.get('/qr/blocked', ctrl.listQrBlockedNumbers);
+r.delete('/qr/blocked/:id', ctrl.unblockQrNumber);
+r.get('/qr/orders', ctrl.listQrOrders);
+r.get('/qr/orders/:id/events', ctrl.listQrOrderEvents);
+r.patch('/qr/orders/:id/status', validate(setQrOrderStatusSchema), ctrl.setQrOrderStatus);
+r.post('/qr/orders/:id/refund', validate(refundSchema), ctrl.refundQrOrder);
+r.patch('/qr/orders/:id/dispatch-sticker', validate(dispatchStickerSchema), ctrl.dispatchQrOrderSticker);
+r.get('/qr/payments', ctrl.listQrPayments);
+
+// --- QR sticker batches (print runs) + individual sticker lifecycle ---
+r.get('/qr/batches', ctrl.listQrBatches);
+r.post('/qr/batches', validate(generateQrBatchSchema), ctrl.generateQrBatch);
+r.get('/qr/batches/:id/export', ctrl.exportQrBatch);
+r.get('/qr/batches/:id/sticker-pdf', ctrl.generateStickerPdf);
+r.get('/qr/batches/:id/tokens', ctrl.listQrBatchTokens);
+r.patch('/qr/batches/:id', validate(updateQrBatchSchema), ctrl.updateQrBatch);
+r.get('/qr/stickers', ctrl.listQrStickers);
+r.post('/qr/stickers/:id/unbind', ctrl.unbindQrSticker);
+r.patch('/qr/stickers/:id/disable', validate(qrStickerDisableSchema), ctrl.setQrStickerDisabled);
+
+// --- Audit log — every admin action across the app writes a row here ---
+r.get('/audit-logs', ctrl.listAuditLogs);
+r.get('/audit-logs/entities', ctrl.listAuditLogEntities);
 
 export default r;
