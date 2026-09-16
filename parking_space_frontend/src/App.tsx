@@ -21,6 +21,7 @@ import { MyVehiclesPage } from '@/pages/MyVehiclesPage';
 import { ScanPage } from '@/pages/ScanPage';
 import { QrCallingLandingPage } from '@/pages/QrCallingLandingPage';
 import { QrOrdersPage } from '@/pages/QrOrdersPage';
+import { TransactionsPage } from '@/pages/TransactionsPage';
 import { useAuth } from '@/store/auth';
 import { useSaved } from '@/store/savedSpaces';
 import { api } from '@/lib/api';
@@ -174,6 +175,14 @@ export default function App() {
             element={
               <Protected>
                 <CheckoutPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/transactions"
+            element={
+              <Protected>
+                <TransactionsPage />
               </Protected>
             }
           />

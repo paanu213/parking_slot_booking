@@ -31,3 +31,9 @@ export const toggleSavedSpace: RequestHandler = async (req, res, next) => {
     res.json(await service.toggleSavedSpace(req.user!.sub, req.params.locationId));
   } catch (e) { next(e); }
 };
+
+export const getTransactions: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.listMyTransactions(req.user!.sub));
+  } catch (e) { next(e); }
+};

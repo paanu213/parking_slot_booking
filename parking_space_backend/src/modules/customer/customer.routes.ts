@@ -18,4 +18,6 @@ r.get('/saved-spaces', ctrl.getSavedSpaces);
 r.get('/saved-spaces/ids', ctrl.getSavedSpaceIds);
 r.post('/saved-spaces/:locationId', ctrl.toggleSavedSpace);
 
+r.get('/transactions', ctrl.getTransactions);
+
 export default r;

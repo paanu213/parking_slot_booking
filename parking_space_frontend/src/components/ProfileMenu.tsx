@@ -16,6 +16,7 @@ import {
   Sparkles,
   Car,
   Package,
+  Receipt,
 } from 'lucide-react';
 import { Avatar, gradientFor } from '@ps/ui';
 import { useAuth } from '@/store/auth';
@@ -39,6 +40,7 @@ const LINKS: MenuLink[] = [
   { to: '/qr-orders', label: 'QR sticker orders', icon: Package, description: 'Order & payment history' },
   { to: '/saved', label: 'Saved spaces', icon: Heart, description: 'Spaces you bookmarked' },
   { to: '/bookings', label: 'My bookings', icon: CalendarCheck, description: 'Upcoming and past' },
+  { to: '/transactions', label: 'Transactions', icon: Receipt, description: 'All payments, across services' },
   { to: '/settings', label: 'Settings', icon: Settings, description: 'Appearance & security' },
   { to: '/help', label: 'Help & support', icon: HelpCircle, description: 'FAQs and contact' },
 ];

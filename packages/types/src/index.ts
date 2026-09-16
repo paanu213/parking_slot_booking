@@ -50,6 +50,16 @@ export const BookingStatus = z.enum([
 ]);
 export type BookingStatus = z.infer<typeof BookingStatus>;
 
+// Which service a Payment row belongs to — a Payment is always linked to
+// exactly one of Booking / QrOrder today; OTHER is a placeholder for a
+// future paid service before it gets its own value here.
+export const PaymentServiceType = z.enum([
+  'SPACE_BOOKING',
+  'QR_CODE_REGISTRATION',
+  'OTHER',
+]);
+export type PaymentServiceType = z.infer<typeof PaymentServiceType>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Pricing — single source of truth for hourly / monthly bookings.
 // Both backend and frontends import these helpers so we never have two

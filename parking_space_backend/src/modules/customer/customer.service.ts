@@ -1,8 +1,10 @@
 /**
  * Customer service — a signed-in customer's own profile + saved spaces.
  */
+import type { PaymentServiceType } from '@ps/types';
 import { prisma } from '../../lib/prisma.js';
 import { BadRequest, NotFound } from '../../lib/http.js';
+import { decryptField } from '../../lib/crypto.js';
 import type { UpdateProfileInput } from './customer.schema.js';
 
 export const getProfile = async (userId: string) => {
@@ -85,4 +87,93 @@ export const toggleSavedSpace = async (userId: string, locationId: string) => {
   }
   await prisma.savedSpace.create({ data: { userId, locationId } });
   return { saved: true };
+};
+
+/**
+ * Every payment the customer has ever attempted, across services — a
+ * Payment row always links to exactly one of Booking / QrOrder (see
+ * schema.prisma's Payment model comment), so we just fetch by either
+ * relation's userId and discriminate on which one came back non-null.
+ * Unpaginated for now (same as listMyBookings / listMyQrOrders) — a
+ * customer's own history is small.
+ */
+export const listMyTransactions = async (userId: string) => {
+  const payments = await prisma.payment.findMany({
+    where: { OR: [{ booking: { userId } }, { qrOrder: { userId } }] },
+    include: {
+      booking: {
+        include: {
+          slot: {
+            include: {
+              location: { select: { name: true, addressLine: true, city: true, state: true, pincode: true } },
+            },
+          },
+        },
+      },
+      qrOrder: {
+        include: { registration: { select: { plateNumber: true } } },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return {
+    items: payments.map((p) => {
+      const base = {
+        id:                p.id,
+        provider:          p.provider,
+        status:            p.status,
+        amount:            Number(p.amount),
+        currency:          p.currency,
+        providerPaymentId: p.providerPaymentId,
+        failureReason:     p.failureReason,
+        refundAmount:      p.refundAmount != null ? Number(p.refundAmount) : null,
+        refundedAt:        p.refundedAt,
+        createdAt:         p.createdAt,
+      };
+
+      if (p.booking) {
+        const { booking } = p;
+        return {
+          ...base,
+          serviceType: 'SPACE_BOOKING' satisfies PaymentServiceType,
+          booking: {
+            id:           booking.id,
+            reference:    booking.reference,
+            status:       booking.status,
+            bookingType:  booking.bookingType,
+            startAt:      booking.startAt,
+            endAt:        booking.endAt,
+            slotCode:     booking.slot.code,
+            vehicleType:  booking.slot.vehicleType,
+            locationName: booking.slot.location.name,
+            addressLine:  booking.slot.location.addressLine,
+            city:         booking.slot.location.city,
+            state:        booking.slot.location.state,
+            pincode:      booking.slot.location.pincode,
+          },
+        };
+      }
+
+      if (p.qrOrder) {
+        const { qrOrder } = p;
+        return {
+          ...base,
+          serviceType: 'QR_CODE_REGISTRATION' satisfies PaymentServiceType,
+          qrOrder: {
+            id:           qrOrder.id,
+            status:       qrOrder.status,
+            plateNumber:  qrOrder.registration ? decryptField(qrOrder.registration.plateNumber) : null,
+            shippingName: qrOrder.shippingName,
+            city:         qrOrder.city,
+            state:        qrOrder.state,
+          },
+        };
+      }
+
+      // Not expected today (every Payment has a booking or a qrOrder), kept
+      // as a safe fallback for a future service added before it gets its own branch here.
+      return { ...base, serviceType: 'OTHER' satisfies PaymentServiceType };
+    }),
+  };
 };
