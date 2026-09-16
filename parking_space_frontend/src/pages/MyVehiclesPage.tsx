@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Car, CalendarClock, ChevronDown, History, Infinity as InfinityIcon, Link2, Moon, Pause, Pencil, Phone,
-  Play, Plus, QrCode, ShieldCheck, Trash2, Users,
+  Play, QrCode, ShieldCheck, Trash2, Users,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/components/Toast';
@@ -66,13 +66,15 @@ export interface Vehicle {
 }
 
 /**
- * "My Vehicles" — register a car for scan-to-call + the opt-in emergency
- * (ICE) card. No OTP step in this phase: a registration is live the moment
- * it's created. See CLAUDE.md / QR Calling blueprint.
+ * "My Vehicles" — manage scan-to-call settings + the opt-in emergency (ICE)
+ * card for cars you've already ordered a QR sticker for. A vehicle only
+ * exists here once it comes through the paid "Get QR sticker" checkout
+ * (see QrCallingLandingPage) — a car with no sticker can never receive
+ * calls, so there's deliberately no standalone "add vehicle" entry point.
  */
 export const MyVehiclesPage = () => {
   const qc = useQueryClient();
-  const [drawer, setDrawer] = useState<'closed' | 'new' | Vehicle>('closed');
+  const [drawer, setDrawer] = useState<'closed' | Vehicle>('closed');
 
   const { data, isLoading } = useQuery<{ items: Vehicle[] }>({
     queryKey: ['my-vehicles'],
@@ -122,13 +124,6 @@ export const MyVehiclesPage = () => {
               <p className="text-sm text-slate-500 dark:text-slate-400">Scan-to-call + emergency card, per car</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setDrawer('new')}
-            className="btn-primary gap-1.5"
-          >
-            <Plus className="h-4 w-4" /> Add vehicle
-          </button>
         </div>
 
         <div className="mt-8">
@@ -156,11 +151,12 @@ export const MyVehiclesPage = () => {
               </span>
               <h2 className="mt-4 font-display text-lg font-bold">No vehicles yet</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Register a car to enable scan-to-call and an optional emergency card on its QR sticker.
+                Vehicles show up here once you order a QR sticker for them — the sticker is what
+                lets people scan and call you.
               </p>
-              <button type="button" onClick={() => setDrawer('new')} className="btn-primary mt-5 gap-1.5">
-                <Plus className="h-4 w-4" /> Add your first vehicle
-              </button>
+              <Link to="/qr-calling" className="btn-primary mt-5 inline-flex gap-1.5">
+                <Car className="h-4 w-4" /> Get a QR sticker
+              </Link>
             </div>
           )}
         </div>
@@ -168,10 +164,7 @@ export const MyVehiclesPage = () => {
       <Footer />
 
       {drawer !== 'closed' && (
-        <VehicleFormDrawer
-          vehicle={drawer === 'new' ? null : drawer}
-          onClose={() => setDrawer('closed')}
-        />
+        <VehicleFormDrawer vehicle={drawer} onClose={() => setDrawer('closed')} />
       )}
     </>
   );

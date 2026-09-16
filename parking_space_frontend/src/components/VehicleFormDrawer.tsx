@@ -42,18 +42,17 @@ const EMPTY: VehicleForm = {
 };
 
 /**
- * Slide-over for registering / editing a vehicle — car + contact, call
- * preferences, and the opt-in emergency (ICE) card. No OTP/SMS step: a newly
- * registered car goes straight to ACTIVE (`contactVerified` stays `false`
- * server-side, a placeholder for missed-call verification added once
- * telephony lands — see CLAUDE.md).
+ * Slide-over for editing a vehicle's contact, call preferences, and the
+ * opt-in emergency (ICE) card. Vehicles are only ever created via the paid
+ * "Get QR sticker" checkout (QrCallingLandingPage) — this drawer is
+ * edit-only, never registration, so a vehicle can't exist here without a
+ * QR order behind it.
  *
  * Per CLAUDE.md §4: no `overflow-hidden` ancestor; the form body scrolls on
  * its own (`overflow-y-auto`) inside the fixed-height flex column.
  */
-export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle | null; onClose: () => void }) => {
+export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onClose: () => void }) => {
   const qc = useQueryClient();
-  const isEdit = !!vehicle;
 
   const {
     register,
@@ -69,10 +68,6 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle | nul
   const emergencyPublic = watch('emergencyPublic');
 
   useEffect(() => {
-    if (!vehicle) {
-      reset(EMPTY);
-      return;
-    }
     reset({
       plateNumber:     vehicle.plateNumber,
       contactPhone:    vehicle.contactPhone,
@@ -107,15 +102,11 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle | nul
             }))
           : [],
       };
-      if (isEdit) return api.put(`/customer/me/vehicles/${vehicle!.id}`, payload);
-      return api.post('/customer/me/vehicles', { ...payload, plateNumber: vals.plateNumber.trim() });
+      return api.put(`/customer/me/vehicles/${vehicle.id}`, payload);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-vehicles'] });
-      toast.success(
-        isEdit ? 'Vehicle updated' : 'Vehicle registered',
-        isEdit ? 'Your changes have been saved.' : 'Your car is now live for scan-to-call.',
-      );
+      toast.success('Vehicle updated', 'Your changes have been saved.');
       onClose();
     },
     onError: (e: any) =>
@@ -133,10 +124,8 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle | nul
               <Car className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="font-display text-lg font-bold">{isEdit ? 'Edit vehicle' : 'Register a vehicle'}</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {isEdit ? vehicle!.plateNumber : 'For scan-to-call + emergency card'}
-              </p>
+              <h2 className="font-display text-lg font-bold">Edit vehicle</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{vehicle.plateNumber}</p>
             </div>
           </div>
           <button
@@ -162,27 +151,13 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle | nul
             <div>
               <label className="text-sm font-medium">Number plate</label>
               <input
-                disabled={isEdit}
-                className={cn(
-                  'input mt-1 w-full font-mono uppercase tracking-wide',
-                  errors.plateNumber && 'border-rose-500',
-                  isEdit && 'cursor-not-allowed opacity-60',
-                )}
-                placeholder="AP16HJ7956"
-                {...register('plateNumber', {
-                  required: !isEdit && 'Enter the car number',
-                  onChange: (e) => {
-                    e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
-                  },
-                  pattern: { value: /^[A-Z0-9]{6,12}$/, message: 'Enter a valid car number' },
-                })}
+                disabled
+                className="input mt-1 w-full cursor-not-allowed font-mono uppercase tracking-wide opacity-60"
+                {...register('plateNumber')}
               />
-              {errors.plateNumber && <p className="mt-1 text-xs text-rose-600">{errors.plateNumber.message}</p>}
-              {isEdit && (
-                <p className="mt-1 text-xs text-slate-400">
-                  Plate can't be changed — delete and re-register if you made a mistake.
-                </p>
-              )}
+              <p className="mt-1 text-xs text-slate-400">
+                Plate can't be changed — remove and re-order a QR sticker if you made a mistake.
+              </p>
             </div>
 
             <div>
@@ -331,7 +306,7 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle | nul
             disabled={isSubmitting || save.isPending}
             className="btn-primary w-full justify-center"
           >
-            {save.isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Register vehicle'}
+            {save.isPending ? 'Saving…' : 'Save changes'}
           </button>
         </div>
       </div>
