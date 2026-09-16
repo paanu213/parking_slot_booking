@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 5175",
-    "build": "tsc -b && vite build",
+    "build": "npm run build --workspace=@ps/types && tsc -b && vite build",
     "preview": "vite preview --port 5175",
     "typecheck": "tsc -b --noEmit"
   },
@@ -15,7 +15,9 @@
     "@tanstack/react-query": "^5.51.23",
     "axios": "^1.7.4",
     "clsx": "^2.1.1",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.427.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.52.2",
@@ -25,6 +27,7 @@
     "zustand": "^4.5.4"
   },
   "devDependencies": {
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
