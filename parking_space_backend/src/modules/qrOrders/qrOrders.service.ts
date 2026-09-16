@@ -1,7 +1,6 @@
 /**
  * Sticker orders — "Get your QR sticker" landing page -> account (Google) ->
- * vehicle + shipping -> preview -> Razorpay payment (or the demo gateway,
- * see lib/paymentGateway, while real keys aren't configured yet).
+ * vehicle + shipping -> preview -> Razorpay payment.
  *
  * Payment is a 3-step handshake, never a bare "trust the client" flag:
  *   1. createQrCheckout  — opens a Payment(CREATED) row + a gateway order.
@@ -16,12 +15,10 @@
  * failures/cancellations for the customer + admin UI; being client-reported
  * they can only ever move a payment to FAILED, never to PAID.
  */
-import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../config/logger.js';
 import { getGateway } from '../../lib/paymentGateway/index.js';
-import { demoSign } from '../../lib/paymentGateway/demo.js';
 import { BadRequest, Forbidden, HttpError, NotFound } from '../../lib/http.js';
 import { decryptField, hmacHash } from '../../lib/crypto.js';
 import * as vehiclesService from '../vehicles/vehicles.service.js';
@@ -186,7 +183,6 @@ export const createQrCheckout = async (userId: string, qrOrderId: string, meta: 
   );
 
   return {
-    mode:      gateway.name, // 'razorpay' | 'demo' — the frontend picks its checkout UI off this
     keyId:     gateway.publicKeyId,
     orderId:   gatewayOrder.providerOrderId,
     amount:    gatewayOrder.amount,
@@ -235,8 +231,7 @@ export const verifyQrPayment = async (userId: string, qrOrderId: string, input: 
   }
 
   // Defense-in-depth beyond the signature: ask the gateway directly whether
-  // this payment id is really captured and for the right amount. The demo
-  // gateway has no `fetchPayment` (nothing external to cross-check against).
+  // this payment id is really captured and for the right amount.
   if (gateway.fetchPayment) {
     const expectedPaise = Math.round(Number(payment.amount) * 100);
     const fetched = await gateway.fetchPayment(razorpay_payment_id).catch(() => null);
@@ -274,38 +269,6 @@ export const verifyQrPayment = async (userId: string, qrOrderId: string, input: 
 
   logger.info({ event: 'qr_payment_success', qrOrderId: order.id, paymentId: payment.id }, 'QR payment verified and captured');
   return updatedOrder;
-};
-
-/**
- * Demo-mode-only stand-in for what a real bank/Razorpay would do: fabricate
- * a payment id, sign it with the (server-only) demo secret, then run it
- * through the exact same verifyQrPayment used by real payments. Refuses
- * outright the moment real Razorpay keys are configured, so this can never
- * become a "free sticker" trick once the site goes live for real.
- */
-export const completeDemoCheckout = async (
-  userId: string, qrOrderId: string, providerOrderId: string, outcome: 'success' | 'failure', meta: AttemptMeta,
-) => {
-  const gateway = getGateway();
-  if (gateway.name !== 'demo') throw BadRequest('Demo checkout is not active');
-
-  if (outcome === 'failure') {
-    await reportQrPaymentFailure(
-      userId, qrOrderId,
-      { providerOrderId, code: 'DEMO_SIMULATED_FAILURE', description: 'Simulated failure (demo mode)' },
-      meta,
-    );
-    return { ok: true, paid: false };
-  }
-
-  const paymentId = `pay_DEMO${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
-  const signature = demoSign(providerOrderId, paymentId);
-  const order = await verifyQrPayment(
-    userId, qrOrderId,
-    { razorpay_order_id: providerOrderId, razorpay_payment_id: paymentId, razorpay_signature: signature },
-    meta,
-  );
-  return { ok: true, paid: true, order };
 };
 
 const findOpenAttempt = (qrOrderId: string, providerOrderId?: string) =>

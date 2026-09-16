@@ -24,7 +24,7 @@ export const createQrOrderSchema = z.object({
 });
 export type CreateQrOrderInput = z.infer<typeof createQrOrderSchema>;
 
-// ── Payment (Razorpay, or the demo gateway — see lib/paymentGateway) ────────
+// ── Payment (Razorpay — see lib/paymentGateway) ─────────────────────────────
 
 /** The 3-field proof Razorpay Checkout hands back on success — server-verified before anything is trusted. */
 export const verifyQrPaymentSchema = z.object({
@@ -54,18 +54,3 @@ export const qrPaymentCancelSchema = z.object({
   providerOrderId: z.string().trim().max(100).optional(),
 });
 export type QrPaymentCancelInput = z.infer<typeof qrPaymentCancelSchema>;
-
-/**
- * Demo-mode-only "complete checkout" — the frontend's Simulate Success/Failure
- * buttons call this instead of ever computing a signature client-side. The
- * backend fabricates the payment id and signs it itself (see
- * lib/paymentGateway/demo.ts), then runs the SAME verifyQrPayment path a real
- * gateway would — so nothing here bypasses the standard trust chain. Refused
- * outright once real Razorpay keys are configured (qrOrders.service checks
- * getGateway().name === 'demo' first).
- */
-export const qrDemoCompleteSchema = z.object({
-  providerOrderId: z.string().trim().min(1).max(100),
-  outcome:         z.enum(['success', 'failure']),
-});
-export type QrDemoCompleteInput = z.infer<typeof qrDemoCompleteSchema>;

@@ -8,7 +8,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { paymentLimiter } from '../../middleware/rateLimit.js';
 import {
-  createQrOrderSchema, verifyQrPaymentSchema, qrPaymentFailedSchema, qrPaymentCancelSchema, qrDemoCompleteSchema,
+  createQrOrderSchema, verifyQrPaymentSchema, qrPaymentFailedSchema, qrPaymentCancelSchema,
 } from './qrOrders.schema.js';
 import * as ctrl from './qrOrders.controller.js';
 
@@ -24,6 +24,5 @@ r.post('/:id/checkout', paymentLimiter, ctrl.checkout);
 r.post('/:id/verify', paymentLimiter, validate(verifyQrPaymentSchema), ctrl.verify);
 r.post('/:id/payment-failed', paymentLimiter, validate(qrPaymentFailedSchema), ctrl.reportFailed);
 r.post('/:id/payment-cancelled', paymentLimiter, validate(qrPaymentCancelSchema), ctrl.reportCancelled);
-r.post('/:id/demo-complete', paymentLimiter, validate(qrDemoCompleteSchema), ctrl.demoComplete);
 
 export default r;

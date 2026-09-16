@@ -1,7 +1,7 @@
 import type { Request, RequestHandler } from 'express';
 import * as service from './qrOrders.service.js';
 import type {
-  CreateQrOrderInput, VerifyQrPaymentInput, QrPaymentFailedInput, QrPaymentCancelInput, QrDemoCompleteInput,
+  CreateQrOrderInput, VerifyQrPaymentInput, QrPaymentFailedInput, QrPaymentCancelInput,
 } from './qrOrders.schema.js';
 
 const attemptMeta = (req: Request) => ({
@@ -63,12 +63,5 @@ export const paymentHistory: RequestHandler = async (req, res, next) => {
 export const events: RequestHandler = async (req, res, next) => {
   try {
     res.json(await service.listMyQrOrderEvents(req.user!.sub, req.params.id));
-  } catch (e) { next(e); }
-};
-
-export const demoComplete: RequestHandler = async (req, res, next) => {
-  try {
-    const { providerOrderId, outcome } = req.body as QrDemoCompleteInput;
-    res.json(await service.completeDemoCheckout(req.user!.sub, req.params.id, providerOrderId, outcome, attemptMeta(req)));
   } catch (e) { next(e); }
 };

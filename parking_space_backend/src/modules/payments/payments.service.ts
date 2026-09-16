@@ -129,8 +129,42 @@ export const applyRazorpayWebhookEvent = async (event: NormalizedPaymentEvent) =
     return;
   }
 
-  // Never let a late/duplicate/failed event downgrade a payment we've already captured.
-  if (payment.status === 'PAID') return;
+  if (event.status === 'REFUNDED') {
+    // Idempotent — our own admin.service refund actions already do this
+    // synchronously; this branch exists for refunds initiated directly from
+    // the Razorpay dashboard, which only ever reach us through this webhook.
+    if (payment.status === 'REFUNDED') return;
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'REFUNDED',
+          refundAmount: event.amount != null ? event.amount / 100 : payment.refundAmount,
+          refundedAt: new Date(),
+          providerRefundId: event.providerRefundId ?? payment.providerRefundId,
+          rawResponse: JSON.stringify(event.raw),
+        },
+      });
+      if (payment.qrOrderId) {
+        await tx.qrOrder.update({
+          where: { id: payment.qrOrderId },
+          data: { status: 'CANCELLED', paymentStatus: 'REFUNDED' },
+        });
+        await tx.qrOrderStatusEvent.create({
+          data: { qrOrderId: payment.qrOrderId, status: 'CANCELLED', note: 'Refund confirmed via Razorpay webhook' },
+        });
+      }
+      // Booking side: no dedicated "refunded" booking status — the refund
+      // is fully recorded on the Payment row above; any booking-status
+      // change (e.g. cancellation) is a separate admin action.
+    });
+    logger.info({ event: 'razorpay_webhook_refunded', paymentId: payment.id, bookingId: payment.bookingId, qrOrderId: payment.qrOrderId }, 'Razorpay webhook reconciled a payment as REFUNDED');
+    return;
+  }
+
+  // Never let a late/duplicate PAID or FAILED event downgrade a payment
+  // we've already captured or refunded.
+  if (payment.status === 'PAID' || payment.status === 'REFUNDED') return;
 
   if (event.status === 'PAID') {
     await prisma.$transaction(async (tx) => {

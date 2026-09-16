@@ -1,8 +1,24 @@
 import crypto from 'node:crypto';
 import Razorpay from 'razorpay';
+import { BadRequest } from '../http.js';
 import type {
   PaymentGateway, CreateGatewayOrderParams, SignatureVerifyParams, NormalizedPaymentEvent, FetchedPayment,
+  RefundParams, RefundResult,
 } from './types.js';
+
+/**
+ * The Razorpay SDK throws a plain `{ statusCode, error }` object on API
+ * failures, not an Error — left uncaught, that reaches the Express error
+ * handler as an unrecognized value and surfaces as an opaque "Internal
+ * server error". Translate it into a proper HttpError with whatever
+ * description Razorpay gave (a legacy/demo-era payment id that doesn't
+ * really exist at Razorpay is the most common case here).
+ */
+const asBadRequest = (action: string, e: unknown): never => {
+  const err = e as { statusCode?: number; error?: { description?: string; code?: string }; message?: string } | undefined;
+  const description = err?.error?.description ?? err?.message ?? `Unknown gateway error${err?.statusCode ? ` (HTTP ${err.statusCode})` : ''}`;
+  throw BadRequest(`Razorpay ${action} failed: ${description}`);
+};
 
 const timingSafeEqual = (a: string, b: string) => {
   const aBuf = Buffer.from(a);
@@ -23,8 +39,12 @@ export const createRazorpayGateway = (keyId: string, keySecret: string, webhookS
     publicKeyId: keyId,
 
     async createOrder({ amountPaise, currency, receipt, notes }: CreateGatewayOrderParams) {
-      const order = await rzp.orders.create({ amount: amountPaise, currency, receipt, notes });
-      return { providerOrderId: order.id, amount: Number(order.amount), currency: order.currency };
+      try {
+        const order = await rzp.orders.create({ amount: amountPaise, currency, receipt, notes });
+        return { providerOrderId: order.id, amount: Number(order.amount), currency: order.currency };
+      } catch (e) {
+        return asBadRequest('order creation', e);
+      }
     },
 
     // The one cryptographic fact that proves *this specific* payment really
@@ -45,6 +65,19 @@ export const createRazorpayGateway = (keyId: string, keySecret: string, webhookS
       const p = await rzp.payments.fetch(paymentId);
       if (!p) return null;
       return { status: String(p.status), amountPaise: Number(p.amount), currency: String(p.currency) };
+    },
+
+    // Real money movement — call this BEFORE ever marking anything REFUNDED
+    // in our own DB. Razorpay refunds are idempotent per amount+payment when
+    // a `receipt`/idempotency key isn't reused across different amounts, but
+    // we still only ever call this once per admin action (see admin.service).
+    async refund({ paymentId, amountPaise, notes }: RefundParams): Promise<RefundResult> {
+      try {
+        const refund = await rzp.payments.refund(paymentId, { amount: amountPaise, notes });
+        return { providerRefundId: refund.id, status: String(refund.status) };
+      } catch (e) {
+        return asBadRequest('refund', e);
+      }
     },
 
     verifyWebhookSignature(rawBody: Buffer, signature: string | undefined) {
@@ -73,7 +106,26 @@ export const createRazorpayGateway = (keyId: string, keySecret: string, webhookS
           raw: body,
         };
       }
-      // Any other event (refunds, disputes, …) — not something this flow acts on yet.
+      // Refund events carry a `refund` entity alongside the `payment` entity —
+      // payment_id there is the authoritative link back to our Payment row.
+      // Covers refunds initiated from the Razorpay dashboard directly, not
+      // just ones our own admin UI triggers (see admin.service.refundBooking
+      // / refundQrOrder, which call gateway.refund() and don't need to wait
+      // for this webhook, but a dashboard-initiated refund only ever reaches
+      // us through here).
+      if (event === 'refund.processed' || event === 'refund.created') {
+        const refundEntity = body.payload?.refund?.entity ?? {};
+        return {
+          providerOrderId,
+          providerPaymentId: refundEntity.payment_id ?? providerPaymentId,
+          status: 'REFUNDED',
+          amount: refundEntity.amount != null ? Number(refundEntity.amount) : amount,
+          currency: refundEntity.currency ?? currency,
+          providerRefundId: refundEntity.id ?? null,
+          raw: body,
+        };
+      }
+      // Any other event (disputes, subscriptions, …) — not something this flow acts on yet.
       return { providerOrderId, providerPaymentId, status: 'IGNORED', amount, currency, raw: body };
     },
   };

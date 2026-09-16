@@ -95,10 +95,10 @@ const OrderStepper = ({ current }: { current: typeof ORDER_STEPS[number]['key'] 
 
 /**
  * "Get your QR sticker" landing page + order wizard:
- *   sign in (Google) → details → preview & edit → pay (Razorpay, or the demo
- * gateway until real keys are configured — see useQrPaymentCheckout) →
- * confirmation. A failed/cancelled payment never loses the form: it stays on
- * this step with everything filled in and a "Try again" retry.
+ *   sign in (Google) → details → preview & edit → pay (Razorpay — see
+ * useQrPaymentCheckout) → confirmation. A failed/cancelled payment never
+ * loses the form: it stays on this step with everything filled in and a
+ * "Try again" retry.
  */
 export const QrCallingLandingPage = () => {
   const { user, hydrated } = useAuth();
@@ -170,7 +170,7 @@ export const QrCallingLandingPage = () => {
   // changed plate/address needs a fresh order rather than reusing the old one.
   const [qrOrderId, setQrOrderId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const { paymentError, setPaymentError, startCheckout, demoModal } = useQrPaymentCheckout(() => setStep('done'));
+  const { paymentError, setPaymentError, startCheckout } = useQrPaymentCheckout(() => setStep('done'));
 
   const startPayment = async () => {
     setPaymentError(null);
@@ -626,7 +626,6 @@ export const QrCallingLandingPage = () => {
 
       </main>
       <Footer />
-      {demoModal}
     </>
   );
 };

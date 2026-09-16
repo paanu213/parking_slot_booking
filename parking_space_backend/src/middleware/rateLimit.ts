@@ -7,6 +7,10 @@ export const globalLimiter = rateLimit({
   limit: 300,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  // Razorpay's own retry/burst behavior (and a webhook-secret HMAC check
+  // right behind this) shouldn't ever get 429'd by the generic per-IP cap —
+  // a dropped webhook means a payment/refund silently never reconciles.
+  skip: (req) => req.path.startsWith('/api/webhooks'),
 });
 
 export const authLimiter = rateLimit({

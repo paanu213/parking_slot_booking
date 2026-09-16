@@ -373,6 +373,9 @@ model Payment {
   refundAmount       Decimal?      @db.Decimal(10, 2)
   refundedAt         DateTime?
   refundNote         String?       @db.Text
+  // The gateway's own refund id (e.g. Razorpay's rfnd_...) — set only once
+  // the gateway actually confirms the refund, never before.
+  providerRefundId   String?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 

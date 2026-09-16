@@ -1,8 +1,7 @@
 /**
- * The payment seam — mirrors lib/callProviders. Both the real Razorpay
- * gateway and the demo gateway implement this same interface, so swapping
- * one for the other (env vars only, see index.ts) is not a code change
- * anywhere that calls getGateway().
+ * The payment seam — mirrors lib/callProviders. Callers only ever talk to
+ * this interface (see index.ts's getGateway()), never to Razorpay's SDK
+ * directly.
  */
 
 export interface CreateGatewayOrderParams {
@@ -25,7 +24,7 @@ export interface SignatureVerifyParams {
   signature: string;
 }
 
-export type NormalizedPaymentStatus = 'PAID' | 'FAILED' | 'IGNORED';
+export type NormalizedPaymentStatus = 'PAID' | 'FAILED' | 'REFUNDED' | 'IGNORED';
 
 export interface NormalizedPaymentEvent {
   providerOrderId: string | null;
@@ -35,6 +34,8 @@ export interface NormalizedPaymentEvent {
   currency: string | null;
   failureCode?: string;
   failureReason?: string;
+  /** Set only on REFUNDED events. */
+  providerRefundId?: string | null;
   raw: unknown;
 }
 
@@ -44,15 +45,30 @@ export interface FetchedPayment {
   currency: string;
 }
 
+export interface RefundParams {
+  /** The gateway's own payment id (Payment.providerPaymentId) — not our internal Payment.id. */
+  paymentId: string;
+  amountPaise: number;
+  notes?: Record<string, string>;
+}
+
+export interface RefundResult {
+  providerRefundId: string;
+  /** 'pending' | 'processed' | 'failed' */
+  status: string;
+}
+
 export interface PaymentGateway {
   name: string;
-  /** Public key id the frontend checkout widget needs — '' when there's none (demo mode). */
+  /** Public key id the frontend checkout widget needs. */
   publicKeyId: string;
   createOrder(p: CreateGatewayOrderParams): Promise<CreateGatewayOrderResult>;
   /** Client-supplied proof after checkout — cryptographic, never trust a bare "success" flag instead of this. */
   verifySignature(p: SignatureVerifyParams): boolean;
-  /** Defense-in-depth server-to-server cross-check after signature verification (real gateway only). */
+  /** Defense-in-depth server-to-server cross-check after signature verification. */
   fetchPayment?(paymentId: string): Promise<FetchedPayment | null>;
+  /** Issues a real refund at the gateway for a captured payment — never mark a Payment REFUNDED in our own DB without this succeeding first. */
+  refund(p: RefundParams): Promise<RefundResult>;
   /** Verifies a webhook POST's signature over the exact raw request bytes. */
   verifyWebhookSignature(rawBody: Buffer, signature: string | undefined): boolean;
   /** Only call after verifyWebhookSignature has passed. */

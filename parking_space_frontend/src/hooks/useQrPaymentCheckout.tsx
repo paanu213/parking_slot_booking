@@ -1,15 +1,12 @@
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, FlaskConical, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ApiError, errorMessage } from '@/lib/errors';
 
 /**
- * Shared Razorpay (or demo-gateway) checkout for anywhere a QR sticker order
- * can be paid for — the initial order wizard (QrCallingLandingPage) and a
- * retry from the orders list (QrOrdersPage) both use this single
- * implementation instead of two copies of the same checkout/verify/fail/
- * cancel wiring. See the backend's lib/paymentGateway for the demo-vs-real
- * gateway seam this talks to.
+ * Shared Razorpay checkout for anywhere a QR sticker order can be paid for —
+ * the initial order wizard (QrCallingLandingPage) and a retry from the
+ * orders list (QrOrdersPage) both use this single implementation instead of
+ * two copies of the same checkout/verify/fail/cancel wiring.
  */
 
 // ── Razorpay Checkout.js — loaded lazily, only once payment actually starts ──
@@ -64,7 +61,6 @@ const loadRazorpayScript = (): Promise<void> => {
 };
 
 export interface CheckoutResponse {
-  mode: 'razorpay' | 'demo';
   keyId: string;
   orderId: string;
   amount: number;
@@ -95,7 +91,6 @@ export interface QrCheckoutPrefill {
 export const useQrPaymentCheckout = (onPaid: (qrOrderId: string) => void) => {
   const [checkingOutId, setCheckingOutId] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState<PaymentError | null>(null);
-  const [demoCheckout, setDemoCheckout] = useState<(CheckoutResponse & { qrOrderId: string }) | null>(null);
 
   const openRazorpayCheckout = (orderId: string, checkout: CheckoutResponse, prefill?: QrCheckoutPrefill) => {
     const rzp = new window.Razorpay!({
@@ -136,12 +131,8 @@ export const useQrPaymentCheckout = (onPaid: (qrOrderId: string) => void) => {
     setCheckingOutId(orderId);
     try {
       const { data: checkout } = await api.post<CheckoutResponse>(`/customer/me/qr-orders/${orderId}/checkout`, {});
-      if (checkout.mode === 'razorpay') {
-        await loadRazorpayScript();
-        openRazorpayCheckout(orderId, checkout, prefill);
-      } else {
-        setDemoCheckout({ ...checkout, qrOrderId: orderId });
-      }
+      await loadRazorpayScript();
+      openRazorpayCheckout(orderId, checkout, prefill);
     } catch (e) {
       setPaymentError(friendlyPaymentError(e));
     } finally {
@@ -149,92 +140,5 @@ export const useQrPaymentCheckout = (onPaid: (qrOrderId: string) => void) => {
     }
   };
 
-  const demoModal = demoCheckout ? (
-    <DemoPaymentModal
-      checkout={demoCheckout}
-      onDone={() => { setDemoCheckout(null); onPaid(demoCheckout.qrOrderId); }}
-      onClose={(err) => { setDemoCheckout(null); setPaymentError(err); }}
-    />
-  ) : null;
-
-  return { checkingOutId, paymentError, setPaymentError, startCheckout, demoModal };
-};
-
-const DemoPaymentModal = ({
-  checkout, onDone, onClose,
-}: {
-  checkout: CheckoutResponse & { qrOrderId: string };
-  onDone: () => void;
-  onClose: (err: PaymentError) => void;
-}) => {
-  const [busy, setBusy] = useState<'success' | 'failure' | 'cancel' | null>(null);
-
-  const finish = async (outcome: 'success' | 'failure') => {
-    setBusy(outcome);
-    try {
-      const { data } = await api.post<{ ok: boolean; paid: boolean }>(
-        `/customer/me/qr-orders/${checkout.qrOrderId}/demo-complete`,
-        { providerOrderId: checkout.orderId, outcome },
-      );
-      if (outcome === 'success' && data.paid) {
-        onDone();
-      } else {
-        onClose({ message: 'Simulated payment failure (demo mode) — no amount was charged.' });
-      }
-    } catch (e) {
-      onClose(friendlyPaymentError(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const cancel = async () => {
-    setBusy('cancel');
-    await api.post(`/customer/me/qr-orders/${checkout.qrOrderId}/payment-cancelled`, { providerOrderId: checkout.orderId }).catch(() => {});
-    onClose({ message: "Payment cancelled — you closed the window before it finished. Nothing was charged." });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-        <div className="flex items-center justify-between">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-            <FlaskConical className="h-3.5 w-3.5" /> Demo payment
-          </span>
-          <button type="button" onClick={cancel} disabled={!!busy} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <p className="mt-4 text-center font-display text-3xl font-bold">₹{(checkout.amount / 100).toFixed(0)}</p>
-        <p className="text-center text-xs text-slate-400">{checkout.currency} · order {checkout.orderId}</p>
-
-        <p className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
-          The real payment gateway isn't connected yet — this simulates what Razorpay Checkout would
-          do, through the exact same server-side verification a real payment goes through. No money moves.
-        </p>
-
-        <div className="mt-5 space-y-2">
-          <button
-            type="button"
-            onClick={() => finish('success')}
-            disabled={!!busy}
-            className="btn-primary w-full justify-center gap-2"
-          >
-            {busy === 'success' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            Simulate success
-          </button>
-          <button
-            type="button"
-            onClick={() => finish('failure')}
-            disabled={!!busy}
-            className="btn-ghost w-full justify-center gap-2 text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10"
-          >
-            {busy === 'failure' ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
-            Simulate failure
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return { checkingOutId, paymentError, setPaymentError, startCheckout };
 };

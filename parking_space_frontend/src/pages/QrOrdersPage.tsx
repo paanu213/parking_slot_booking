@@ -144,7 +144,7 @@ export const QrOrdersPage = () => {
 
   const [historyOpenFor, setHistoryOpenFor] = useState<string | null>(null);
   const [timelineOpenFor, setTimelineOpenFor] = useState<string | null>(null);
-  const { checkingOutId, paymentError, setPaymentError, startCheckout, demoModal } = useQrPaymentCheckout((orderId) => {
+  const { checkingOutId, paymentError, setPaymentError, startCheckout } = useQrPaymentCheckout((orderId) => {
     qc.invalidateQueries({ queryKey: ['my-qr-orders'] });
     qc.invalidateQueries({ queryKey: ['qr-order-payments', orderId] });
   });
@@ -305,7 +305,6 @@ export const QrOrdersPage = () => {
           })
         )}
       </div>
-      {demoModal}
     </main>
   );
 };
