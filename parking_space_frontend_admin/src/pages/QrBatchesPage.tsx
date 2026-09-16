@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Check, Copy, Download, Layers, Plus, Printer, QrCode, Search, Unlink, X } from 'lucide-react';
+import { Ban, Check, Copy, Download, FileText, Layers, Plus, Printer, QrCode, Search, Unlink, X } from 'lucide-react';
 import QRCodeLib from 'qrcode';
 import JSZip from 'jszip';
 import { api } from '@/lib/api';
@@ -80,6 +80,22 @@ export default function QrBatchesPage() {
     a.download = `qr-batch-${batchLabel.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
+  const downloadStickerPdf = async (id: string, batchLabel: string) => {
+    setPdfBusyId(id);
+    try {
+      const res = await api.get(`/admin/qr/batches/${id}/sticker-pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `qr-stickers-${batchLabel.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setPdfBusyId(null);
+    }
   };
 
   return (
@@ -167,6 +183,14 @@ export default function QrBatchesPage() {
                         className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:underline"
                       >
                         <Download className="h-3 w-3" /> CSV
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => downloadStickerPdf(b.id, b.label)}
+                        disabled={pdfBusyId === b.id}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:underline disabled:opacity-50"
+                      >
+                        <FileText className="h-3 w-3" /> {pdfBusyId === b.id ? 'Generating…' : 'Sticker PDF'}
                       </button>
                       <button
                         type="button"

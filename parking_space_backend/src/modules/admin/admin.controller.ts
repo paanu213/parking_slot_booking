@@ -688,6 +688,15 @@ export const exportQrBatch: RequestHandler = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+export const generateStickerPdf: RequestHandler = async (req, res, next) => {
+  try {
+    const { filename, pdf } = await service.generateStickerPdf(req.params.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdf);
+  } catch (e) { next(e); }
+};
+
 export const listQrBatchTokens: RequestHandler = async (req, res, next) => {
   try {
     res.json(await service.listQrBatchTokens(req.params.id));

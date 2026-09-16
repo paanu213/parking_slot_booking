@@ -162,6 +162,7 @@ r.get('/qr/payments', ctrl.listQrPayments);
 r.get('/qr/batches', ctrl.listQrBatches);
 r.post('/qr/batches', validate(generateQrBatchSchema), ctrl.generateQrBatch);
 r.get('/qr/batches/:id/export', ctrl.exportQrBatch);
+r.get('/qr/batches/:id/sticker-pdf', ctrl.generateStickerPdf);
 r.get('/qr/batches/:id/tokens', ctrl.listQrBatchTokens);
 r.patch('/qr/batches/:id', validate(updateQrBatchSchema), ctrl.updateQrBatch);
 r.get('/qr/stickers', ctrl.listQrStickers);

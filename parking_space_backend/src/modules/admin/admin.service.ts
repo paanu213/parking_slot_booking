@@ -17,6 +17,8 @@ import { resolveDateRange } from '../../lib/dateRange.js';
 import { storeImageBuffer, deleteImageByUrl, deleteDocumentByUrl } from '../../lib/images.js';
 import { parsePendingEdits, mergePendingEdits } from '../../lib/pendingEdits.js';
 import { decryptField, encryptField, hmacHash } from '../../lib/crypto.js';
+import { getGateway } from '../../lib/paymentGateway/index.js';
+import { generateStickerBatchPdf } from '../../lib/stickerPdf.js';
 import type {
   UpdateVendorInput,
   VendorLeadStatusInput,
@@ -944,7 +946,9 @@ export const refundBooking = async (id: string, actorId: string, body: RefundInp
   const { amount, note } = body;
   const booking = await prisma.booking.findUniqueOrThrow({
     where: { id },
-    include: { payments: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    // Only ever refund an actually-PAID attempt — a later FAILED/CREATED
+    // retry row must never be the one that gets stamped REFUNDED.
+    include: { payments: { where: { status: 'PAID' }, orderBy: { createdAt: 'desc' }, take: 1 } },
   });
 
   if (amount > Number(booking.totalAmount)) {
@@ -952,8 +956,9 @@ export const refundBooking = async (id: string, actorId: string, body: RefundInp
   }
 
   if (booking.isDirectBooking) {
-    // Use `as any` because Prisma client may not yet be regenerated for the new refund fields
-    const updated = await (prisma.booking.update as any)({
+    // Cash/offline booking — no online payment exists, nothing to refund at
+    // a gateway; this is purely a bookkeeping record.
+    const updated = await prisma.booking.update({
       where: { id },
       data: { refundAmount: amount, refundedAt: new Date(), refundNote: note ?? null },
     });
@@ -967,24 +972,34 @@ export const refundBooking = async (id: string, actorId: string, body: RefundInp
     return updated;
   }
 
-  // Online booking — store refund on the Payment record
+  // Online booking — must actually refund at the gateway before the DB ever
+  // says REFUNDED. Never trust a client/admin click alone to mean money moved.
   const payment = booking.payments[0];
-  if (!payment) throw BadRequest('No payment record found for this booking');
+  if (!payment) throw BadRequest('No paid payment record found for this booking');
+  if (!payment.providerPaymentId) throw BadRequest('Payment has no gateway reference — cannot refund');
 
-  const updatedPayment = await (prisma.payment.update as any)({
+  const gateway = getGateway();
+  const refund = await gateway.refund({
+    paymentId: payment.providerPaymentId,
+    amountPaise: Math.round(amount * 100),
+    notes: { bookingId: booking.id, reason: note ?? '' },
+  });
+
+  const updatedPayment = await prisma.payment.update({
     where: { id: payment.id },
     data: {
-      refundAmount: amount,
-      refundedAt:   new Date(),
-      refundNote:   note ?? null,
-      status:       'REFUNDED',
+      refundAmount:     amount,
+      refundedAt:       new Date(),
+      refundNote:       note ?? null,
+      status:           'REFUNDED',
+      providerRefundId: refund.providerRefundId,
     },
   });
   await prisma.auditLog.create({
     data: {
       actorId, action: 'PAYMENT_REFUND',
       entity: 'Payment', entityId: payment.id,
-      metadata: JSON.stringify({ amount, note }),
+      metadata: JSON.stringify({ amount, note, providerRefundId: refund.providerRefundId, gatewayStatus: refund.status }),
     },
   });
   return updatedPayment;
@@ -2223,11 +2238,23 @@ export const refundQrOrder = async (id: string, actorId: string, amount: number,
 
   const payment = order.payments[0];
   if (!payment) throw BadRequest('No payment record found for this order');
+  if (!payment.providerPaymentId) throw BadRequest('Payment has no gateway reference — cannot refund');
+
+  // Must actually refund at the gateway before the DB ever says REFUNDED.
+  const gateway = getGateway();
+  const refund = await gateway.refund({
+    paymentId: payment.providerPaymentId,
+    amountPaise: Math.round(amount * 100),
+    notes: { qrOrderId: id, reason: note ?? '' },
+  });
 
   const [, , updated] = await prisma.$transaction([
     prisma.payment.update({
       where: { id: payment.id },
-      data: { status: 'REFUNDED', refundAmount: amount, refundedAt: new Date(), refundNote: note ?? null },
+      data: {
+        status: 'REFUNDED', refundAmount: amount, refundedAt: new Date(), refundNote: note ?? null,
+        providerRefundId: refund.providerRefundId,
+      },
     }),
     prisma.qrOrderStatusEvent.create({
       data: {
@@ -2242,7 +2269,7 @@ export const refundQrOrder = async (id: string, actorId: string, amount: number,
     prisma.auditLog.create({
       data: {
         actorId, action: 'QR_ORDER_REFUND', entity: 'QrOrder', entityId: id,
-        metadata: JSON.stringify({ amount, note }),
+        metadata: JSON.stringify({ amount, note, providerRefundId: refund.providerRefundId, gatewayStatus: refund.status }),
       },
     }),
   ]);
@@ -2343,6 +2370,26 @@ export const exportQrBatch = async (id: string) => {
   const rows = ['token,url', ...stickers.map((s) => `${s.token},${stickerUrl(s.token)}`)];
   const safeLabel = batch.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/^-+|-+$/g, '');
   return { filename: `qr-batch-${safeLabel || batch.id}.csv`, csv: rows.join('\n') + '\n' };
+};
+
+/**
+ * Print-ready PDF for a batch — one page per sticker, each the full branded
+ * design (not just the bare QR) sized to the physical sticker itself. See
+ * lib/stickerPdf.ts.
+ */
+export const generateStickerPdf = async (id: string) => {
+  const batch = await prisma.qrBatch.findUnique({ where: { id } });
+  if (!batch) throw NotFound('Batch not found');
+
+  const stickers = await prisma.qrSticker.findMany({
+    where:   { batchId: id },
+    select:  { token: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const pdf = await generateStickerBatchPdf(stickers.map((s) => ({ token: s.token, url: stickerUrl(s.token) })));
+  const safeLabel = batch.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/^-+|-+$/g, '');
+  return { filename: `qr-stickers-${safeLabel || batch.id}.pdf`, pdf };
 };
 
 /** Every token + printable URL for a batch — used by the admin QR viewer/downloader. */
