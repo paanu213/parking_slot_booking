@@ -37,6 +37,10 @@ export const exotelProvider: CallProvider = {
   name: 'exotel',
 
   async initiateMaskedCall(p: InitiateMaskedCallParams): Promise<InitiateMaskedCallResult> {
+    if (!env.EXOTEL_API_KEY || !env.EXOTEL_API_TOKEN || !env.EXOTEL_ACCOUNT_SID) {
+      throw ServerError('Exotel is not configured — set EXOTEL_API_KEY / EXOTEL_API_TOKEN / EXOTEL_ACCOUNT_SID');
+    }
+
     const form = new URLSearchParams({
       From:       p.callerE164,
       To:         p.ownerE164,

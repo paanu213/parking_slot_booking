@@ -36,10 +36,11 @@ const schema = z.object({
   // lookup hashes — 64 hex chars (32 bytes). Generate with `openssl rand -hex 32`.
   QR_DATA_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'QR_DATA_KEY must be a 64-character hex string (openssl rand -hex 32)'),
 
-  // QR Calling telephony — swappable adapter (lib/callProviders). 'mock' needs
-  // no vendor account and simulates a real call lifecycle; set to a real
-  // provider's name once one is chosen and its adapter is added.
-  CALL_PROVIDER: z.string().default('mock'),
+  // QR Calling telephony — swappable adapter (lib/callProviders). 'exotel' is
+  // the only real provider wired up today; there is no demo/simulated
+  // fallback — getProvider()/the adapter itself throws a clear error if it
+  // isn't configured, rather than silently faking a call.
+  CALL_PROVIDER: z.string().default('exotel'),
   // Platform-wide cost guard — total calls/day across all cars, independent
   // of the per-registration/per-caller/per-IP limits below it in calls.service.
   CALL_GLOBAL_DAILY_CAP: z.coerce.number().int().positive().default(2000),

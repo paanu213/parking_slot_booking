@@ -163,10 +163,10 @@ export const verifyStickerPlate = async (token: string, last4: string, ip: strin
   };
 };
 
-// ── ICE card (permit-scoped; route also requires a signed-in scanner who has
-// entered their own mobile number — same gate as placing a masked call) ─────
+// ── ICE card (permit-scoped; route also requires a signed-in scanner —
+// requireAuth — so the authenticated user id is the audit trail) ────────────
 
-export const getEmergencyCard = async (permitToken: string, callerNumber: string, ip: string): Promise<EmergencyCard> => {
+export const getEmergencyCard = async (permitToken: string, userId: string, ip: string): Promise<EmergencyCard> => {
   const registrationId = verifyPermit(permitToken);
   const registration = await prisma.vehicleRegistration.findUnique({
     where:   { id: registrationId },
@@ -176,10 +176,9 @@ export const getEmergencyCard = async (permitToken: string, callerNumber: string
     throw NotFound('Emergency card not available');
   }
 
-  // Best-effort audit trail — who viewed this car's emergency info and when,
-  // same traceability the owner gets from a call's caller number.
+  // Best-effort audit trail — who viewed this car's emergency info and when.
   logger.info(
-    { event: 'emergency_card_revealed', registrationId, callerPhoneHash: hmacHash(callerNumber), ipHash: hmacHash(ip) },
+    { event: 'emergency_card_revealed', registrationId, userId, ipHash: hmacHash(ip) },
     'Emergency card revealed',
   );
 
