@@ -4,15 +4,13 @@ import { RegisterVehicleInput } from '@ps/types';
 export { LookupInput as lookupSchema } from '@ps/types';
 
 /**
- * Revealing the emergency card requires the scanner's own mobile number —
- * same requirement as placing a masked call (CallPanel) — not just being
- * signed in. Self-reported (no OTP), but it makes viewing sensitive family
- * contact info traceable the same way a call is, and matches the "enter
- * your number first" flow on both actions.
+ * Revealing the emergency card requires the scanner to be signed in
+ * (`requireAuth` on the route) — their authenticated user id is the audit
+ * trail (see scan.service's getEmergencyCard), so no extra self-reported
+ * field is needed here the way a masked call needs a number to dial.
  */
 export const revealEmergencySchema = z.object({
-  permit:       z.string().min(1, 'Missing permit'),
-  callerNumber: z.string().trim().min(8, 'Enter a valid phone number').max(20),
+  permit: z.string().min(1, 'Missing permit'),
 });
 export type RevealEmergencyInput = z.infer<typeof revealEmergencySchema>;
 

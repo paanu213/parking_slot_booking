@@ -1,17 +1,16 @@
 /**
  * Call engine (QR Calling, Phase 4) — masked bridge between a scanner and a
  * car owner. Enforces the blueprint's limits matrix, then hands off to the
- * pluggable `CallProvider` (mock today; a real vendor drops in later without
- * touching this file's callers). `applyCallEvent` is the single place a call
- * moves through its state machine — hit by a real provider's webhook, or by
- * the mock provider's in-process simulation, identically.
+ * pluggable `CallProvider` (Exotel today — see lib/callProviders/exotel.ts;
+ * a second vendor drops in later without touching this file's callers).
+ * `applyCallEvent` is the single place a call moves through its state
+ * machine, hit by the provider's webhook.
  */
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { decryptField, encryptField, hmacHash } from '../../lib/crypto.js';
 import { verifyPermit } from '../../lib/scanPermit.js';
 import { getProvider, type NormalizedCallEvent } from '../../lib/callProviders/index.js';
-import { simulateMockProgress } from '../../lib/callProviders/mock.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { env, exotelVirtualNumbers } from '../../config/env.js';
 import { BadRequest, Forbidden, HttpError, NotFound, ServerError, TooMany } from '../../lib/http.js';
@@ -52,19 +51,15 @@ const getActiveVirtualNumbers = async (providerName: string) => {
   });
   if (existing.length > 0) return existing;
 
-  // A real provider's ExoPhone/virtual number is purchased out-of-band in
-  // their dashboard, not invented here — mock is the only one allowed to
-  // make one up, since it never places a real call.
+  // A provider's ExoPhone/virtual number is purchased out-of-band in their
+  // dashboard — never invented here.
   if (providerName === 'exotel') {
     if (exotelVirtualNumbers.length === 0) throw new Error('EXOTEL_VIRTUAL_NUMBERS is not configured — set it in .env');
     return prisma.$transaction(
       exotelVirtualNumbers.map((e164) => prisma.virtualNumber.create({ data: { e164, provider: providerName } })),
     );
   }
-  const created = await prisma.virtualNumber.create({
-    data: { e164: `+91${providerName === 'mock' ? '80MOCKVN01' : 'UNSET00001'}`, provider: providerName },
-  });
-  return [created];
+  throw new Error(`No virtual number configured for call provider "${providerName}"`);
 };
 
 export const initiateCall = async (
@@ -188,10 +183,6 @@ export const initiateCall = async (
     where: { id: session.id },
     data:  { providerCallId: result.providerCallId, virtualNumber: usedNumber.e164, rawPayload: JSON.stringify(result.raw) },
   });
-
-  if (provider.name === 'mock') {
-    simulateMockProgress(result.providerCallId, (evt) => applyCallEvent(provider.name, evt));
-  }
 
   return { callSessionId: session.id };
 };

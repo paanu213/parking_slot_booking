@@ -36,7 +36,7 @@ export const verifyStickerPlate: RequestHandler = async (req, res, next) => {
 
 export const emergency: RequestHandler = async (req, res, next) => {
   try {
-    const { permit, callerNumber } = req.body as RevealEmergencyInput;
-    res.json(await service.getEmergencyCard(permit, callerNumber, req.ip ?? 'unknown'));
+    const { permit } = req.body as RevealEmergencyInput;
+    res.json(await service.getEmergencyCard(permit, req.user!.sub, req.ip ?? 'unknown'));
   } catch (e) { next(e); }
 };
