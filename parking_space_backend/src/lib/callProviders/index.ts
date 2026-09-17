@@ -1,11 +1,12 @@
 import { env } from '../../config/env.js';
 import type { CallProvider } from './types.js';
 import { mockProvider } from './mock.js';
+import { exotelProvider } from './exotel.js';
 
 const providers: Record<string, CallProvider> = {
   mock: mockProvider,
-  // exotel: exotelProvider,  // add once the account/API keys exist
-  // tata:   tataProvider,
+  exotel: exotelProvider,
+  // tata: tataProvider,
 };
 
 export const getProvider = (name: string = env.CALL_PROVIDER): CallProvider => {

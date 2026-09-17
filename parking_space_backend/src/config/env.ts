@@ -44,6 +44,24 @@ const schema = z.object({
   // of the per-registration/per-caller/per-IP limits below it in calls.service.
   CALL_GLOBAL_DAILY_CAP: z.coerce.number().int().positive().default(2000),
 
+  // Exotel — Voice API "Connect two numbers" (lib/callProviders/exotel.ts).
+  // Optional at the schema level (only needed when CALL_PROVIDER=exotel); the
+  // production check below requires all of them together once that's the case.
+  EXOTEL_API_KEY: z.string().optional(),
+  EXOTEL_API_TOKEN: z.string().optional(),
+  EXOTEL_ACCOUNT_SID: z.string().optional(),
+  // Region subdomain — 'api.in.exotel.com' (Mumbai) covers Indian ExoPhones.
+  EXOTEL_SUBDOMAIN: z.string().default('api.in.exotel.com'),
+  // The ExoPhone(s) calls go out from — provisioned in the Exotel dashboard,
+  // not something we can invent at runtime like the mock does. Comma-separated
+  // — when more than one is set, calls.service tries them in order and falls
+  // back to the next if one fails to place the call.
+  EXOTEL_VIRTUAL_NUMBERS: z.string().optional(),
+  // Exotel's StatusCallback has no signature/HMAC mechanism (confirmed against
+  // their docs) — this shared secret rides as a query param on the callback
+  // URL we hand Exotel, and is checked before trusting any webhook body.
+  EXOTEL_WEBHOOK_SECRET: z.string().optional(),
+
   COOKIE_DOMAIN: z.string().default('localhost'),
   COOKIE_SECURE: boolFromString.default(false),
 
@@ -90,6 +108,7 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 export const corsOrigins = env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
+export const exotelVirtualNumbers = (env.EXOTEL_VIRTUAL_NUMBERS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 // Production-only safety net — catch the misconfigurations that silently break or
 // weaken a live deployment (insecure cookies, no CORS allowlist, placeholder/dupe
@@ -117,6 +136,14 @@ if (env.NODE_ENV === 'production') {
   const rzpSetCount = rzpVars.filter(Boolean).length;
   if (rzpSetCount < 3) {
     problems.push('RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET must all be set — there is no demo/fallback gateway');
+  }
+  // Exotel: only required if it's actually the selected call provider — the
+  // mock provider stays valid in production for as long as no real vendor is wired up.
+  if (env.CALL_PROVIDER === 'exotel') {
+    const exotelVars = [env.EXOTEL_API_KEY, env.EXOTEL_API_TOKEN, env.EXOTEL_ACCOUNT_SID, env.EXOTEL_WEBHOOK_SECRET];
+    if (exotelVars.filter(Boolean).length < exotelVars.length || exotelVirtualNumbers.length === 0) {
+      problems.push('CALL_PROVIDER=exotel but EXOTEL_API_KEY / EXOTEL_API_TOKEN / EXOTEL_ACCOUNT_SID / EXOTEL_VIRTUAL_NUMBERS / EXOTEL_WEBHOOK_SECRET must all be set');
+    }
   }
   if (problems.length > 0) {
     console.error('Refusing to start — production environment is misconfigured:');

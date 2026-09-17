@@ -13,10 +13,11 @@ import { verifyPermit } from '../../lib/scanPermit.js';
 import { getProvider, type NormalizedCallEvent } from '../../lib/callProviders/index.js';
 import { simulateMockProgress } from '../../lib/callProviders/mock.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
-import { env } from '../../config/env.js';
-import { BadRequest, Forbidden, NotFound, TooMany } from '../../lib/http.js';
+import { env, exotelVirtualNumbers } from '../../config/env.js';
+import { BadRequest, Forbidden, HttpError, NotFound, ServerError, TooMany } from '../../lib/http.js';
 import { isUsable } from '../scan/scan.service.js';
 import { getCallDailyCap } from '../../lib/callDailyCap.js';
+import { logger } from '../../config/logger.js';
 
 const TERMINAL_STATUSES = new Set([
   'COMPLETED', 'NO_ANSWER', 'BUSY', 'OWNER_REJECTED', 'FAILED', 'BLOCKED', 'CANCELLED',
@@ -38,14 +39,32 @@ const isWithinWindow = (current: string, from: string, to: string): boolean =>
 
 const maskPhone = (p: string): string => (p.length > 4 ? `••••${p.slice(-4)}` : '••••');
 
-const getOrCreateVirtualNumber = async (providerName: string) => {
-  const existing = await prisma.virtualNumber.findFirst({ where: { provider: providerName, isActive: true } });
-  if (existing) return existing;
-  // Dev/mock convenience — a real provider's number is provisioned out-of-band
-  // and seeded here once, not invented on the fly.
-  return prisma.virtualNumber.create({
+/**
+ * Every active virtual number for a provider, in a stable order — when Exotel
+ * has more than one ExoPhone configured (EXOTEL_VIRTUAL_NUMBERS), initiateCall
+ * tries them in this order, falling back to the next if one fails to place
+ * the call at all (see the retry loop below).
+ */
+const getActiveVirtualNumbers = async (providerName: string) => {
+  const existing = await prisma.virtualNumber.findMany({
+    where:   { provider: providerName, isActive: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (existing.length > 0) return existing;
+
+  // A real provider's ExoPhone/virtual number is purchased out-of-band in
+  // their dashboard, not invented here — mock is the only one allowed to
+  // make one up, since it never places a real call.
+  if (providerName === 'exotel') {
+    if (exotelVirtualNumbers.length === 0) throw new Error('EXOTEL_VIRTUAL_NUMBERS is not configured — set it in .env');
+    return prisma.$transaction(
+      exotelVirtualNumbers.map((e164) => prisma.virtualNumber.create({ data: { e164, provider: providerName } })),
+    );
+  }
+  const created = await prisma.virtualNumber.create({
     data: { e164: `+91${providerName === 'mock' ? '80MOCKVN01' : 'UNSET00001'}`, provider: providerName },
   });
+  return [created];
 };
 
 export const initiateCall = async (
@@ -117,13 +136,13 @@ export const initiateCall = async (
   }
 
   const provider = getProvider();
-  const virtualNumber = await getOrCreateVirtualNumber(provider.name);
+  const virtualNumbers = await getActiveVirtualNumbers(provider.name);
 
   const session = await prisma.callSession.create({
     data: {
       registrationId,
       provider:        provider.name,
-      virtualNumber:   virtualNumber.e164,
+      virtualNumber:   virtualNumbers[0].e164, // placeholder — corrected below to whichever number actually placed the call
       callerPhone:     encryptField(callerNumber),
       callerPhoneHash,
       callerIpHash:    ipHash,
@@ -132,16 +151,42 @@ export const initiateCall = async (
     },
   });
 
-  const result = await provider.initiateMaskedCall({
-    callerE164:    toE164(callerNumber),
-    ownerE164:     toE164(decryptField(registration.contactPhone)),
-    virtualNumber: virtualNumber.e164,
-    sessionId:     session.id,
-  });
+  // Try each configured virtual number in order — a call that fails to place
+  // outright (bad/exhausted ExoPhone, provider-side rejection, etc.) falls
+  // back to the next one instead of failing the whole attempt. This is about
+  // the call never placing at all; once a call is actually ringing, a
+  // no-answer/busy outcome is the caller's/owner's phone, not the number, so
+  // it's never retried here.
+  let result: Awaited<ReturnType<typeof provider.initiateMaskedCall>> | undefined;
+  let usedNumber = virtualNumbers[0];
+  let lastErr: unknown;
+  for (const vn of virtualNumbers) {
+    try {
+      result = await provider.initiateMaskedCall({
+        callerE164:    toE164(callerNumber),
+        ownerE164:     toE164(decryptField(registration.contactPhone)),
+        virtualNumber: vn.e164,
+        sessionId:     session.id,
+      });
+      usedNumber = vn;
+      break;
+    } catch (e) {
+      lastErr = e;
+      logger.warn(
+        { event: 'call_virtual_number_failed', provider: provider.name, virtualNumber: vn.e164, err: e },
+        'Call provider rejected this virtual number — trying the next one',
+      );
+    }
+  }
+
+  if (!result) {
+    await prisma.callSession.update({ where: { id: session.id }, data: { status: 'FAILED', endedAt: new Date() } });
+    throw lastErr instanceof HttpError ? lastErr : ServerError('Could not place the call — please try again');
+  }
 
   await prisma.callSession.update({
     where: { id: session.id },
-    data:  { providerCallId: result.providerCallId, rawPayload: JSON.stringify(result.raw) },
+    data:  { providerCallId: result.providerCallId, virtualNumber: usedNumber.e164, rawPayload: JSON.stringify(result.raw) },
   });
 
   if (provider.name === 'mock') {
