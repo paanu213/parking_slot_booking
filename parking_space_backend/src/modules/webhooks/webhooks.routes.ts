@@ -10,6 +10,7 @@
  * is always safe to reprocess.
  */
 import { Router } from 'express';
+import { env } from '../../config/env.js';
 import { getProvider } from '../../lib/callProviders/index.js';
 import { getGateway } from '../../lib/paymentGateway/index.js';
 import { applyCallEvent } from '../calls/calls.service.js';
@@ -19,6 +20,17 @@ import { logger } from '../../config/logger.js';
 const r = Router();
 
 r.post('/call/:provider', async (req, res) => {
+  // Exotel's StatusCallback has no signature/HMAC — the shared secret we
+  // embed in the callback URL (see lib/callProviders/exotel.ts) is the only
+  // thing standing between this endpoint and anyone who guesses the path.
+  if (req.params.provider === 'exotel') {
+    if (!env.EXOTEL_WEBHOOK_SECRET || req.query.token !== env.EXOTEL_WEBHOOK_SECRET) {
+      logger.warn({ event: 'exotel_webhook_bad_token' }, 'Rejected Exotel webhook — missing/wrong token');
+      res.sendStatus(401);
+      return;
+    }
+  }
+
   try {
     const provider = getProvider(req.params.provider);
     const event = provider.parseWebhook(req.body);
