@@ -21,6 +21,7 @@ interface VehicleForm {
   plateNumber: string;
   contactPhone: string;
   ownerName: string;
+  silentHoursEnabled: boolean;
   silentFrom: string;
   silentTo: string;
   emergencyPublic: boolean;
@@ -33,6 +34,7 @@ const EMPTY: VehicleForm = {
   plateNumber: '',
   contactPhone: '',
   ownerName: '',
+  silentHoursEnabled: false,
   silentFrom: '',
   silentTo: '',
   emergencyPublic: false,
@@ -66,12 +68,14 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
 
   const { fields, append, remove } = useFieldArray({ control, name: 'emergencyContacts' });
   const emergencyPublic = watch('emergencyPublic');
+  const silentHoursEnabled = watch('silentHoursEnabled');
 
   useEffect(() => {
     reset({
       plateNumber:     vehicle.plateNumber,
       contactPhone:    vehicle.contactPhone,
       ownerName:       vehicle.ownerName ?? '',
+      silentHoursEnabled: !!(vehicle.silentFrom || vehicle.silentTo),
       silentFrom:      vehicle.silentFrom ?? '',
       silentTo:        vehicle.silentTo ?? '',
       emergencyPublic: vehicle.emergencyPublic,
@@ -85,14 +89,19 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
 
   const save = useMutation({
     mutationFn: (vals: VehicleForm) => {
+      // This PUT always sends the form's full current state, so an emptied
+      // field must send `null` (clear it) — `undefined` would get dropped by
+      // JSON.stringify and silently mean "leave the old value untouched".
       const payload: Record<string, unknown> = {
         contactPhone:    vals.contactPhone.trim(),
-        ownerName:       vals.ownerName.trim() || undefined,
-        silentFrom:      vals.silentFrom || undefined,
-        silentTo:        vals.silentTo || undefined,
+        ownerName:       vals.ownerName.trim() || null,
+        // Toggled off always clears both, regardless of whatever's still
+        // sitting in the (hidden) time inputs from before it was switched off.
+        silentFrom:      vals.silentHoursEnabled ? (vals.silentFrom || null) : null,
+        silentTo:        vals.silentHoursEnabled ? (vals.silentTo || null) : null,
         emergencyPublic: vals.emergencyPublic,
-        bloodGroup:      vals.emergencyPublic ? (vals.bloodGroup || undefined) : undefined,
-        medicalNotes:    vals.emergencyPublic ? (vals.medicalNotes.trim() || undefined) : undefined,
+        bloodGroup:      vals.emergencyPublic ? (vals.bloodGroup || null) : null,
+        medicalNotes:    vals.emergencyPublic ? (vals.medicalNotes.trim() || null) : null,
         emergencyContacts: vals.emergencyPublic
           ? vals.emergencyContacts.map((c) => ({
               name:       c.name.trim(),
@@ -187,14 +196,51 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Call preferences</h3>
 
             <div>
-              <label className="text-sm font-medium">
-                Silent hours <span className="text-xs text-slate-400">(optional — no calls during this window)</span>
-              </label>
-              <div className="mt-1 flex items-center gap-2">
-                <input type="time" className="input w-36 sm:w-40" {...register('silentFrom')} />
-                <span className="text-slate-400">→</span>
-                <input type="time" className="input w-36 sm:w-40" {...register('silentTo')} />
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">
+                  Silent hours <span className="text-xs text-slate-400">(no calls during a set window)</span>
+                </label>
+                <label className="relative inline-flex cursor-pointer items-center">
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    {...register('silentHoursEnabled', {
+                      onChange: (e) => {
+                        // Switching off doesn't need to clear the inputs — the
+                        // save payload ignores them whenever this is off — but
+                        // switching on with nothing set yet gets a sane default.
+                        if (e.target.checked && !watch('silentFrom') && !watch('silentTo')) {
+                          setValue('silentFrom', '22:00', { shouldDirty: true });
+                          setValue('silentTo', '07:00', { shouldDirty: true });
+                        }
+                      },
+                    })}
+                  />
+                  <span className="h-5 w-9 rounded-full bg-slate-300 transition peer-checked:bg-brand-600 dark:bg-slate-700" />
+                  <span className="absolute left-1 top-1 h-3 w-3 rounded-full bg-white transition peer-checked:translate-x-4" />
+                </label>
               </div>
+
+              {silentHoursEnabled && (
+                <div className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      className={cn('input w-36 sm:w-40', errors.silentFrom && 'border-rose-500')}
+                      {...register('silentFrom', { validate: (v) => !silentHoursEnabled || !!v || 'Set a start time' })}
+                    />
+                    <span className="text-slate-400">→</span>
+                    <input
+                      type="time"
+                      className={cn('input w-36 sm:w-40', errors.silentTo && 'border-rose-500')}
+                      {...register('silentTo', { validate: (v) => !silentHoursEnabled || !!v || 'Set an end time' })}
+                    />
+                  </div>
+                  {(errors.silentFrom || errors.silentTo) && (
+                    <p className="mt-1 text-xs text-rose-600">{errors.silentFrom?.message ?? errors.silentTo?.message}</p>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 

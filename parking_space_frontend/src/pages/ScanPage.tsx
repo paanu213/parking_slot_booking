@@ -84,6 +84,21 @@ const popStashedResult = (): LookupResult | null => {
   return null;
 };
 
+// Paired with the stash above — remembers that the scanner's click was
+// specifically "show me the emergency card", so the moment they're back from
+// Google sign-in and authenticated, the card loads on its own instead of
+// making them click a second time.
+const EMERGENCY_INTENT_KEY = 'qr-scan-emergency-intent';
+const stashEmergencyIntent = () => {
+  try { sessionStorage.setItem(EMERGENCY_INTENT_KEY, '1'); } catch { /* private mode */ }
+};
+const popEmergencyIntent = (): boolean => {
+  try {
+    if (sessionStorage.getItem(EMERGENCY_INTENT_KEY)) { sessionStorage.removeItem(EMERGENCY_INTENT_KEY); return true; }
+  } catch { /* private mode */ }
+  return false;
+};
+
 /**
  * Public scan page. Two entry points:
  *  - `/c`         → type the full plate (fallback for a damaged sticker)
@@ -586,16 +601,21 @@ const FoundResult = ({ result, onReset }: { result: LookupResult; onReset?: () =
   const { user } = useAuth();
   const loc = useLocation();
   const [card, setCard] = useState<EmergencyCard | null>(null);
-  // Same requirement as placing a call: enter your own mobile number first —
-  // not just being signed in — before sensitive family contact info shows.
-  const [emergencyStep, setEmergencyStep] = useState<'idle' | 'enter-number'>('idle');
-  const [emergencyCallerNumber, setEmergencyCallerNumber] = useState('');
 
   const revealEmergency = useMutation({
     mutationFn: async () =>
-      (await api.post<EmergencyCard>('/c/emergency', { permit: result.permit, callerNumber: emergencyCallerNumber })).data,
+      (await api.post<EmergencyCard>('/c/emergency', { permit: result.permit })).data,
     onSuccess: (data) => setCard(data),
   });
+
+  // Resume automatically after a Google sign-in redirect if the scanner had
+  // clicked "view emergency card" before signing in — no second click needed.
+  useEffect(() => {
+    if (user && result.hasEmergency && !card && popEmergencyIntent()) {
+      revealEmergency.mutate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   return (
     <div className="space-y-4">
@@ -613,43 +633,20 @@ const FoundResult = ({ result, onReset }: { result: LookupResult; onReset?: () =
           !user ? (
             <button
               type="button"
-              onClick={() => { stashResult(result); googleLogin(loc.pathname + loc.search); }}
+              onClick={() => { stashResult(result); stashEmergencyIntent(); googleLogin(loc.pathname + loc.search); }}
               className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-rose-500 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/10"
             >
               <LogIn className="h-4 w-4" /> Sign in to view emergency info
             </button>
-          ) : emergencyStep === 'enter-number' ? (
-            <form
-              onSubmit={(e) => { e.preventDefault(); revealEmergency.mutate(); }}
-              className="space-y-2 rounded-xl border-2 border-rose-200 p-3 dark:border-rose-500/40"
-            >
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                Your mobile number — required to view this car's emergency info
-              </label>
-              <input
-                autoFocus
-                type="tel"
-                value={emergencyCallerNumber}
-                onChange={(e) => setEmergencyCallerNumber(e.target.value.replace(/[^\d+]/g, '').slice(0, 15))}
-                placeholder="10-digit mobile"
-                className="input w-full"
-              />
-              <button
-                type="submit"
-                disabled={emergencyCallerNumber.length < 8 || revealEmergency.isPending}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-rose-500 px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:text-rose-300 dark:hover:bg-rose-500/10"
-              >
-                <ShieldPlus className="h-4 w-4" />
-                {revealEmergency.isPending ? 'Loading…' : 'View emergency card'}
-              </button>
-            </form>
           ) : (
             <button
               type="button"
-              onClick={() => setEmergencyStep('enter-number')}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-rose-500 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/10"
+              onClick={() => revealEmergency.mutate()}
+              disabled={revealEmergency.isPending}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-rose-500 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60 dark:text-rose-300 dark:hover:bg-rose-500/10"
             >
-              <ShieldPlus className="h-4 w-4" /> View emergency card
+              <ShieldPlus className="h-4 w-4" />
+              {revealEmergency.isPending ? 'Loading…' : 'View emergency card'}
             </button>
           )
         )}
