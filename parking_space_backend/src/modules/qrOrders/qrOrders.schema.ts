@@ -8,6 +8,7 @@ import { RegisterVehicleInput } from '@ps/types';
  */
 const orderVehicleSchema = RegisterVehicleInput.pick({
   plateNumber:  true,
+  vehicleType:  true,
   contactPhone: true,
   ownerName:    true,
 });
@@ -15,7 +16,7 @@ const orderVehicleSchema = RegisterVehicleInput.pick({
 export const createQrOrderSchema = z.object({
   vehicle:       orderVehicleSchema,
   shippingName:  z.string().trim().min(2).max(80),
-  shippingPhone: z.string().trim().min(8).max(20),
+  shippingPhone: z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit mobile number'),
   addressLine:   z.string().trim().min(5).max(300),
   city:          z.string().trim().min(2).max(80),
   state:         z.string().trim().min(2).max(80),

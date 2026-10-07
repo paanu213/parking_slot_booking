@@ -418,6 +418,12 @@ model Setting {
 // stay encrypted. All phone numbers + the plate + medical notes are encrypted at
 // the app layer before being written to the *_enc-style columns below.
 
+// What a QR sticker will be stuck on — so admin knows if it's a car or a bike.
+enum QrVehicleType {
+  CAR
+  BIKE
+}
+
 enum RegistrationStatus {
   ACTIVE
   PAUSED
@@ -470,6 +476,7 @@ model VehicleRegistration {
   userId          String
   plateHash       String             @unique              // HMAC of normalized plate — exact-match lookup
   plateNumber     String             @db.Text             // encrypted; for display / confirmation
+  vehicleType     QrVehicleType      @default(CAR)
   contactPhone    String             @db.Text             // encrypted; the number bridged to
   contactVerified Boolean            @default(false)      // OTP-verified
   status          RegistrationStatus @default(ACTIVE)

@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { RegisterVehicleInput } from '@ps/types';
+import { CALL_LIMIT_DEFS, type CallLimitName } from '../../lib/callLimits.js';
+import { updateVehicleSchema } from '../vehicles/vehicles.schema.js';
 
 export const updateVendorSchema = z.object({
   // Vendor-level fields
@@ -124,6 +127,16 @@ export const callDailyCapSchema = z.object({
   dailyCap: z.coerce.number().int().min(1).max(500),
 });
 
+/** Every masked-call limit (lib/callLimits.ts) — any subset can be sent; each is bounds-checked. */
+export const callLimitsSchema = z.object(
+  Object.fromEntries(
+    (Object.keys(CALL_LIMIT_DEFS) as CallLimitName[]).map((name) => [
+      name,
+      z.coerce.number().int().min(CALL_LIMIT_DEFS[name].min).max(CALL_LIMIT_DEFS[name].max).optional(),
+    ]),
+  ) as Record<CallLimitName, z.ZodOptional<z.ZodNumber>>,
+);
+
 export const blockCallGloballySchema = z.object({
   reason: z.string().trim().max(200).optional(),
 });
@@ -155,8 +168,34 @@ export const qrVehicleStatusSchema = z.object({
 
 /** Admin correcting the number a scan rings — e.g. the owner lost that phone. */
 export const qrVehicleContactSchema = z.object({
-  contactPhone: z.string().trim().min(8).max(20),
+  contactPhone: z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit mobile number'),
 });
+
+/**
+ * Admin edit of a registered customer: everything the owner can edit on their
+ * own vehicle, plus the car number (re-hashed server-side) and the account
+ * holder's name/phone. Any subset may be sent.
+ */
+export const adminUpdateVehicleSchema = updateVehicleSchema.extend({
+  plateNumber: RegisterVehicleInput.shape.plateNumber.optional(),
+  customer: z.object({
+    fullName: z.string().trim().min(2).max(80).optional(),
+    phone:    z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit mobile number').optional(),
+  }).optional(),
+});
+export type AdminUpdateVehicleInput = z.infer<typeof adminUpdateVehicleSchema>;
+
+/** Admin correcting a sticker order's shipping details. */
+export const adminQrOrderDetailsSchema = z.object({
+  shippingName:  z.string().trim().min(2).max(80).optional(),
+  shippingPhone: z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit mobile number').optional(),
+  addressLine:   z.string().trim().min(5).max(300).optional(),
+  city:          z.string().trim().min(2).max(80).optional(),
+  state:         z.string().trim().min(2).max(80).optional(),
+  pincode:       z.string().trim().regex(/^[0-9]{4,10}$/, 'Enter a valid pincode').optional(),
+  note:          z.string().trim().max(300).nullable().optional(),
+});
+export type AdminQrOrderDetailsInput = z.infer<typeof adminQrOrderDetailsSchema>;
 
 /** Generate a print run of unique QR sticker tokens. */
 export const generateQrBatchSchema = z.object({
@@ -192,6 +231,7 @@ export type CommissionRateInput = z.infer<typeof commissionRateSchema>;
 export type CommissionStatusInput = z.infer<typeof commissionStatusSchema>;
 export type ReassignVehicleInput = z.infer<typeof reassignVehicleSchema>;
 export type CallDailyCapInput = z.infer<typeof callDailyCapSchema>;
+export type CallLimitsInput = z.infer<typeof callLimitsSchema>;
 export type BlockCallGloballyInput = z.infer<typeof blockCallGloballySchema>;
 export type SetVehicleValidityInput = z.infer<typeof setVehicleValiditySchema>;
 export type QrVehicleStatusInput = z.infer<typeof qrVehicleStatusSchema>;

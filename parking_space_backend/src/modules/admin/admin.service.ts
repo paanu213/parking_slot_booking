@@ -12,13 +12,14 @@ import { BadRequest, Conflict, NotFound } from '../../lib/http.js';
 import { hashPassword } from '../../lib/password.js';
 import { calculateBookingAmount } from '../../lib/pricing.js';
 import { getCommissionRate, setCommissionRate } from '../../lib/commission.js';
-import { getCallDailyCap, setCallDailyCap } from '../../lib/callDailyCap.js';
+import { CALL_LIMIT_DEFS, getCallLimits, setCallLimits, type CallLimitName } from '../../lib/callLimits.js';
 import { resolveDateRange } from '../../lib/dateRange.js';
 import { storeImageBuffer, deleteImageByUrl, deleteDocumentByUrl } from '../../lib/images.js';
 import { parsePendingEdits, mergePendingEdits } from '../../lib/pendingEdits.js';
 import { decryptField, encryptField, hmacHash } from '../../lib/crypto.js';
 import { getGateway } from '../../lib/paymentGateway/index.js';
 import { generateStickerBatchPdf } from '../../lib/stickerPdf.js';
+import { updateVehicle } from '../vehicles/vehicles.service.js';
 import type {
   UpdateVendorInput,
   VendorLeadStatusInput,
@@ -36,6 +37,8 @@ import type {
   ReassignVehicleInput,
   GenerateQrBatchInput,
   UpdateQrBatchInput,
+  AdminUpdateVehicleInput,
+  AdminQrOrderDetailsInput,
 } from './admin.schema.js';
 
 const ADMIN_USER_SELECT = { fullName: true, email: true, phone: true, status: true } as const;
@@ -1461,17 +1464,41 @@ export const updateCommissionSetting = async (actorId: string, rateRaw: number) 
 };
 
 // ── QR Calling: global daily call cap (platform-wide, not per-vehicle) ────────
+// Kept so the already-deployed admin UI's single "daily cap" card keeps working
+// until it's replaced by the full call-limits card below.
 export const getCallDailyCapSetting = async () => {
-  const dailyCap = await getCallDailyCap();
-  return { dailyCap };
+  const { perCarDailyCap } = await getCallLimits();
+  return { dailyCap: perCarDailyCap };
 };
 
 export const updateCallDailyCapSetting = async (actorId: string, dailyCapRaw: number) => {
-  const dailyCap = await setCallDailyCap(Number(dailyCapRaw));
+  const { perCarDailyCap } = await setCallLimits({ perCarDailyCap: Number(dailyCapRaw) });
   await prisma.auditLog.create({
-    data: { actorId, action: 'QR_CALL_DAILY_CAP_UPDATE', entity: 'Setting', entityId: 'qr_call_daily_cap', metadata: JSON.stringify({ dailyCap }) },
+    data: { actorId, action: 'QR_CALL_DAILY_CAP_UPDATE', entity: 'Setting', entityId: 'qr_call_daily_cap', metadata: JSON.stringify({ dailyCap: perCarDailyCap }) },
   });
-  return { dailyCap };
+  return { dailyCap: perCarDailyCap };
+};
+
+// ── QR Calling: all call limits (abuse/cost guards), admin-configurable ───────
+const callLimitsView = async () => {
+  const values = await getCallLimits();
+  return {
+    items: (Object.keys(CALL_LIMIT_DEFS) as CallLimitName[]).map((name) => {
+      const { key: _key, ...def } = CALL_LIMIT_DEFS[name];
+      return { name, ...def, value: values[name] };
+    }),
+  };
+};
+
+export const getCallLimitsSetting = callLimitsView;
+
+export const updateCallLimitsSetting = async (actorId: string, patch: Partial<Record<CallLimitName, number>>) => {
+  const before = await getCallLimits();
+  const after = await setCallLimits(patch);
+  await prisma.auditLog.create({
+    data: { actorId, action: 'QR_CALL_LIMITS_UPDATE', entity: 'Setting', entityId: 'qr_call_limits', metadata: JSON.stringify({ before, after }) },
+  });
+  return callLimitsView();
 };
 
 export const setBookingCommissionStatus = async (
@@ -1674,20 +1701,58 @@ export const qrOverview = async () => {
   };
 };
 
-export const listQrVehicles = async (search?: string, status?: string) => {
+type QrEmergencySource = {
+  emergencyPublic: boolean;
+  bloodGroup: string | null;
+  medicalNotes: string | null;
+  emergencyContacts: { id: string; name: string; relation: string | null; phone: string; showPublic: boolean; sortOrder: number }[];
+};
+
+/** Decrypted emergency (ICE) details — shown to admin whether or not the public card is switched on. */
+const qrEmergencyView = (r: QrEmergencySource) => ({
+  public:       r.emergencyPublic,
+  bloodGroup:   r.bloodGroup,
+  medicalNotes: r.medicalNotes ? decryptField(r.medicalNotes) : null,
+  contacts: [...r.emergencyContacts]
+    .sort((x, y) => x.sortOrder - y.sortOrder)
+    .map((c) => ({ id: c.id, name: c.name, relation: c.relation, phone: decryptField(c.phone), showPublic: c.showPublic })),
+});
+
+const textHit = (q: string, ...parts: (string | null | undefined)[]) =>
+  parts.some((p) => (p ?? '').toLowerCase().includes(q));
+
+export interface QrVehicleFilters {
+  search?: string; status?: string; vehicleType?: string; city?: string; state?: string;
+}
+
+export const listQrVehicles = async (f: QrVehicleFilters = {}) => {
+  const q = (f.search ?? '').trim().toLowerCase();
+  // City/state only exist on the sticker order's shipping address, so a car
+  // matches when any of its orders shipped to that city/state.
+  const orderMatch = f.city || f.state
+    ? { qrOrders: { some: { ...(f.city ? { city: f.city } : {}), ...(f.state ? { state: f.state } : {}) } } }
+    : {};
   const rows = await prisma.vehicleRegistration.findMany({
-    where: status ? { status: status as any } : { status: { not: 'DELETED' } },
+    where: {
+      ...(f.status ? { status: f.status as any } : { status: { not: 'DELETED' } }),
+      ...(f.vehicleType ? { vehicleType: f.vehicleType as any } : {}),
+      ...orderMatch,
+    },
     include: {
-      user:   { select: { id: true, fullName: true, email: true, phone: true } },
-      _count: { select: { calls: true, emergencyContacts: true } },
+      user:              { select: { id: true, fullName: true, email: true, phone: true } },
+      emergencyContacts: { orderBy: { sortOrder: 'asc' } },
+      qrOrders:          { orderBy: { createdAt: 'desc' }, take: 1, select: { city: true, state: true } },
+      _count:            { select: { calls: true, emergencyContacts: true } },
     },
     orderBy: { createdAt: 'desc' },
-    take: 300,
+    // Text search runs in memory over decrypted fields, so widen the window when searching.
+    take: q ? 2000 : 300,
   });
 
   const items = rows.map((r) => ({
     id:                    r.id,
     plateNumber:           decryptField(r.plateNumber),
+    vehicleType:           r.vehicleType,
     contactPhone:          decryptField(r.contactPhone),
     contactVerified:       r.contactVerified,
     status:                r.status,
@@ -1696,19 +1761,19 @@ export const listQrVehicles = async (search?: string, status?: string) => {
     validUntil:            r.validUntil,
     callCount:             r._count.calls,
     emergencyContactCount: r._count.emergencyContacts,
+    emergency:             qrEmergencyView(r),
+    city:                  r.qrOrders[0]?.city ?? null,
+    state:                 r.qrOrders[0]?.state ?? null,
     owner:                 r.user,
     createdAt:             r.createdAt,
   }));
 
-  const q = (search ?? '').trim().toLowerCase();
   if (!q) return { items };
   return {
     items: items.filter((v) =>
-      v.plateNumber.toLowerCase().includes(q) ||
-      v.owner.email.toLowerCase().includes(q) ||
-      v.owner.fullName.toLowerCase().includes(q) ||
-      (v.ownerName ?? '').toLowerCase().includes(q),
-    ),
+      textHit(q, v.plateNumber, v.contactPhone, v.ownerName, v.owner.email, v.owner.fullName, v.owner.phone, v.city, v.state)
+      || v.emergency.contacts.some((c) => textHit(q, c.name, c.phone)),
+    ).slice(0, 300),
   };
 };
 
@@ -1718,6 +1783,7 @@ export const getQrVehicle = async (id: string) => {
     include: {
       user:              { select: { id: true, fullName: true, email: true, phone: true } },
       emergencyContacts: { orderBy: { sortOrder: 'asc' } },
+      qrOrders:          { orderBy: { createdAt: 'desc' }, take: 1, select: { city: true, state: true } },
       calls:             { orderBy: { initiatedAt: 'desc' }, take: 50 },
     },
   });
@@ -1726,6 +1792,7 @@ export const getQrVehicle = async (id: string) => {
   return {
     id:              r.id,
     plateNumber:     decryptField(r.plateNumber),
+    vehicleType:     r.vehicleType,
     contactPhone:    decryptField(r.contactPhone),
     contactVerified: r.contactVerified,
     status:          r.status,
@@ -1737,6 +1804,8 @@ export const getQrVehicle = async (id: string) => {
     bloodGroup:      r.bloodGroup,
     medicalNotes:    r.medicalNotes ? decryptField(r.medicalNotes) : null,
     validUntil:      r.validUntil,
+    city:            r.qrOrders[0]?.city ?? null,
+    state:           r.qrOrders[0]?.state ?? null,
     owner:           r.user,
     emergencyContacts: r.emergencyContacts.map((c) => ({
       id: c.id, name: c.name, relation: c.relation, phone: decryptField(c.phone), showPublic: c.showPublic,
@@ -1749,6 +1818,82 @@ export const getQrVehicle = async (id: string) => {
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };
+};
+
+/** Every state/city that has a sticker order — feeds the admin's searchable filter dropdowns. */
+export const qrFilterOptions = async () => {
+  const rows = await prisma.qrOrder.groupBy({ by: ['state', 'city'], orderBy: [{ state: 'asc' }, { city: 'asc' }] });
+  return { locations: rows.map((r) => ({ state: r.state, city: r.city })) };
+};
+
+/**
+ * Admin edit of a registered customer's details: car number, vehicle type,
+ * contact number, owner name, silent hours, the emergency (ICE) card and
+ * contacts, and the account holder's name/phone. Everything is validated and
+ * checked for clashes BEFORE anything is written, so a rejected edit never
+ * leaves a half-applied change.
+ */
+export const adminUpdateQrVehicle = async (id: string, actorId: string, input: AdminUpdateVehicleInput) => {
+  const reg = await prisma.vehicleRegistration.findUnique({ where: { id } });
+  if (!reg) throw NotFound('Vehicle not found');
+  if (reg.status === 'DELETED') throw BadRequest('This registration has been deleted');
+
+  const { plateNumber, customer, ...profile } = input;
+
+  // Plate: re-hash + re-encrypt, and keep the unique plateHash honest.
+  let plateChange: { plateHash: string; plateNumber: string; clearDupId: string | null } | null = null;
+  if (plateNumber !== undefined) {
+    const plateHash = hmacHash(plateNumber); // already normalized by the schema transform
+    if (plateHash !== reg.plateHash) {
+      const dup = await prisma.vehicleRegistration.findUnique({ where: { plateHash } });
+      if (dup && dup.id !== id && dup.status !== 'DELETED') {
+        throw Conflict('Another registration already uses this car number');
+      }
+      plateChange = { plateHash, plateNumber: encryptField(plateNumber), clearDupId: dup && dup.status === 'DELETED' ? dup.id : null };
+    }
+  }
+
+  // Account holder: phone is unique across users.
+  if (customer?.phone) {
+    const other = await prisma.user.findUnique({ where: { phone: customer.phone } });
+    if (other && other.id !== reg.userId) throw Conflict('Another account already uses that phone number');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (plateChange) {
+      // A soft-deleted row still occupies the unique hash — clear it, same as registerVehicle does.
+      if (plateChange.clearDupId) await tx.vehicleRegistration.delete({ where: { id: plateChange.clearDupId } });
+      await tx.vehicleRegistration.update({ where: { id }, data: { plateHash: plateChange.plateHash, plateNumber: plateChange.plateNumber } });
+    }
+    if (customer && (customer.fullName !== undefined || customer.phone !== undefined)) {
+      await tx.user.update({
+        where: { id: reg.userId },
+        data: {
+          ...(customer.fullName !== undefined ? { fullName: customer.fullName } : {}),
+          ...(customer.phone !== undefined ? { phone: customer.phone } : {}),
+        },
+      });
+    }
+  });
+
+  // Everything else reuses the owner's own update path (same encryption, same ICE-list replace).
+  if (Object.keys(profile).length > 0) await updateVehicle(reg.userId, id, profile);
+
+  await prisma.auditLog.create({
+    data: {
+      actorId, action: 'QR_VEHICLE_ADMIN_EDIT', entity: 'VehicleRegistration', entityId: id,
+      // Field names only — never the (encrypted) values themselves.
+      metadata: JSON.stringify({
+        fields: [
+          ...(plateNumber !== undefined ? ['plateNumber'] : []),
+          ...(customer ? Object.keys(customer).map((k) => `customer.${k}`) : []),
+          ...Object.keys(profile),
+        ],
+      }),
+    },
+  });
+
+  return getQrVehicle(id);
 };
 
 /** Dispute resolution — plate belongs to a different real owner than whoever registered it first. */
@@ -1945,8 +2090,13 @@ export const unblockQrNumber = async (id: string, actorId: string) => {
 // Requests come in with no online charge (payment paused sitewide); admin
 // confirms payment was collected offline, then ships.
 
-export const listQrOrders = async (params: { status?: string; paymentStatus?: string }) => {
+export interface QrOrderFilters {
+  status?: string; paymentStatus?: string; q?: string; vehicleType?: string; city?: string; state?: string;
+}
+
+export const listQrOrders = async (params: QrOrderFilters) => {
   const { status, paymentStatus } = params;
+  const q = (params.q ?? '').trim().toLowerCase();
   // paymentStatus accepts a comma-separated list (e.g. "PAID,REFUNDED") so the
   // fulfilment queue can show both without a second round trip.
   const paymentStatuses = paymentStatus ? paymentStatus.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
@@ -1954,12 +2104,21 @@ export const listQrOrders = async (params: { status?: string; paymentStatus?: st
     where: {
       ...(status ? { status: status as any } : {}),
       ...(paymentStatuses ? { paymentStatus: { in: paymentStatuses as any } } : {}),
+      ...(params.city ? { city: params.city } : {}),
+      ...(params.state ? { state: params.state } : {}),
+      ...(params.vehicleType ? { registration: { vehicleType: params.vehicleType as any } } : {}),
     },
     include: {
       user: { select: { fullName: true, email: true, phone: true } },
       registration: {
         select: {
+          id: true,
           plateNumber: true,
+          vehicleType: true,
+          emergencyPublic: true,
+          bloodGroup: true,
+          medicalNotes: true,
+          emergencyContacts: { orderBy: { sortOrder: 'asc' } },
           // Most recently claimed sticker for this car — whether the
           // physical sticker has actually been scanned + configured yet is
           // separate from order fulfilment (a delivered sticker can sit
@@ -1977,46 +2136,73 @@ export const listQrOrders = async (params: { status?: string; paymentStatus?: st
       dispatchedSticker: { select: { token: true } },
     },
     orderBy: { createdAt: 'desc' },
-    take: 300,
+    // Text search runs in memory over decrypted fields, so widen the window when searching.
+    take: q ? 2000 : 300,
   });
 
+  const items = rows.map((r) => {
+    const sticker = r.registration?.qrStickers?.[0] ?? null;
+    return {
+      id:                r.id,
+      registrationId:    r.registration?.id ?? null,
+      status:            r.status,
+      paymentStatus:     r.paymentStatus,
+      paidAt:            r.paidAt,
+      paymentRef:        r.paymentRef,
+      stickerPricePaise: r.stickerPricePaise,
+      monthlyPricePaise: r.monthlyPricePaise,
+      plate:             r.registration ? decryptField(r.registration.plateNumber) : null,
+      vehicleType:       r.registration?.vehicleType ?? null,
+      emergency:         r.registration ? qrEmergencyView(r.registration) : null,
+      ownerName:         r.user.fullName,
+      ownerEmail:        r.user.email,
+      ownerPhone:        r.user.phone,
+      shippingName:      r.shippingName,
+      shippingPhone:     r.shippingPhone,
+      addressLine:       r.addressLine,
+      city:              r.city,
+      state:             r.state,
+      pincode:           r.pincode,
+      note:              r.note,
+      confirmedAt:       r.confirmedAt,
+      pickedUpAt:        r.pickedUpAt,
+      outForDeliveryAt:  r.outForDeliveryAt,
+      deliveredAt:       r.deliveredAt,
+      returnedAt:        r.returnedAt,
+      deliveryAttempt:   r.deliveryAttempt,
+      qrConfigured:      !!sticker,
+      qrToken:           sticker?.token ?? null,
+      qrConfiguredAt:    sticker?.claimedAt ?? null,
+      dispatchedStickerToken: r.dispatchedSticker?.token ?? null,
+      dispatchedAt:           r.dispatchedAt,
+      createdAt:         r.createdAt,
+    };
+  });
+
+  if (!q) return { items };
   return {
-    items: rows.map((r) => {
-      const sticker = r.registration?.qrStickers?.[0] ?? null;
-      return {
-        id:                r.id,
-        status:            r.status,
-        paymentStatus:     r.paymentStatus,
-        paidAt:            r.paidAt,
-        paymentRef:        r.paymentRef,
-        stickerPricePaise: r.stickerPricePaise,
-        monthlyPricePaise: r.monthlyPricePaise,
-        plate:             r.registration ? decryptField(r.registration.plateNumber) : null,
-        ownerName:         r.user.fullName,
-        ownerEmail:        r.user.email,
-        ownerPhone:        r.user.phone,
-        shippingName:      r.shippingName,
-        shippingPhone:     r.shippingPhone,
-        addressLine:       r.addressLine,
-        city:              r.city,
-        state:             r.state,
-        pincode:           r.pincode,
-        note:              r.note,
-        confirmedAt:       r.confirmedAt,
-        pickedUpAt:        r.pickedUpAt,
-        outForDeliveryAt:  r.outForDeliveryAt,
-        deliveredAt:       r.deliveredAt,
-        returnedAt:        r.returnedAt,
-        deliveryAttempt:   r.deliveryAttempt,
-        qrConfigured:      !!sticker,
-        qrToken:           sticker?.token ?? null,
-        qrConfiguredAt:    sticker?.claimedAt ?? null,
-        dispatchedStickerToken: r.dispatchedSticker?.token ?? null,
-        dispatchedAt:           r.dispatchedAt,
-        createdAt:         r.createdAt,
-      };
-    }),
+    items: items.filter((o) =>
+      textHit(q, o.plate, o.ownerName, o.ownerEmail, o.ownerPhone, o.shippingName, o.shippingPhone, o.addressLine,
+        o.city, o.state, o.pincode, o.paymentRef, o.qrToken, o.dispatchedStickerToken)
+      || (o.emergency?.contacts ?? []).some((c) => textHit(q, c.name, c.phone)),
+    ).slice(0, 300),
   };
+};
+
+/** Admin correcting an order's shipping details — wrong address, phone, pincode, etc. */
+export const adminUpdateQrOrderDetails = async (id: string, actorId: string, input: AdminQrOrderDetailsInput) => {
+  const order = await prisma.qrOrder.findUnique({ where: { id } });
+  if (!order) throw NotFound('Order not found');
+  const data = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
+  if (Object.keys(data).length === 0) throw BadRequest('Nothing to update');
+
+  await prisma.$transaction([
+    prisma.qrOrder.update({ where: { id }, data }),
+    prisma.auditLog.create({
+      data: { actorId, action: 'QR_ORDER_DETAILS_EDIT', entity: 'QrOrder', entityId: id, metadata: JSON.stringify({ fields: Object.keys(data) }) },
+    }),
+  ]);
+  return { ok: true };
 };
 
 /**

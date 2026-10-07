@@ -18,6 +18,7 @@ export const registerVehicleSchema = RegisterVehicleInput;
  */
 const s = RegisterVehicleInput.shape;
 export const updateVehicleSchema = z.object({
+  vehicleType:       s.vehicleType.optional(),
   contactPhone:      s.contactPhone.optional(),
   ownerName:         s.ownerName.nullable().optional(),
   silentFrom:        s.silentFrom.nullable(),

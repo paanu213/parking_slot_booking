@@ -27,6 +27,7 @@ type RegistrationWithContacts = VehicleRegistration & {
 const toDTO = (row: RegistrationWithContacts) => ({
   id:              row.id,
   plateNumber:     decryptField(row.plateNumber),
+  vehicleType:     row.vehicleType,
   contactPhone:    decryptField(row.contactPhone),
   contactVerified: row.contactVerified,
   status:          row.status,
@@ -116,12 +117,13 @@ export const registerVehicle = async (userId: string, input: RegisterVehicleInpu
         userId,
         plateHash,
         plateNumber:     encryptField(input.plateNumber),
+        vehicleType:     input.vehicleType,
         contactPhone:    encryptField(input.contactPhone),
         ownerName:       input.ownerName || null,
         silentFrom:      input.silentFrom || null,
         silentTo:        input.silentTo || null,
         // dailyReceiveCap column keeps its DB default — no longer settable
-        // per-car; the daily call cap is a global admin setting (lib/callDailyCap.ts).
+        // per-car; the daily call cap is a global admin setting (lib/callLimits.ts).
         emergencyPublic: input.emergencyPublic,
         bloodGroup:      input.bloodGroup || null,
         medicalNotes:    input.medicalNotes ? encryptField(input.medicalNotes) : null,
@@ -149,6 +151,7 @@ export const updateVehicle = async (userId: string, id: string, input: UpdateVeh
   if (existing.status === 'DELETED') throw BadRequest('This registration has been deleted');
 
   const data: Prisma.VehicleRegistrationUpdateInput = {};
+  if (input.vehicleType !== undefined)     data.vehicleType     = input.vehicleType;
   if (input.contactPhone !== undefined)    data.contactPhone    = encryptField(input.contactPhone);
   if (input.ownerName !== undefined)       data.ownerName       = input.ownerName || null;
   if (input.silentFrom !== undefined)      data.silentFrom      = input.silentFrom || null;

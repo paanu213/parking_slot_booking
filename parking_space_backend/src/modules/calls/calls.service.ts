@@ -6,7 +6,7 @@
  * `applyCallEvent` is the single place a call moves through its state
  * machine, hit by the provider's webhook.
  */
-import type { Prisma } from '@prisma/client';
+import type { CallStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { decryptField, encryptField, hmacHash } from '../../lib/crypto.js';
 import { verifyPermit } from '../../lib/scanPermit.js';
@@ -15,8 +15,19 @@ import { resolveDateRange } from '../../lib/dateRange.js';
 import { env, exotelVirtualNumbers } from '../../config/env.js';
 import { BadRequest, Forbidden, HttpError, NotFound, ServerError, TooMany } from '../../lib/http.js';
 import { isUsable } from '../scan/scan.service.js';
-import { getCallDailyCap } from '../../lib/callDailyCap.js';
+import { getCallLimits } from '../../lib/callLimits.js';
 import { logger } from '../../config/logger.js';
+
+// Daily limits only count calls that actually connected (or are still in
+// flight) — a call that failed to place, was blocked/cancelled, went
+// unanswered, busy or declined never used up the caller's allowance.
+const COUNTED_STATUSES: CallStatus[] = [
+  'INITIATED', 'RINGING_CALLER', 'CALLER_ANSWERED', 'RINGING_OWNER', 'BRIDGED', 'COMPLETED',
+];
+// Calls that actually rang a phone — the 5-minute cooldown still applies to
+// these even when they don't count toward the daily limit, so an unanswered
+// call can't be redialled back-to-back and ring the owner repeatedly.
+const RANG_STATUSES: CallStatus[] = [...COUNTED_STATUSES, 'NO_ANSWER', 'BUSY', 'OWNER_REJECTED'];
 
 const TERMINAL_STATUSES = new Set([
   'COMPLETED', 'NO_ANSWER', 'BUSY', 'OWNER_REJECTED', 'FAILED', 'BLOCKED', 'CANCELLED',
@@ -47,7 +58,8 @@ const maskPhone = (p: string): string => (p.length > 4 ? `••••${p.slice(
 const getActiveVirtualNumbers = async (providerName: string) => {
   const existing = await prisma.virtualNumber.findMany({
     where:   { provider: providerName, isActive: true },
-    orderBy: { createdAt: 'asc' },
+    // Numbers seeded together share a createdAt, so tie-break on id (cuid) to keep the order stable.
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
   if (existing.length > 0) return existing;
 
@@ -97,36 +109,43 @@ export const initiateCall = async (
 
   const today = resolveDateRange('day')!;
 
-  const [receivedToday, dailyCap] = await Promise.all([
-    prisma.callSession.count({ where: { registrationId, createdAt: { gte: today.gte, lte: today.lte } } }),
-    getCallDailyCap(),
+  // Every limit below is an admin setting (lib/callLimits.ts), read per call so a change applies immediately.
+  const [receivedToday, limits] = await Promise.all([
+    prisma.callSession.count({ where: { registrationId, status: { in: COUNTED_STATUSES }, createdAt: { gte: today.gte, lte: today.lte } } }),
+    getCallLimits(),
   ]);
-  if (receivedToday >= dailyCap) {
+  if (receivedToday >= limits.perCarDailyCap) {
     throw TooMany('This car has reached its call limit for today. Please try again tomorrow.');
   }
 
-  const toThisCarToday = await prisma.callSession.findMany({
-    where: { registrationId, callerPhoneHash, createdAt: { gte: today.gte, lte: today.lte } },
-    orderBy: { initiatedAt: 'desc' },
-    take: 2,
+  const successfulToThisCarToday = await prisma.callSession.count({
+    where: { registrationId, callerPhoneHash, status: { in: COUNTED_STATUSES }, createdAt: { gte: today.gte, lte: today.lte } },
   });
-  if (toThisCarToday.length >= 2) throw TooMany("You've already called this car twice today.");
-  if (toThisCarToday.length > 0 && Date.now() - toThisCarToday[0].initiatedAt.getTime() < 5 * 60 * 1000) {
-    throw TooMany('Please wait a few minutes before calling this car again.');
+  if (successfulToThisCarToday >= limits.perCallerPerCarDaily) {
+    throw TooMany(`You've already called this car ${limits.perCallerPerCarDaily} times today.`);
+  }
+  if (limits.cooldownMinutes > 0) {
+    const recentlyRang = await prisma.callSession.findFirst({
+      where: {
+        registrationId, callerPhoneHash, status: { in: RANG_STATUSES },
+        initiatedAt: { gte: new Date(Date.now() - limits.cooldownMinutes * 60 * 1000) },
+      },
+    });
+    if (recentlyRang) throw TooMany('Please wait a few minutes before calling this car again.');
   }
 
   const toAnyCarToday = await prisma.callSession.count({
-    where: { callerPhoneHash, createdAt: { gte: today.gte, lte: today.lte } },
+    where: { callerPhoneHash, status: { in: COUNTED_STATUSES }, createdAt: { gte: today.gte, lte: today.lte } },
   });
-  if (toAnyCarToday >= 6) throw TooMany("You've reached today's calling limit.");
+  if (toAnyCarToday >= limits.perCallerDaily) throw TooMany("You've reached today's calling limit.");
 
   const fromThisIpToday = await prisma.callSession.count({
-    where: { callerIpHash: ipHash, createdAt: { gte: today.gte, lte: today.lte } },
+    where: { callerIpHash: ipHash, status: { in: COUNTED_STATUSES }, createdAt: { gte: today.gte, lte: today.lte } },
   });
-  if (fromThisIpToday >= 10) throw TooMany('Too many calls attempted from this network today.');
+  if (fromThisIpToday >= limits.perIpDaily) throw TooMany('Too many calls attempted from this network today.');
 
-  const globalToday = await prisma.callSession.count({ where: { createdAt: { gte: today.gte, lte: today.lte } } });
-  if (globalToday >= env.CALL_GLOBAL_DAILY_CAP) {
+  const globalToday = await prisma.callSession.count({ where: { status: { in: COUNTED_STATUSES }, createdAt: { gte: today.gte, lte: today.lte } } });
+  if (globalToday >= limits.globalDaily) {
     throw TooMany('Calling is temporarily at capacity. Please try again later.');
   }
 
