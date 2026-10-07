@@ -151,6 +151,7 @@ r.patch('/qr/vehicles/:id/contact', validate(qrVehicleContactSchema), ctrl.updat
 r.get('/qr/settings/daily-cap', ctrl.getCallDailyCapSetting);
 r.patch('/qr/settings/daily-cap', validate(callDailyCapSchema), ctrl.updateCallDailyCapSetting);
 r.get('/qr/filter-options', ctrl.getQrFilterOptions);
+r.get('/qr/diagnostics/exotel', ctrl.exotelDiagnostics);
 r.get('/qr/settings/call-limits', ctrl.getCallLimitsSetting);
 r.patch('/qr/settings/call-limits', validate(callLimitsSchema), ctrl.updateCallLimitsSetting);
 r.get('/qr/calls', ctrl.listQrCalls);

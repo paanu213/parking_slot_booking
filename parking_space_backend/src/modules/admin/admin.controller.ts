@@ -646,6 +646,10 @@ export const listQrOrders: RequestHandler = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+export const exotelDiagnostics: RequestHandler = async (_req, res, next) => {
+  try { res.json(await service.exotelDiagnostics()); } catch (e) { next(e); }
+};
+
 export const getQrFilterOptions: RequestHandler = async (_req, res, next) => {
   try {
     res.json(await service.qrFilterOptions());
