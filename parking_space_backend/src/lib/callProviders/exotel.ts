@@ -51,8 +51,11 @@ export const exotelProvider: CallProvider = {
       Record:     p.record ? 'true' : 'false',
       CustomField: p.sessionId.slice(0, 128),
       StatusCallback: statusCallbackUrl(),
-      StatusCallbackEvents: 'terminal,answered',
     });
+    // Exotel wants this as an array (StatusCallbackEvents[0]=...), not a
+    // comma-joined string — that form is rejected with "Invalid 'StatusCallbackEvents'".
+    form.append('StatusCallbackEvents[0]', 'terminal');
+    form.append('StatusCallbackEvents[1]', 'answered');
 
     const res = await fetch(`${baseUrl()}/Calls/connect.json`, {
       method: 'POST',

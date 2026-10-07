@@ -149,8 +149,12 @@ const plateField = z.string().trim().min(6).max(16)
   .transform(normalizePlate)
   .refine((p) => /^[A-Z0-9]{6,12}$/.test(p), 'Enter a valid car number');
 
-const phoneField = z.string().trim().min(8).max(20)
-  .refine((p) => /^\+?[0-9]{8,15}$/.test(p.replace(/[\s-]/g, '')), 'Enter a valid phone number');
+/** Indian mobile: exactly 10 digits — no +91, spaces, dashes or letters. Every QR-flow phone input uses this. */
+const phoneField = z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit mobile number');
+
+/** What the QR sticker will be stuck on — shown to admin so they know which kind of vehicle it is. */
+export const QrVehicleType = z.enum(['CAR', 'BIKE']);
+export type QrVehicleType = z.infer<typeof QrVehicleType>;
 
 export const EmergencyContactInput = z.object({
   name:       z.string().trim().min(1).max(80),
@@ -169,6 +173,7 @@ const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:mm').optional
  */
 export const RegisterVehicleInput = z.object({
   plateNumber:     plateField,
+  vehicleType:     QrVehicleType.default('CAR'),
   contactPhone:    phoneField,
   ownerName:       z.string().trim().max(80).optional(),
   silentFrom:      hhmm,

@@ -48,6 +48,7 @@ const CALL_LOG_STATUS_LABEL: Record<string, string> = {
 export interface Vehicle {
   id: string;
   plateNumber: string;
+  vehicleType?: 'CAR' | 'BIKE';
   contactPhone: string;
   contactVerified: boolean;
   status: 'ACTIVE' | 'PAUSED' | 'TRANSFERRED' | 'DELETED';

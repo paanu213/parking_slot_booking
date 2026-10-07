@@ -5,6 +5,8 @@ import { Car, Plus, ShieldPlus, Trash2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from '@/components/Toast';
 import { cn } from '@/lib/cn';
+import { phoneInputProps, phoneRules, sanitizePhone } from '@/lib/phone';
+import { VehicleTypePicker, type VehicleKind } from '@/components/VehicleTypePicker';
 import type { Vehicle } from '@/pages/MyVehiclesPage';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -18,6 +20,7 @@ interface ContactForm {
 }
 
 interface VehicleForm {
+  vehicleType: VehicleKind;
   plateNumber: string;
   contactPhone: string;
   ownerName: string;
@@ -31,6 +34,7 @@ interface VehicleForm {
 }
 
 const EMPTY: VehicleForm = {
+  vehicleType: 'CAR',
   plateNumber: '',
   contactPhone: '',
   ownerName: '',
@@ -69,11 +73,13 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
   const { fields, append, remove } = useFieldArray({ control, name: 'emergencyContacts' });
   const emergencyPublic = watch('emergencyPublic');
   const silentHoursEnabled = watch('silentHoursEnabled');
+  const vehicleType = watch('vehicleType');
 
   useEffect(() => {
     reset({
+      vehicleType:     vehicle.vehicleType === 'BIKE' ? 'BIKE' : 'CAR',
       plateNumber:     vehicle.plateNumber,
-      contactPhone:    vehicle.contactPhone,
+      contactPhone:    sanitizePhone(vehicle.contactPhone),
       ownerName:       vehicle.ownerName ?? '',
       silentHoursEnabled: !!(vehicle.silentFrom || vehicle.silentTo),
       silentFrom:      vehicle.silentFrom ?? '',
@@ -82,7 +88,7 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
       bloodGroup:      vehicle.bloodGroup ?? '',
       medicalNotes:    vehicle.medicalNotes ?? '',
       emergencyContacts: vehicle.emergencyContacts.map((c) => ({
-        name: c.name, relation: c.relation ?? '', phone: c.phone, showPublic: c.showPublic,
+        name: c.name, relation: c.relation ?? '', phone: sanitizePhone(c.phone), showPublic: c.showPublic,
       })),
     });
   }, [vehicle, reset]);
@@ -93,6 +99,7 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
       // field must send `null` (clear it) — `undefined` would get dropped by
       // JSON.stringify and silently mean "leave the old value untouched".
       const payload: Record<string, unknown> = {
+        vehicleType:     vals.vehicleType,
         contactPhone:    vals.contactPhone.trim(),
         ownerName:       vals.ownerName.trim() || null,
         // Toggled off always clears both, regardless of whatever's still
@@ -157,6 +164,8 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Car & contact</h3>
 
+            <VehicleTypePicker value={vehicleType} onChange={(v) => setValue('vehicleType', v, { shouldDirty: true })} />
+
             <div>
               <label className="text-sm font-medium">Number plate</label>
               <input
@@ -172,13 +181,10 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
             <div>
               <label className="text-sm font-medium">Contact number</label>
               <input
-                type="tel"
+                {...phoneInputProps}
                 className={cn('input mt-1 w-full', errors.contactPhone && 'border-rose-500')}
-                placeholder="Number that rings when someone scans your QR"
-                {...register('contactPhone', {
-                  required: 'Enter the number to ring',
-                  minLength: { value: 8, message: 'Too short' },
-                })}
+                placeholder="10-digit number that rings when someone scans your QR"
+                {...register('contactPhone', phoneRules('Enter the number to ring'))}
               />
               {errors.contactPhone && <p className="mt-1 text-xs text-rose-600">{errors.contactPhone.message}</p>}
             </div>
@@ -326,10 +332,10 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
                       </div>
                       <div className="flex items-center gap-3">
                         <input
-                          type="tel"
+                          {...phoneInputProps}
                           className="input flex-1"
-                          placeholder="Phone number"
-                          {...register(`emergencyContacts.${i}.phone` as const, { required: true, minLength: 8 })}
+                          placeholder="10-digit mobile"
+                          {...register(`emergencyContacts.${i}.phone` as const, phoneRules('Required'))}
                         />
                         <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
                           <input type="checkbox" className="h-3.5 w-3.5 rounded" {...register(`emergencyContacts.${i}.showPublic` as const)} />

@@ -9,6 +9,8 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { statusCls, fmtDateTime, errMsg } from '@/lib/qrCallingFormat';
 import { MaskedPhone } from '@/components/MaskedPhone';
+import { QrFilterBar, EMPTY_QR_FILTERS, VehicleTypeBadge, EmergencyBlock, qrFilterParams, useDebounced, type QrFilters, type EmergencyInfo } from '@/components/QrFilters';
+
 import { VehicleActionsMenu } from '@/components/VehicleActionsMenu';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -24,9 +26,10 @@ interface QrOverview {
 interface VehicleOwner { id: string; fullName: string; email: string; phone: string | null }
 
 interface VehicleRow {
-  id: string; plateNumber: string; contactPhone: string; contactVerified: boolean;
+  id: string; plateNumber: string; vehicleType: 'CAR' | 'BIKE'; contactPhone: string; contactVerified: boolean;
   status: 'ACTIVE' | 'PAUSED' | 'TRANSFERRED' | 'DELETED';
   emergencyPublic: boolean; ownerName: string | null;
+  city: string | null; state: string | null; emergency: EmergencyInfo;
   validUntil: string | null;
   callCount: number; emergencyContactCount: number; owner: VehicleOwner; createdAt: string;
 }
@@ -111,79 +114,123 @@ const StatCard = ({ label, value, sub, icon: Icon }: { label: string; value: str
   </div>
 );
 
-// Platform-wide setting — not per-vehicle. Customers never see or set this;
-// only admin can change the number that applies to every car.
-const DailyCapSetting = () => {
+// Platform-wide settings — not per-vehicle. Customers never see or set these;
+// only admin can change the numbers that apply to every car and caller. The
+// backend sends each limit's label, bounds and default, so this stays generic.
+interface CallLimitItem {
+  name: string; label: string; description: string; unit: string;
+  default: number; min: number; max: number; value: number;
+}
+
+const CallLimitsSetting = () => {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [input, setInput] = useState('');
+  const [draft, setDraft] = useState<Record<string, string>>({});
 
-  const { data } = useQuery<{ dailyCap: number }>({
-    queryKey: ['admin-qr-daily-cap'],
-    queryFn: async () => (await api.get('/admin/qr/settings/daily-cap')).data,
+  const { data } = useQuery<{ items: CallLimitItem[] }>({
+    queryKey: ['admin-qr-call-limits'],
+    queryFn: async () => (await api.get('/admin/qr/settings/call-limits')).data,
   });
+  const items = data?.items ?? [];
 
   const update = useMutation({
-    mutationFn: (dailyCap: number) => api.patch('/admin/qr/settings/daily-cap', { dailyCap }),
+    mutationFn: (body: Record<string, number>) => api.patch('/admin/qr/settings/call-limits', body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-qr-daily-cap'] });
+      qc.invalidateQueries({ queryKey: ['admin-qr-call-limits'] });
       setEditing(false);
     },
   });
+
+  const startEdit = () => {
+    setDraft(Object.fromEntries(items.map((i) => [i.name, String(i.value)])));
+    setEditing(true);
+  };
+  const resetToDefaults = () => setDraft(Object.fromEntries(items.map((i) => [i.name, String(i.default)])));
+  const isValid = (i: CallLimitItem) => {
+    const n = Number(draft[i.name]);
+    return draft[i.name] !== '' && Number.isInteger(n) && n >= i.min && n <= i.max;
+  };
+  const allValid = items.length > 0 && items.every(isValid);
 
   return (
     <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
       <div className="flex flex-wrap items-center gap-3">
         <PhoneCall className="h-4 w-4 text-brand-600 dark:text-brand-400" />
-        <h2 className="text-sm font-semibold">Daily call cap</h2>
-        {editing ? (
-          <span className="inline-flex items-center gap-1">
-            <input
-              type="number"
-              min={1}
-              max={500}
-              className="input h-7 w-20 text-sm"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              autoFocus
-            />
-            <span className="text-sm text-slate-500">calls/day</span>
+        <h2 className="text-sm font-semibold">Call limits</h2>
+        <span className="ml-auto inline-flex items-center gap-2">
+          {editing ? (
+            <>
+              <button
+                type="button"
+                className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                onClick={resetToDefaults}
+              >
+                Reset to defaults
+              </button>
+              <button
+                type="button"
+                className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-brand-600 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                disabled={update.isPending || !allValid}
+                onClick={() => update.mutate(Object.fromEntries(items.map((i) => [i.name, Number(draft[i.name])])))}
+              >
+                {update.isPending ? 'Saving…' : 'Save changes'}
+              </button>
+            </>
+          ) : (
             <button
               type="button"
-              className="rounded-lg bg-brand-600 px-2 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-              disabled={update.isPending || !input}
-              onClick={() => update.mutate(Number(input))}
-            >
-              {update.isPending ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              type="button"
-              className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-              onClick={() => setEditing(false)}
-            >
-              Cancel
-            </button>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
-              {data?.dailyCap ?? '—'} calls/day
-            </span>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-xs text-brand-700 hover:underline dark:text-brand-400"
-              onClick={() => { setInput(String(data?.dailyCap ?? 15)); setEditing(true); }}
+              className="inline-flex items-center gap-1 text-xs text-brand-700 hover:underline dark:text-brand-400 disabled:opacity-50"
+              disabled={items.length === 0}
+              onClick={startEdit}
             >
               <Pencil className="h-3 w-3" /> Edit
             </button>
-          </span>
-        )}
+          )}
+        </span>
       </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        Applies to every car platform-wide — the most masked calls one car can receive in a day. Not customer-editable.
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {items.map((i) => (
+          <div key={i.name} className="rounded-lg bg-white/70 p-3 dark:bg-slate-900/40">
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{i.label}</p>
+            {editing ? (
+              <div className="mt-1.5 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={i.min}
+                  max={i.max}
+                  className={cn('input h-8 w-24 text-sm', !isValid(i) && 'border-rose-500')}
+                  value={draft[i.name] ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, [i.name]: e.target.value }))}
+                />
+                <span className="text-xs text-slate-500">{i.unit}</span>
+                <span className="ml-auto text-[11px] text-slate-400">{i.min}–{i.max} · default {i.default}</span>
+              </div>
+            ) : (
+              <p className="mt-1.5">
+                <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+                  {i.value} {i.unit}
+                </span>
+              </p>
+            )}
+            <p className="mt-1.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{i.description}</p>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+        Applies to every car platform-wide and takes effect on the next call attempt. Only calls that connect count
+        toward the daily limits — failed, unanswered or declined calls don't. Not customer-editable.
       </p>
       {update.isError && (
-        <p className="mt-1 text-xs text-rose-600">{errMsg(update.error, 'Could not update the daily call cap.')}</p>
+        <p className="mt-1 text-xs text-rose-600">{errMsg(update.error, 'Could not update the call limits.')}</p>
       )}
     </div>
   );
@@ -208,7 +255,7 @@ const OverviewTab = () => {
 
   return (
     <div className="space-y-6">
-      <DailyCapSetting />
+      <CallLimitsSetting />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <StatCard label="Active cars" value={data.activeRegistrations} sub={`${data.totalRegistrations} total · ${data.pausedRegistrations} paused`} icon={Car} />
@@ -281,12 +328,14 @@ const OverviewTab = () => {
 const VehiclesTab = () => {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<QrFilters>(EMPTY_QR_FILTERS);
   const [status, setStatus] = useState('');
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const dq = useDebounced(filters.q);
 
   const { data, isLoading } = useQuery<{ items: VehicleRow[] }>({
-    queryKey: ['admin-qr-vehicles', search, status],
-    queryFn: async () => (await api.get('/admin/qr/vehicles', { params: { search: search || undefined, status: status || undefined } })).data,
+    queryKey: ['admin-qr-vehicles', dq, status, filters.vehicleType, filters.state, filters.city],
+    queryFn: async () => (await api.get('/admin/qr/vehicles', { params: { ...qrFilterParams({ ...filters, q: dq }, 'search'), status: status || undefined } })).data,
   });
   const items = data?.items ?? [];
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin-qr-vehicles'] });
@@ -294,16 +343,8 @@ const VehiclesTab = () => {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search plate, owner name or email"
-            className="input w-72 pl-9"
-          />
-        </div>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className="input w-40">
+        <QrFilterBar value={filters} onChange={setFilters} placeholder="Search name, phone, email, car number, city…" />
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="input h-9 w-40 py-0">
           <option value="">All statuses</option>
           <option value="ACTIVE">Active</option>
           <option value="PAUSED">Paused</option>
@@ -314,28 +355,43 @@ const VehiclesTab = () => {
         <table className="table">
           <thead>
             <tr>
-              <th>Plate</th><th>Owner</th><th>Contact</th><th>Status</th>
+              <th>Plate</th><th>Type</th><th>Owner</th><th>Contact</th><th>Status</th>
               <th>ICE</th><th>QR validity</th><th>Calls</th><th>Registered</th><th />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={9} className="py-6 text-center text-slate-400">Loading…</td></tr>
+              <tr><td colSpan={10} className="py-6 text-center text-slate-400">Loading…</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={9} className="py-6 text-center text-slate-400">No vehicles found.</td></tr>
+              <tr><td colSpan={10} className="py-6 text-center text-slate-400">No vehicles found.</td></tr>
             ) : (
               items.map((v) => {
                 const expired = v.validUntil ? new Date(v.validUntil).getTime() < Date.now() : false;
+                const hasIce = !!(v.emergency.bloodGroup || v.emergency.medicalNotes || v.emergency.contacts.length);
                 return (
-                <tr key={v.id} onClick={() => navigate(`/qr-calling/vehicles/${v.id}`)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <Fragment key={v.id}>
+                <tr onClick={() => navigate(`/qr-calling/vehicles/${v.id}`)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
                   <td className="font-mono font-semibold">{v.plateNumber}</td>
+                  <td><VehicleTypeBadge type={v.vehicleType} /></td>
                   <td>
                     <p className="font-medium">{v.owner.fullName}</p>
                     <p className="text-xs text-slate-400">{v.owner.email}</p>
+                    {(v.city || v.state) && <p className="text-xs text-slate-400">{[v.city, v.state].filter(Boolean).join(', ')}</p>}
                   </td>
                   <td>{v.contactPhone}</td>
                   <td><span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(v.status))}>{v.status}</span></td>
-                  <td>{v.emergencyPublic ? <ShieldCheck className="h-4 w-4 text-rose-500" /> : '—'}</td>
+                  <td>
+                    {hasIce ? (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setExpanded(expanded === v.id ? null : v.id); }}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:underline"
+                        title="Show emergency details"
+                      >
+                        <ShieldCheck className="h-4 w-4" /> {v.emergency.contacts.length}
+                      </button>
+                    ) : '—'}
+                  </td>
                   <td>
                     {v.validUntil ? (
                       <span className={cn('text-xs font-semibold', expired ? 'text-rose-600' : 'text-amber-700 dark:text-amber-400')}>
@@ -354,6 +410,12 @@ const VehiclesTab = () => {
                     />
                   </td>
                 </tr>
+                {expanded === v.id && (
+                  <tr className="bg-slate-50 dark:bg-slate-800/30">
+                    <td colSpan={10} className="px-3 py-3"><EmergencyBlock info={v.emergency} /></td>
+                  </tr>
+                )}
+                </Fragment>
                 );
               })
             )}

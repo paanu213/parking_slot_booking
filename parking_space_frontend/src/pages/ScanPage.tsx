@@ -10,6 +10,8 @@ import { api } from '@/lib/api';
 import { API_URL, BRAND_NAME } from '@/lib/config';
 import { useAuth } from '@/store/auth';
 import { cn } from '@/lib/cn';
+import { phoneInputProps, phoneRules, sanitizePhone } from '@/lib/phone';
+import { VehicleTypePicker, vehicleKindLabel, type VehicleKind } from '@/components/VehicleTypePicker';
 
 interface LookupResult {
   found: boolean;
@@ -211,6 +213,7 @@ const MAX_CONTACTS = 5;
 
 interface ContactForm { name: string; relation: string; phone: string; showPublic: boolean }
 interface ConfigForm {
+  vehicleType: VehicleKind;
   plateNumber: string;
   contactPhone: string;
   ownerName: string;
@@ -222,7 +225,7 @@ interface ConfigForm {
   emergencyContacts: ContactForm[];
 }
 const EMPTY_CONFIG: ConfigForm = {
-  plateNumber: '', contactPhone: '', ownerName: '', silentFrom: '', silentTo: '',
+  vehicleType: 'CAR', plateNumber: '', contactPhone: '', ownerName: '', silentFrom: '', silentTo: '',
   emergencyPublic: false, bloodGroup: '', medicalNotes: '', emergencyContacts: [],
 };
 
@@ -240,6 +243,7 @@ const ConfigureSticker = ({ token }: { token: string }) => {
   const { fields, append, remove } = useFieldArray({ control, name: 'emergencyContacts' });
   const emergencyPublic = watch('emergencyPublic');
   const plateNumber = watch('plateNumber');
+  const vehicleType = watch('vehicleType');
   const lastLookedUp = useRef('');
 
   // Once the plate looks complete, check whether this owner already has a
@@ -254,7 +258,8 @@ const ConfigureSticker = ({ token }: { token: string }) => {
     api.get(`/customer/me/vehicles/by-plate/${p}`)
       .then(({ data }) => {
         const v = data.vehicle;
-        setValue('contactPhone', v.contactPhone, { shouldDirty: true });
+        setValue('vehicleType', v.vehicleType === 'BIKE' ? 'BIKE' : 'CAR', { shouldDirty: true });
+        setValue('contactPhone', sanitizePhone(v.contactPhone), { shouldDirty: true });
         setValue('ownerName', v.ownerName ?? '', { shouldDirty: true });
         setValue('silentFrom', v.silentFrom ?? '', { shouldDirty: true });
         setValue('silentTo', v.silentTo ?? '', { shouldDirty: true });
@@ -264,7 +269,7 @@ const ConfigureSticker = ({ token }: { token: string }) => {
         setValue(
           'emergencyContacts',
           v.emergencyContacts.map((c: { name: string; relation: string | null; phone: string; showPublic: boolean }) => ({
-            name: c.name, relation: c.relation ?? '', phone: c.phone, showPublic: c.showPublic,
+            name: c.name, relation: c.relation ?? '', phone: sanitizePhone(c.phone), showPublic: c.showPublic,
           })),
           { shouldDirty: true },
         );
@@ -276,6 +281,7 @@ const ConfigureSticker = ({ token }: { token: string }) => {
   const configure = useMutation({
     mutationFn: async (v: ConfigForm) => {
       const res = await api.post(`/c/t/${token}/configure`, {
+        vehicleType:  v.vehicleType,
         plateNumber:  v.plateNumber.trim(),
         contactPhone: v.contactPhone.trim(),
         ownerName:    v.ownerName.trim() || undefined,
@@ -346,6 +352,7 @@ const ConfigureSticker = ({ token }: { token: string }) => {
       <div className="space-y-4">
         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Please confirm</p>
         <dl className="space-y-2 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/40">
+          <Confirm label="Vehicle" value={vehicleKindLabel(v.vehicleType)} />
           <Confirm label="Number plate" value={v.plateNumber} />
           <Confirm label="Contact number" value={v.contactPhone} />
           {v.ownerName.trim() && <Confirm label="Owner name" value={v.ownerName} />}
@@ -393,6 +400,7 @@ const ConfigureSticker = ({ token }: { token: string }) => {
         </p>
       )}
 
+      <VehicleTypePicker value={vehicleType} onChange={(v) => setValue('vehicleType', v, { shouldDirty: true })} />
       <div>
         <label className="text-sm font-medium">Number plate</label>
         <input
@@ -413,14 +421,10 @@ const ConfigureSticker = ({ token }: { token: string }) => {
       <div>
         <label className="text-sm font-medium">Contact number</label>
         <input
-          type="tel"
+          {...phoneInputProps}
           className={cn('input mt-1 w-full', errors.contactPhone && 'border-rose-500')}
-          placeholder="Number that rings when someone scans your QR"
-          {...register('contactPhone', {
-            required: 'Enter the number to ring',
-            minLength: { value: 8, message: 'Too short' },
-            onChange: (e) => { e.target.value = e.target.value.replace(/[^\d+]/g, '').slice(0, 15); },
-          })}
+          placeholder="10-digit number that rings when someone scans your QR"
+          {...register('contactPhone', phoneRules('Enter the number to ring'))}
         />
         {errors.contactPhone && <p className="mt-1 text-xs text-rose-600">{errors.contactPhone.message}</p>}
       </div>
@@ -507,10 +511,10 @@ const ConfigureSticker = ({ token }: { token: string }) => {
                   </div>
                   <div className="flex items-center gap-3">
                     <input
-                      type="tel"
+                      {...phoneInputProps}
                       className="input flex-1"
-                      placeholder="Phone number"
-                      {...register(`emergencyContacts.${i}.phone` as const, { required: true, minLength: 8 })}
+                      placeholder="10-digit mobile"
+                      {...register(`emergencyContacts.${i}.phone` as const, phoneRules('Required'))}
                     />
                     <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
                       <input type="checkbox" className="h-3.5 w-3.5 rounded" {...register(`emergencyContacts.${i}.showPublic` as const)} />
@@ -833,9 +837,9 @@ const CallPanel = ({ permit }: { permit: string }) => {
         </label>
         <input
           autoFocus
-          type="tel"
+          {...phoneInputProps}
           value={callerNumber}
-          onChange={(e) => setCallerNumber(e.target.value.replace(/[^\d+]/g, '').slice(0, 15))}
+          onChange={(e) => setCallerNumber(sanitizePhone(e.target.value))}
           placeholder="10-digit mobile"
           className="input w-full"
         />
@@ -846,7 +850,7 @@ const CallPanel = ({ permit }: { permit: string }) => {
         )}
         <button
           type="submit"
-          disabled={callerNumber.length < 8 || initiate.isPending}
+          disabled={callerNumber.length !== 10 || initiate.isPending}
           className="btn-primary w-full justify-center gap-2"
         >
           <PhoneCall className="h-4 w-4" /> {initiate.isPending ? 'Connecting…' : 'Call now'}

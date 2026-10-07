@@ -10,6 +10,8 @@ import { errorMessage } from '@/lib/errors';
 import { useAuth } from '@/store/auth';
 import { Footer } from '@/components/Footer';
 import { cn } from '@/lib/cn';
+import { phoneInputProps, phoneRules } from '@/lib/phone';
+import { VehicleTypePicker, vehicleKindLabel, type VehicleKind } from '@/components/VehicleTypePicker';
 import { API_URL, QR_STICKER_PRICE } from '@/lib/config';
 import { friendlyPaymentError, useQrPaymentCheckout } from '@/hooks/useQrPaymentCheckout';
 
@@ -30,6 +32,7 @@ const FEATURES = [
 ];
 
 interface OrderForm {
+  vehicleType: VehicleKind;
   plateNumber: string;
   contactPhone: string;
   ownerName: string;
@@ -111,7 +114,8 @@ export const QrCallingLandingPage = () => {
     setValue,
     watch,
     formState: { errors },
-  } = useForm<OrderForm>();
+  } = useForm<OrderForm>({ defaultValues: { vehicleType: 'CAR' } });
+  const vehicleType = watch('vehicleType');
 
   // Pincode → city/state/area auto-fill (same backend proxy the vendor
   // "Add space" form uses — util.service.ts works around the India Post
@@ -181,6 +185,7 @@ export const QrCallingLandingPage = () => {
         const v2 = getValues();
         const created = await api.post<{ order: { id: string } }>('/customer/me/qr-orders', {
           vehicle: {
+            vehicleType:  v2.vehicleType,
             plateNumber:  v2.plateNumber.trim(),
             contactPhone: v2.contactPhone.trim(),
             ownerName:    v2.ownerName.trim() || undefined,
@@ -272,6 +277,7 @@ export const QrCallingLandingPage = () => {
               </div>
 
               <dl className="space-y-2 rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-800/40">
+                <Line label="Vehicle" value={vehicleKindLabel(v.vehicleType)} />
                 <Line label="Number plate" value={v.plateNumber} />
                 <Line label="Contact number" value={v.contactPhone} />
                 {v.ownerName?.trim() && <Line label="Owner name" value={v.ownerName} />}
@@ -347,8 +353,9 @@ export const QrCallingLandingPage = () => {
               <fieldset disabled={!user} className={cn('space-y-6', !user && 'pointer-events-none select-none opacity-40 grayscale')}>
               <div className="space-y-3">
                 <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  <Car className="h-4 w-4" /> Your car
+                  <Car className="h-4 w-4" /> Your vehicle
                 </h3>
+                <VehicleTypePicker value={vehicleType} onChange={(v) => setValue('vehicleType', v, { shouldDirty: true })} />
                 <div>
                   <label className="text-sm font-medium">Number plate</label>
                   <input
@@ -364,10 +371,10 @@ export const QrCallingLandingPage = () => {
                 <div>
                   <label className="text-sm font-medium">Contact number</label>
                   <input
-                    type="tel"
+                    {...phoneInputProps}
                     className={cn('input mt-1 w-full', errors.contactPhone && 'border-rose-500')}
-                    placeholder="Number that rings when someone scans your QR"
-                    {...register('contactPhone', { required: 'Enter the number to ring', minLength: { value: 8, message: 'Too short' } })}
+                    placeholder="10-digit number that rings when someone scans your QR"
+                    {...register('contactPhone', phoneRules('Enter the number to ring'))}
                   />
                   {errors.contactPhone && <p className="mt-1 text-xs text-rose-600">{errors.contactPhone.message}</p>}
                 </div>
@@ -410,11 +417,13 @@ export const QrCallingLandingPage = () => {
                 <div>
                   <label className="text-sm font-medium">Phone for delivery</label>
                   <input
-                    type="tel"
+                    {...phoneInputProps}
                     className={cn('input mt-1 w-full', errors.shippingPhone && 'border-rose-500', sameAsAbove && 'bg-slate-50 dark:bg-slate-800/60')}
                     disabled={sameAsAbove}
-                    {...register('shippingPhone', { required: 'Required', minLength: { value: 8, message: 'Too short' } })}
+                    placeholder="10-digit mobile number"
+                    {...register('shippingPhone', phoneRules('Required'))}
                   />
+                  {errors.shippingPhone && <p className="mt-1 text-xs text-rose-600">{errors.shippingPhone.message}</p>}
                 </div>
                 <div>
                   <label className="text-sm font-medium">Pincode</label>

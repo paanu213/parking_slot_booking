@@ -1,16 +1,20 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Users } from 'lucide-react';
+import { ArrowLeft, Pencil, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { statusCls, fmtDateTime } from '@/lib/qrCallingFormat';
 import { MaskedPhone } from '@/components/MaskedPhone';
+import { VehicleTypeBadge } from '@/components/QrFilters';
+import { QrVehicleEditDrawer } from '@/components/QrVehicleEditDrawer';
 import { VehicleActionsMenu } from '@/components/VehicleActionsMenu';
 
 interface VehicleOwner { id: string; fullName: string; email: string; phone: string | null }
 
 interface VehicleDetail {
-  id: string; plateNumber: string; contactPhone: string; contactVerified: boolean;
+  id: string; plateNumber: string; vehicleType: 'CAR' | 'BIKE'; city: string | null; state: string | null;
+  contactPhone: string; contactVerified: boolean;
   status: 'ACTIVE' | 'PAUSED' | 'TRANSFERRED' | 'DELETED';
   isActive: boolean; silentFrom: string | null; silentTo: string | null;
   emergencyPublic: boolean; ownerName: string | null;
@@ -31,6 +35,7 @@ export const QrVehicleDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
 
   const { data, isLoading } = useQuery<{ vehicle: VehicleDetail }>({
     queryKey: ['admin-qr-vehicle', id],
@@ -68,7 +73,9 @@ export const QrVehicleDetailPage = () => {
                 {v.plateNumber}
               </span>
               <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(v.status))}>{v.status}</span>
+              <VehicleTypeBadge type={v.vehicleType} />
             </div>
+            <button type="button" onClick={() => setEditing(true)} className="btn-ghost text-sm"><Pencil className="mr-1 h-4 w-4" /> Edit details</button>
             <VehicleActionsMenu
               vehicle={{ id: v.id, status: v.status, contactPhone: v.contactPhone, validUntil: v.validUntil }}
               onChanged={refresh}
@@ -82,15 +89,17 @@ export const QrVehicleDetailPage = () => {
           <div className="card grid grid-cols-2 gap-3 p-5 text-sm">
             <Field label="Owner account" value={`${v.owner.fullName} · ${v.owner.email}`} />
             <Field label="Contact number" value={v.contactPhone} />
+            <Field label="Owner phone" value={v.owner.phone ?? '—'} />
+            <Field label="Location" value={[v.city, v.state].filter(Boolean).join(', ') || '—'} />
             <Field label="Owner name (ICE)" value={v.ownerName ?? '—'} />
             <Field label="Silent hours" value={v.silentFrom || v.silentTo ? `${v.silentFrom ?? '—'} → ${v.silentTo ?? '—'}` : '—'} />
             <Field label="Emergency card" value={v.emergencyPublic ? 'On' : 'Off'} />
             <Field label="QR validity" value={validityLabel(v.validUntil)} />
           </div>
 
-          {v.emergencyPublic && (
+          {(v.emergencyPublic || v.bloodGroup || v.medicalNotes || v.emergencyContacts.length > 0) && (
             <div className="card p-5">
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Emergency card</h3>
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Emergency details {v.emergencyPublic ? '(card public)' : '(card off — admin view)'}</h3>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <Field label="Blood group" value={v.bloodGroup ?? '—'} />
                 <Field label="Medical notes" value={v.medicalNotes ?? '—'} />
@@ -132,6 +141,7 @@ export const QrVehicleDetailPage = () => {
 
         </div>
       )}
+      {editing && <QrVehicleEditDrawer vehicleId={v!.id} onClose={() => setEditing(false)} onSaved={refresh} />}
     </section>
   );
 };

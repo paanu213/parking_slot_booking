@@ -16,6 +16,9 @@ import type {
   CommissionStatusInput,
   ReassignVehicleInput,
   CallDailyCapInput,
+  CallLimitsInput,
+  AdminUpdateVehicleInput,
+  AdminQrOrderDetailsInput,
   SetVehicleValidityInput,
   QrVehicleStatusInput,
   QrVehicleContactInput,
@@ -527,10 +530,13 @@ export const qrOverview: RequestHandler = async (_req, res, next) => {
 
 export const listQrVehicles: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await service.listQrVehicles(
-      req.query.search as string | undefined,
-      req.query.status as string | undefined,
-    ));
+    res.json(await service.listQrVehicles({
+      search:      req.query.search as string | undefined,
+      status:      req.query.status as string | undefined,
+      vehicleType: req.query.vehicleType as string | undefined,
+      city:        req.query.city as string | undefined,
+      state:       req.query.state as string | undefined,
+    }));
   } catch (e) { next(e); }
 };
 
@@ -557,6 +563,18 @@ export const updateCallDailyCapSetting: RequestHandler = async (req, res, next) 
   try {
     const { dailyCap } = req.body as CallDailyCapInput;
     res.json(await service.updateCallDailyCapSetting(req.user!.sub, dailyCap));
+  } catch (e) { next(e); }
+};
+
+export const getCallLimitsSetting: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json(await service.getCallLimitsSetting());
+  } catch (e) { next(e); }
+};
+
+export const updateCallLimitsSetting: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.updateCallLimitsSetting(req.user!.sub, req.body as CallLimitsInput));
   } catch (e) { next(e); }
 };
 
@@ -620,7 +638,30 @@ export const listQrOrders: RequestHandler = async (req, res, next) => {
     res.json(await service.listQrOrders({
       status:        req.query.status as string | undefined,
       paymentStatus: req.query.paymentStatus as string | undefined,
+      q:             req.query.q as string | undefined,
+      vehicleType:   req.query.vehicleType as string | undefined,
+      city:          req.query.city as string | undefined,
+      state:         req.query.state as string | undefined,
     }));
+  } catch (e) { next(e); }
+};
+
+export const getQrFilterOptions: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json(await service.qrFilterOptions());
+  } catch (e) { next(e); }
+};
+
+export const adminUpdateQrVehicle: RequestHandler = async (req, res, next) => {
+  try {
+    const vehicle = await service.adminUpdateQrVehicle(req.params.id, req.user!.sub, req.body as AdminUpdateVehicleInput);
+    res.json({ vehicle });
+  } catch (e) { next(e); }
+};
+
+export const adminUpdateQrOrderDetails: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.adminUpdateQrOrderDetails(req.params.id, req.user!.sub, req.body as AdminQrOrderDetailsInput));
   } catch (e) { next(e); }
 };
 

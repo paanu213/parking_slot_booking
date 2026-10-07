@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { CalendarClock, Infinity as InfinityIcon, Pause, Phone, Play, UserCog, X } from 'lucide-react';
+import { CalendarClock, Infinity as InfinityIcon, Pause, Pencil, Phone, Play, UserCog, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { errMsg } from '@/lib/qrCallingFormat';
 import { KebabMenu, MenuItem, MenuDivider } from '@/components/KebabMenu';
+import { QrVehicleEditDrawer } from '@/components/QrVehicleEditDrawer';
+import { digits10 } from '@/lib/phone';
 
 export interface VehicleActionTarget {
   id: string;
@@ -20,7 +22,7 @@ export interface VehicleActionTarget {
  * reassign to a different owner (dispute resolution).
  */
 export const VehicleActionsMenu = ({ vehicle, onChanged }: { vehicle: VehicleActionTarget; onChanged: () => void }) => {
-  const [modal, setModal] = useState<'none' | 'contact' | 'validity' | 'reassign'>('none');
+  const [modal, setModal] = useState<'none' | 'edit' | 'contact' | 'validity' | 'reassign'>('none');
 
   const toggleStatus = useMutation({
     mutationFn: () =>
@@ -48,6 +50,9 @@ export const VehicleActionsMenu = ({ vehicle, onChanged }: { vehicle: VehicleAct
               {vehicle.status === 'ACTIVE' ? 'Pause calls' : 'Resume calls'}
             </MenuItem>
           )}
+          <MenuItem icon={<Pencil className="h-4 w-4" />} onClick={() => setModal('edit')}>
+            Edit customer details
+          </MenuItem>
           <MenuItem icon={<Phone className="h-4 w-4" />} onClick={() => setModal('contact')}>
             Edit contact number
           </MenuItem>
@@ -71,6 +76,9 @@ export const VehicleActionsMenu = ({ vehicle, onChanged }: { vehicle: VehicleAct
         </KebabMenu>
       </div>
 
+      {modal === 'edit' && (
+        <QrVehicleEditDrawer vehicleId={vehicle.id} onClose={() => setModal('none')} onSaved={onChanged} />
+      )}
       {modal === 'contact' && (
         <EditContactModal vehicleId={vehicle.id} current={vehicle.contactPhone} onClose={() => setModal('none')} onSaved={onChanged} />
       )}
@@ -101,10 +109,10 @@ export const ModalShell = ({ title, subtitle, onClose, children }: { title: stri
 const EditContactModal = ({
   vehicleId, current, onClose, onSaved,
 }: { vehicleId: string; current: string; onClose: () => void; onSaved: () => void }) => {
-  const [value, setValue] = useState(current);
+  const [value, setValue] = useState(digits10(current));
 
   const save = useMutation({
-    mutationFn: () => api.patch(`/admin/qr/vehicles/${vehicleId}/contact`, { contactPhone: value.trim() }),
+    mutationFn: () => api.patch(`/admin/qr/vehicles/${vehicleId}/contact`, { contactPhone: value }),
     onSuccess: () => { onSaved(); onClose(); },
   });
 
@@ -113,15 +121,18 @@ const EditContactModal = ({
       <input
         autoFocus
         type="tel"
+        inputMode="numeric"
+        maxLength={10}
+        placeholder="10-digit mobile"
         value={value}
-        onChange={(e) => setValue(e.target.value.replace(/[^\d+]/g, '').slice(0, 15))}
+        onChange={(e) => setValue(digits10(e.target.value))}
         className="input mt-3 w-full"
       />
       {save.isError && <p className="mt-1 text-xs text-rose-600">{errMsg(save.error, 'Could not update')}</p>}
       <button
         type="button"
         onClick={() => save.mutate()}
-        disabled={save.isPending || value.trim().length < 8}
+        disabled={save.isPending || value.length !== 10}
         className="btn-primary mt-4 w-full justify-center"
       >
         {save.isPending ? 'Saving…' : 'Save'}

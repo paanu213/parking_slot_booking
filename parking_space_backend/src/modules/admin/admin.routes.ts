@@ -29,6 +29,9 @@ import {
   commissionStatusSchema,
   reassignVehicleSchema,
   callDailyCapSchema,
+  callLimitsSchema,
+  adminUpdateVehicleSchema,
+  adminQrOrderDetailsSchema,
   setVehicleValiditySchema,
   qrVehicleStatusSchema,
   qrVehicleContactSchema,
@@ -140,12 +143,16 @@ r.get('/commission/bookings', ctrl.commissionBookings);
 r.get('/qr/overview', ctrl.qrOverview);
 r.get('/qr/vehicles', ctrl.listQrVehicles);
 r.get('/qr/vehicles/:id', ctrl.getQrVehicle);
+r.patch('/qr/vehicles/:id', validate(adminUpdateVehicleSchema), ctrl.adminUpdateQrVehicle);
 r.post('/qr/vehicles/:id/reassign', validate(reassignVehicleSchema), ctrl.reassignQrVehicle);
 r.patch('/qr/vehicles/:id/validity', validate(setVehicleValiditySchema), ctrl.setVehicleValidity);
 r.patch('/qr/vehicles/:id/status', validate(qrVehicleStatusSchema), ctrl.setQrVehicleStatus);
 r.patch('/qr/vehicles/:id/contact', validate(qrVehicleContactSchema), ctrl.updateQrVehicleContact);
 r.get('/qr/settings/daily-cap', ctrl.getCallDailyCapSetting);
 r.patch('/qr/settings/daily-cap', validate(callDailyCapSchema), ctrl.updateCallDailyCapSetting);
+r.get('/qr/filter-options', ctrl.getQrFilterOptions);
+r.get('/qr/settings/call-limits', ctrl.getCallLimitsSetting);
+r.patch('/qr/settings/call-limits', validate(callLimitsSchema), ctrl.updateCallLimitsSetting);
 r.get('/qr/calls', ctrl.listQrCalls);
 r.post('/qr/calls/:id/block', validate(blockCallGloballySchema), ctrl.blockQrCallGlobally);
 r.get('/qr/calls/:id/reveal', ctrl.revealQrCallerNumber);
@@ -153,6 +160,7 @@ r.get('/qr/blocked', ctrl.listQrBlockedNumbers);
 r.delete('/qr/blocked/:id', ctrl.unblockQrNumber);
 r.get('/qr/orders', ctrl.listQrOrders);
 r.get('/qr/orders/:id/events', ctrl.listQrOrderEvents);
+r.patch('/qr/orders/:id/details', validate(adminQrOrderDetailsSchema), ctrl.adminUpdateQrOrderDetails);
 r.patch('/qr/orders/:id/status', validate(setQrOrderStatusSchema), ctrl.setQrOrderStatus);
 r.post('/qr/orders/:id/refund', validate(refundSchema), ctrl.refundQrOrder);
 r.patch('/qr/orders/:id/dispatch-sticker', validate(dispatchStickerSchema), ctrl.dispatchQrOrderSticker);
