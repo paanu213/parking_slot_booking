@@ -51,8 +51,9 @@ const schema = z.object({
   EXOTEL_API_KEY: z.string().optional(),
   EXOTEL_API_TOKEN: z.string().optional(),
   EXOTEL_ACCOUNT_SID: z.string().optional(),
-  // Region subdomain — 'api.in.exotel.com' (Mumbai) covers Indian ExoPhones.
-  EXOTEL_SUBDOMAIN: z.string().default('api.in.exotel.com'),
+  // Region subdomain — must match the region the Exotel account was created in
+  // (a wrong one returns 401 Unauthorized). This account is on api.exotel.com.
+  EXOTEL_SUBDOMAIN: z.string().default('api.exotel.com'),
   // The ExoPhone(s) calls go out from — provisioned in the Exotel dashboard,
   // not something we can invent at runtime like the mock does. Comma-separated
   // — when more than one is set, calls.service tries them in order and falls
