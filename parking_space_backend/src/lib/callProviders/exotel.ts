@@ -67,7 +67,14 @@ export const exotelProvider: CallProvider = {
     if (!res.ok || !body?.Call?.Sid) {
       const message = body?.RestException?.Message ?? `HTTP ${res.status}`;
       logger.error({ event: 'exotel_call_create_failed', status: res.status, body }, 'Exotel call creation failed');
-      throw ServerError(`Exotel call could not be placed: ${message}`);
+      // Keep the raw provider response on the error so the failed CallSession can store it —
+      // otherwise the only evidence of why a placement failed lives in server logs.
+      throw Object.assign(ServerError(`Exotel call could not be placed: ${message}`), {
+        debug: {
+          httpStatus: res.status, body, via: res.headers.get('server'), contentType: res.headers.get('content-type'),
+          from: p.callerE164, to: p.ownerE164, callerId: p.virtualNumber,
+        },
+      });
     }
 
     return { providerCallId: body.Call.Sid, status: body.Call.Status, raw: body };

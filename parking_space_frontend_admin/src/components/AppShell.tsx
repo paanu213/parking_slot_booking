@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
   Menu,
+  SlidersHorizontal,
   X,
   LayoutDashboard,
   Users,
@@ -54,6 +55,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/registrations', label: 'Registrations', icon: ClipboardList },
       { to: '/sticker-orders', label: 'Sticker Orders', icon: Package },
       { to: '/qr-batches', label: 'QR Batches', icon: Layers },
+      { to: '/qr-settings', label: 'Call Limits', icon: SlidersHorizontal },
     ],
   },
   {

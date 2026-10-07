@@ -42,6 +42,7 @@ import { AuditLogPage } from '@/pages/AuditLogPage';
 import RegistrationsPage from '@/pages/RegistrationsPage';
 import StickerOrdersPage from '@/pages/StickerOrdersPage';
 import QrBatchesPage from '@/pages/QrBatchesPage';
+import QrSettingsPage from '@/pages/QrSettingsPage';
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SUB_ADMIN'];
 
@@ -1927,6 +1928,7 @@ export default function App() {
                     <Route path="/registrations" element={<RegistrationsPage />} />
                     <Route path="/sticker-orders" element={<StickerOrdersPage />} />
                     <Route path="/qr-batches" element={<QrBatchesPage />} />
+                    <Route path="/qr-settings" element={<QrSettingsPage />} />
                   </Routes>
                 </AppShell>
               </AuthGuard>

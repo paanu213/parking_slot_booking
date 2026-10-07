@@ -92,7 +92,15 @@ export const initiateCall = async (
   // returns the existing session instead of placing a second call.
   if (idempotencyKey) {
     const existing = await prisma.callSession.findUnique({ where: { idempotencyKey } });
-    if (existing) return { callSessionId: existing.id };
+    if (existing) {
+      // A call that never placed (provider rejected it, no providerCallId) must not be
+      // replayed as "failed" forever — release the key so this retry gets a fresh attempt.
+      if (existing.status === 'FAILED' && !existing.providerCallId) {
+        await prisma.callSession.update({ where: { id: existing.id }, data: { idempotencyKey: null } });
+      } else {
+        return { callSessionId: existing.id };
+      }
+    }
   }
 
   const blocked = await prisma.blockedNumber.findFirst({
@@ -194,7 +202,14 @@ export const initiateCall = async (
   }
 
   if (!result) {
-    await prisma.callSession.update({ where: { id: session.id }, data: { status: 'FAILED', endedAt: new Date() } });
+    const debug = (lastErr as { debug?: unknown } | undefined)?.debug;
+    await prisma.callSession.update({
+      where: { id: session.id },
+      data: {
+        status: 'FAILED', endedAt: new Date(),
+        rawPayload: JSON.stringify({ placementFailed: true, error: lastErr instanceof Error ? lastErr.message : String(lastErr), debug }),
+      },
+    });
     throw lastErr instanceof HttpError ? lastErr : ServerError('Could not place the call — please try again');
   }
 

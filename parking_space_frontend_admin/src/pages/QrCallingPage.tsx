@@ -122,7 +122,7 @@ interface CallLimitItem {
   default: number; min: number; max: number; value: number;
 }
 
-const CallLimitsSetting = () => {
+export const CallLimitsSetting = () => {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -255,8 +255,6 @@ const OverviewTab = () => {
 
   return (
     <div className="space-y-6">
-      <CallLimitsSetting />
-
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <StatCard label="Active cars" value={data.activeRegistrations} sub={`${data.totalRegistrations} total · ${data.pausedRegistrations} paused`} icon={Car} />
         <StatCard label="Emergency card on" value={data.emergencyEnabled} icon={ShieldCheck} />

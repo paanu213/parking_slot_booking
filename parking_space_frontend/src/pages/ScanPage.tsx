@@ -768,7 +768,8 @@ const CallPanel = ({ permit }: { permit: string }) => {
   const [step, setStep] = useState<'idle' | 'enter-number'>('idle');
   const [callerNumber, setCallerNumber] = useState('');
   const [callSessionId, setCallSessionId] = useState<string | null>(null);
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  // Fresh key per attempt (rotated after a failed placement) — double-taps still reuse one key.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const initiate = useMutation({
     mutationFn: async () => {
@@ -776,6 +777,7 @@ const CallPanel = ({ permit }: { permit: string }) => {
       return res.data;
     },
     onSuccess: (data) => setCallSessionId(data.callSessionId),
+    onError: () => setIdempotencyKey(crypto.randomUUID()),
   });
 
   const statusQuery = useQuery<CallStatusResult>({
@@ -822,6 +824,15 @@ const CallPanel = ({ permit }: { permit: string }) => {
             <p className="text-xs text-slate-500 dark:text-slate-400">{statusQuery.data.durationSec}s</p>
           )}
         </div>
+        {failed && (
+          <button
+            type="button"
+            onClick={() => { setCallSessionId(null); setIdempotencyKey(crypto.randomUUID()); initiate.reset(); }}
+            className="shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-white/60 dark:text-brand-300"
+          >
+            Try again
+          </button>
+        )}
       </div>
     );
   }
