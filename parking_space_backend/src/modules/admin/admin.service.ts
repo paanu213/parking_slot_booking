@@ -1820,6 +1820,40 @@ export const getQrVehicle = async (id: string) => {
   };
 };
 
+/**
+ * Read-only Exotel health check, run from the server it's called on (so it
+ * reveals what production sees): outbound IP, credential fingerprints, and
+ * whether Exotel accepts this server for non-calling API requests. Places no call.
+ */
+export const exotelDiagnostics = async () => {
+  const { createHash } = await import('node:crypto');
+  const fp = (v?: string) => (v ? createHash('sha256').update(v).digest('hex').slice(0, 8) : null);
+  const auth = 'Basic ' + Buffer.from(`${env.EXOTEL_API_KEY}:${env.EXOTEL_API_TOKEN}`).toString('base64');
+  const base = `https://${env.EXOTEL_SUBDOMAIN}/v1/Accounts/${env.EXOTEL_ACCOUNT_SID}`;
+
+  const probe = async (url: string, init?: RequestInit) => {
+    try {
+      const r = await fetch(url, init);
+      return { status: r.status, via: r.headers.get('server'), body: (await r.text()).slice(0, 300) };
+    } catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
+  };
+
+  return {
+    nodeVersion: process.version,
+    nodeEnv: env.NODE_ENV,
+    provider: env.CALL_PROVIDER,
+    config: {
+      accountSid: env.EXOTEL_ACCOUNT_SID, subdomain: env.EXOTEL_SUBDOMAIN,
+      apiKeyFp: fp(env.EXOTEL_API_KEY), apiTokenFp: fp(env.EXOTEL_API_TOKEN),
+      apiKeyLen: env.EXOTEL_API_KEY?.length, apiTokenLen: env.EXOTEL_API_TOKEN?.length,
+      virtualNumbers: env.EXOTEL_VIRTUAL_NUMBERS, apiBaseUrl: env.API_BASE_URL,
+      webhookSecretSet: !!env.EXOTEL_WEBHOOK_SECRET,
+    },
+    egressIp: await probe('https://api.ipify.org?format=json'),
+    exotelListNumbers: await probe(`${base}/IncomingPhoneNumbers.json`, { headers: { Authorization: auth } }),
+  };
+};
+
 /** Every state/city that has a sticker order — feeds the admin's searchable filter dropdowns. */
 export const qrFilterOptions = async () => {
   const rows = await prisma.qrOrder.groupBy({ by: ['state', 'city'], orderBy: [{ state: 'asc' }, { city: 'asc' }] });
