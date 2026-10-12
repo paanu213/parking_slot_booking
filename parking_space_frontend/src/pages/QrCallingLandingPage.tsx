@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
-  AlertTriangle, Car, CheckCircle2, Fingerprint, Gift, Home, IndianRupee, Loader2, LogIn,
+  AlertTriangle, ArrowRight, Car, CheckCircle2, ChevronDown, Fingerprint, Lock, Gift, Home, IndianRupee, Loader2, LogIn,
   Package, Pencil, PhoneCall, QrCode, RefreshCw, ScanLine, ShieldPlus, Sparkles, Truck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -12,16 +12,37 @@ import { Footer } from '@/components/Footer';
 import { cn } from '@/lib/cn';
 import { phoneInputProps, phoneRules } from '@/lib/phone';
 import { VehicleTypePicker, vehicleKindLabel, type VehicleKind } from '@/components/VehicleTypePicker';
+import { OrderVisual, StickVisual, ScanVisual, CallVisual } from '@/components/QrStepVisuals';
 import { API_URL, QR_STICKER_PRICE } from '@/lib/config';
 import { friendlyPaymentError, useQrPaymentCheckout } from '@/hooks/useQrPaymentCheckout';
 
 const FIRST_PAYMENT = QR_STICKER_PRICE; // one-time, lifetime — no recurring charge
 
+// Each step is shown as a picture (see components/QrStepVisuals) rather than an icon.
 const STEPS = [
-  { icon: QrCode, title: 'Get your sticker', desc: `Order it here for ₹${QR_STICKER_PRICE}, one time — one unique sticker per car, yours for life.` },
-  { icon: Car, title: 'Stick it on your car', desc: 'Windshield or window, wherever it\'s easy to spot.' },
-  { icon: ScanLine, title: 'Anyone can scan it', desc: 'They scan and enter the last 4 digits of your plate — no app needed.' },
-  { icon: PhoneCall, title: 'You get a masked call', desc: 'Your real number stays private. In an emergency, an opt-in ICE card can be shown too.' },
+  { visual: OrderVisual, title: 'Get your sticker', desc: `Order it here for ₹${QR_STICKER_PRICE}, one time — one unique sticker per vehicle, yours for life.` },
+  { visual: StickVisual, title: 'Stick it on your vehicle', desc: 'Windshield, window or bumper — wherever it\'s easy to spot.' },
+  { visual: ScanVisual, title: 'Anyone can scan it', desc: 'They scan and enter the last 4 digits from your number plate, no app needed.' },
+  { visual: CallVisual, title: 'You get a masked call', desc: 'Your real number stays private. In an emergency, an opt-in ICE card can be shown too.' },
+];
+
+const FAQS = [
+  {
+    q: 'What is the AutoSahay QR Sticker?',
+    a: 'It is a QR sticker placed on your vehicle that allows others to contact you when there is an issue with your vehicle.',
+  },
+  {
+    q: 'When can someone scan the QR code?',
+    a: 'For situations such as your vehicle blocking another vehicle, lights being left on, windows being open, or other vehicle-related concerns.',
+  },
+  {
+    q: 'Will my mobile number be visible to others?',
+    a: 'No. Your mobile number can remain private while allowing others to contact you through AutoSahay.',
+  },
+  {
+    q: 'Can I edit or add an emergency contact number?',
+    a: 'Yes. You can add or update your emergency contact details whenever required through your AutoSahay account.',
+  },
 ];
 
 const FEATURES = [
@@ -95,6 +116,56 @@ const OrderStepper = ({ current }: { current: typeof ORDER_STEPS[number]['key'] 
     </div>
   );
 };
+
+const HERO_STEPS = [
+  { icon: QrCode, label: 'Order your sticker' },
+  { icon: Car, label: 'Stick it on your vehicle' },
+  { icon: ScanLine, label: 'Someone scans it' },
+  { icon: PhoneCall, label: 'You get a masked call' },
+];
+
+/** Hero copy + call to action — shared by the mobile and desktop hero layouts. */
+const HeroIntro = () => (
+  <div>
+    <span aria-hidden className="block h-1 w-14 rounded-full bg-emerald-400" />
+    <span className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-300 ring-1 ring-white/15">
+      <QrCode className="h-3.5 w-3.5" /> QR Calling
+    </span>
+    <h1 className="mt-4 font-display text-[2rem] font-extrabold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl">
+      Let people reach you, <span className="text-emerald-400">without seeing your number.</span>
+    </h1>
+    <p className="mt-4 max-w-md text-[15px] leading-relaxed text-slate-300 sm:text-base">
+      Stick it on your car or bike. Anyone who needs you — a wrongly parked car, an accident, or
+      an emergency — scans it, enters the last 4 of your plate, and gets a masked call straight to you.
+    </p>
+    <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <a href="#order" className="btn btn-qr gap-2 px-6 py-3 text-[15px]">
+        Get your QR sticker — ₹{QR_STICKER_PRICE} <ArrowRight className="h-4 w-4" />
+      </a>
+      <span className="text-xs text-slate-400">One-time · Lifetime validity</span>
+    </div>
+  </div>
+);
+
+/** The four steps as a numbered icon strip — the visual "how it works" inside the hero. */
+const HeroSteps = ({ compact }: { compact?: boolean }) => (
+  <ol className="grid grid-cols-4 gap-2">
+    {HERO_STEPS.map(({ icon: Icon, label }, i) => (
+      <li key={label} className="relative flex flex-col items-center text-center">
+        {i < HERO_STEPS.length - 1 && (
+          <span aria-hidden className="absolute left-[calc(50%+1.75rem)] right-[calc(-50%+1.75rem)] top-6 border-t-2 border-dashed border-emerald-400/50" />
+        )}
+        <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-green-700 shadow-lg ring-2 ring-emerald-300/40">
+          <Icon className="h-5 w-5" />
+          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-extrabold text-emerald-700">
+            {i + 1}
+          </span>
+        </span>
+        <p className={cn('mt-2 font-semibold leading-tight text-white', compact ? 'text-[11px]' : 'text-xs')}>{label}</p>
+      </li>
+    ))}
+  </ol>
+);
 
 /**
  * "Get your QR sticker" landing page + order wizard:
@@ -218,28 +289,71 @@ export const QrCallingLandingPage = () => {
   return (
     <>
       <main>
-        {/* HERO */}
-        <section className="relative overflow-hidden bg-gradient-to-br from-brand-600 via-brand-700 to-slate-900 px-4 py-16 text-white sm:py-20">
-          <div aria-hidden className="absolute inset-0 opacity-25 [background:radial-gradient(700px_350px_at_10%_0%,rgba(255,255,255,0.4),transparent_60%)]" />
-          <div className="relative mx-auto max-w-3xl text-center">
-            <span className="mt-4 inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide ring-1 ring-white/20 backdrop-blur">
-              <QrCode className="h-3.5 w-3.5" /> QR Calling
-            </span>
-            <h1 className="mt-4 font-display text-3xl font-bold sm:text-4xl">
-              A QR sticker that lets people reach you without ever seeing your number
-            </h1>
-            <p className="mx-auto mt-3 max-w-xl text-sm text-white/80 sm:text-base">
-              Stick it on your car. Anyone who needs you — for a wrongly parked car, an accident,
-              or an emergency — scans it, enters the last 4 of your plate, and gets a masked call
-              straight to you.
-            </p>
-            <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-              <a href="#order" className="btn gap-2 bg-white text-brand-700 hover:bg-slate-100">
-                <QrCode className="h-4 w-4" /> Get your QR sticker — ₹{QR_STICKER_PRICE}
-              </a>
-              <a href="#how-it-works" className="btn gap-2 border border-white/30 bg-white/10 text-white backdrop-blur hover:bg-white/20">
-                How it works
-              </a>
+        {/* HERO — dark poster with the product photo; the 4 steps are part of the visual.
+            Mobile and desktop are separate layouts (only one is displayed). */}
+        <section className="relative isolate overflow-hidden bg-slate-950 text-white">
+          {/* ── Mobile ─────────────────────────────────────────────── */}
+          <div className="relative md:hidden">
+            <div aria-hidden className="absolute inset-0 -z-10">
+              <img
+                src="/images/qr-hero-scan.jpg"
+                alt=""
+                className="absolute inset-0 h-full w-full scale-110 object-cover object-[30%_center] blur-md brightness-[0.45]"
+                loading="eager"
+              />
+              <div className="absolute inset-x-0 bottom-0 aspect-[3/4] [-webkit-mask-image:linear-gradient(to_bottom,transparent,black_45%)] [mask-image:linear-gradient(to_bottom,transparent,black_45%)]">
+                <img
+                  src="/images/qr-hero-scan.jpg"
+                  srcSet="/images/qr-hero-scan.jpg 900w, /images/qr-hero-scan@2x.jpg 1400w"
+                  sizes="200vw"
+                  alt=""
+                  className="h-full w-full object-cover object-[88%_center]"
+                  loading="eager"
+                  fetchPriority="high"
+                />
+              </div>
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/45 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-transparent via-45% to-slate-950" />
+            </div>
+
+            <div className="px-5 pb-7 pt-10">
+              <HeroIntro />
+              {/* Space for the photo — the phone scanning the sticker */}
+              <div aria-hidden className="h-40" />
+              <HeroSteps compact />
+            </div>
+          </div>
+
+          {/* ── Desktop ────────────────────────────────────────────── */}
+          <div className="mx-auto hidden max-w-6xl grid-cols-[1fr,1.1fr] items-center gap-12 px-4 py-16 md:grid lg:py-20">
+            <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 [background:radial-gradient(600px_400px_at_15%_10%,rgba(16,185,129,0.18),transparent_60%)]" />
+            <HeroIntro />
+
+            <div className="relative">
+              <div className="overflow-hidden rounded-3xl shadow-2xl shadow-black/50 ring-1 ring-white/10">
+                <img
+                  src="/images/qr-hero-scan.jpg"
+                  srcSet="/images/qr-hero-scan.jpg 900w, /images/qr-hero-scan@2x.jpg 1400w"
+                  sizes="(min-width: 1024px) 600px, 50vw"
+                  alt="Someone scanning an AutoSahay QR sticker on a car to call the owner"
+                  width={1400}
+                  height={933}
+                  className="aspect-[4/3] w-full object-cover object-[70%_center]"
+                  loading="eager"
+                  fetchPriority="high"
+                />
+              </div>
+              {/* Privacy badge */}
+              <div className="absolute -left-5 top-6 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-slate-900 shadow-xl">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                  <Lock className="h-4 w-4" />
+                </span>
+                <p className="text-xs font-bold leading-tight">Your number<br />stays private</p>
+              </div>
+              {/* The steps, on frosted glass over the photo */}
+              <div className="absolute inset-x-4 -bottom-8 rounded-2xl bg-slate-950/80 p-4 ring-1 ring-white/15 backdrop-blur-md">
+                <HeroSteps />
+              </div>
             </div>
           </div>
         </section>
@@ -322,6 +436,12 @@ export const QrCallingLandingPage = () => {
                 )}
                 {starting ? 'Starting payment…' : paymentError ? `Try again — Pay ₹${FIRST_PAYMENT}` : `Pay ₹${FIRST_PAYMENT}`}
               </button>
+              <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+                Dispatched in 1–2 business days, delivered in 3–7.{' '}
+                <Link to="/shipping-policy" target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-600 hover:underline dark:text-brand-400">
+                  Shipping policy
+                </Link>
+              </p>
             </div>
           ) : (
             <form onSubmit={handleSubmit(() => setStep('preview'))} className="card space-y-6 border border-brand-100 p-6 shadow-xl shadow-brand-900/5 dark:border-brand-500/20">
@@ -551,31 +671,43 @@ export const QrCallingLandingPage = () => {
                   <LogIn className="h-4 w-4" /> Sign in with Google to continue
                 </button>
               )}
+              <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+                Dispatched in 1–2 business days, delivered in 3–7.{' '}
+                <Link to="/shipping-policy" target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-600 hover:underline dark:text-brand-400">
+                  Shipping policy
+                </Link>
+              </p>
             </form>
           )}
           </div>
         </section>
 
-        {/* HOW IT WORKS */}
-        <section id="how-it-works" className="mx-auto max-w-5xl px-4 py-14">
-          <div className="mb-10 text-center">
+        {/* HOW IT WORKS — one picture per step (photo crops + phone mock-ups) */}
+        <section id="how-it-works" className="bg-gradient-to-b from-white via-emerald-50/60 to-white py-16 dark:from-slate-950 dark:via-emerald-500/[0.05] dark:to-slate-950">
+          <div className="mx-auto mb-10 max-w-6xl px-4 text-center">
             <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">How it works</p>
             <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">Four steps, done once</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
+              Set it up in minutes. After that, anyone can reach you, and nobody sees your number.
+            </p>
           </div>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {STEPS.map(({ icon: Icon, title, desc }, i) => (
-              <div key={title} className="relative text-center">
-                <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-lg ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                  <Icon className="h-6 w-6 text-brand-600" />
-                </span>
-                <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-brand-600 px-2 py-0.5 text-[10px] font-bold text-white shadow">
-                  {i + 1}
-                </span>
-                <h3 className="mt-4 font-display text-base font-semibold">{title}</h3>
+
+          {/* Mobile: swipeable row · tablet: 2×2 · desktop: 4 across */}
+          <ol className="mx-auto flex max-w-6xl snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-4 [scrollbar-width:none] sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-4 [&::-webkit-scrollbar]:hidden">
+            {STEPS.map(({ visual: Visual, title, desc }, i) => (
+              <li key={title} className="group w-[78%] shrink-0 snap-center sm:w-auto">
+                <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-slate-100 shadow-lg shadow-slate-900/10 ring-1 ring-slate-900/5 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-xl dark:bg-slate-800 dark:ring-white/10">
+                  <Visual />
+                  <span className="absolute left-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-green-600 text-sm font-extrabold text-white shadow-lg ring-2 ring-white">
+                    {i + 1}
+                  </span>
+                </div>
+                <h3 className="mt-4 font-display text-base font-bold">{title}</h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{desc}</p>
-              </div>
+              </li>
             ))}
-          </div>
+          </ol>
+          <p className="mt-2 text-center text-xs text-slate-400 sm:hidden">Swipe to see all 4 steps →</p>
         </section>
 
         {/* FEATURES + ICE callout */}
@@ -613,7 +745,7 @@ export const QrCallingLandingPage = () => {
         <section className="mx-auto max-w-2xl px-4 py-14">
           <div className="mb-10 text-center">
             <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Pricing</p>
-            <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">One payment. Yours for life.</h2>
+            <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">Pay Once. Lifetime validity.</h2>
           </div>
           <div className="card mx-auto max-w-sm p-6 text-center">
             <span className="mx-auto inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
@@ -623,8 +755,8 @@ export const QrCallingLandingPage = () => {
             <p className="text-sm text-slate-500 dark:text-slate-400">No renewals, no monthly fee</p>
             <ul className="mt-4 space-y-1.5 text-left text-sm text-slate-600 dark:text-slate-300">
               <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> QR sticker, shipped to your address</li>
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> Unlimited masked calls received</li>
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> Valid for life — no reprinting, no renewals</li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> Configure & Use</li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> Lifetime validity (no renewals)</li>
             </ul>
           </div>
           <p className="mx-auto mt-4 max-w-xl text-center text-xs text-slate-400">
@@ -632,9 +764,32 @@ export const QrCallingLandingPage = () => {
           </p>
         </section>
 
+        {/* FAQ — native <details> accordion: keyboard + screen-reader friendly, no state */}
+        <section id="faq" className="mx-auto max-w-3xl px-4 pb-16">
+          <div className="mb-8 text-center">
+            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">FAQ</p>
+            <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">Frequently Asked Questions</h2>
+          </div>
+          <div className="space-y-3">
+            {FAQS.map(({ q, a }, i) => (
+              <details
+                key={q}
+                open={i === 0}
+                className="card group p-0 [&_summary::-webkit-details-marker]:hidden"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-left">
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">{q}</span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+                </summary>
+                <p className="px-5 pb-4 text-sm text-slate-600 dark:text-slate-300">{a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
 
       </main>
-      <Footer />
+      <Footer variant="qr" />
     </>
   );
 };

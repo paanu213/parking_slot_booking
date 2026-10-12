@@ -2174,8 +2174,12 @@ export const listQrOrders = async (params: QrOrderFilters) => {
     take: q ? 2000 : 300,
   });
 
+  const fulfilment = await qrOrderFulfilmentCounts(rows.map((r) => r.id));
+
   const items = rows.map((r) => {
     const sticker = r.registration?.qrStickers?.[0] ?? null;
+    // The QR this customer's car answers to: the claimed one, else the one recorded at dispatch.
+    const stickerToken = sticker?.token ?? r.dispatchedSticker?.token ?? null;
     return {
       id:                r.id,
       registrationId:    r.registration?.id ?? null,
@@ -2209,6 +2213,9 @@ export const listQrOrders = async (params: QrOrderFilters) => {
       qrConfiguredAt:    sticker?.claimedAt ?? null,
       dispatchedStickerToken: r.dispatchedSticker?.token ?? null,
       dispatchedAt:           r.dispatchedAt,
+      stickerToken,
+      stickerUrl:        stickerToken ? stickerUrl(stickerToken) : null,
+      fulfilment:        fulfilment.get(r.id) ?? { delivered: 0, returned: 0, replacements: 0 },
       createdAt:         r.createdAt,
     };
   });
@@ -2384,6 +2391,91 @@ const QR_ORDER_TRANSITIONS: Record<string, string[]> = {
   DELIVERED:        ['RETURNED'],
   RETURNED:         ['CONFIRMED'],
   CANCELLED:        [],
+};
+
+/** Status-event notes for a replacement sticker start with this — it's how replacements are counted. */
+const REPLACEMENT_NOTE_PREFIX = 'Replacement sticker';
+
+/**
+ * How many times each order was delivered, returned, and re-sent as a
+ * replacement — derived from the status timeline, so it covers history too.
+ */
+const qrOrderFulfilmentCounts = async (orderIds: string[]) => {
+  const out = new Map<string, { delivered: number; returned: number; replacements: number }>();
+  if (orderIds.length === 0) return out;
+  const events = await prisma.qrOrderStatusEvent.findMany({
+    where:  { qrOrderId: { in: orderIds }, status: { in: ['DELIVERED', 'RETURNED', 'CONFIRMED'] } },
+    select: { qrOrderId: true, status: true, note: true },
+  });
+  for (const e of events) {
+    const c = out.get(e.qrOrderId) ?? { delivered: 0, returned: 0, replacements: 0 };
+    if (e.status === 'DELIVERED') c.delivered += 1;
+    else if (e.status === 'RETURNED') c.returned += 1;
+    else if (e.note?.startsWith(REPLACEMENT_NOTE_PREFIX)) c.replacements += 1;
+    out.set(e.qrOrderId, c);
+  }
+  return out;
+};
+
+/** The QR token an order's car answers to — claimed sticker first, else the one recorded at dispatch. */
+const qrOrderStickerToken = async (orderId: string) => {
+  const order = await prisma.qrOrder.findUnique({
+    where:   { id: orderId },
+    include: {
+      dispatchedSticker: { select: { token: true } },
+      registration: {
+        select: { plateNumber: true, qrStickers: { where: { status: 'CLAIMED' }, orderBy: { claimedAt: 'desc' }, take: 1, select: { token: true } } },
+      },
+    },
+  });
+  if (!order) throw NotFound('Order not found');
+  const token = order.registration?.qrStickers[0]?.token ?? order.dispatchedSticker?.token ?? null;
+  return { order, token, plate: order.registration ? decryptField(order.registration.plateNumber) : null };
+};
+
+/**
+ * Print-ready PDF of the exact QR already linked to this order's car — same
+ * branded design as batch printing — so a lost/damaged sticker can be
+ * reprinted without the customer having to set anything up again.
+ */
+export const getQrOrderStickerPdf = async (id: string) => {
+  const { token, plate } = await qrOrderStickerToken(id);
+  if (!token) throw BadRequest('No QR sticker is linked to this order yet');
+  const pdf = await generateStickerBatchPdf([{ token, url: stickerUrl(token) }]);
+  const safe = (plate ?? token).replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/^-+|-+$/g, '');
+  return { filename: `qr-sticker-${safe}.pdf`, pdf };
+};
+
+/**
+ * Lost or damaged sticker after delivery: send the customer a reprint of the
+ * SAME QR. Puts the order back to CONFIRMED (pickup -> dispatch -> delivery
+ * runs again, as a new delivery attempt) and records why on the timeline,
+ * which the customer sees too. The QR stays linked to the car, so calls keep
+ * working and nothing needs re-configuring.
+ */
+export const sendQrOrderReplacement = async (id: string, actorId: string, reason: string) => {
+  const { order, token } = await qrOrderStickerToken(id);
+  if (order.paymentStatus !== 'PAID') throw BadRequest('Only a paid order can get a replacement sticker');
+  if (order.status !== 'DELIVERED') throw BadRequest('A replacement can only be sent for a delivered order');
+  if (!token) throw BadRequest('No QR sticker is linked to this order yet');
+
+  const note = `${REPLACEMENT_NOTE_PREFIX} — ${reason.trim()}`;
+  const now = new Date();
+  const [updated] = await prisma.$transaction([
+    prisma.qrOrder.update({
+      where: { id },
+      data: {
+        status: 'CONFIRMED',
+        confirmedAt: now, pickedUpAt: null, outForDeliveryAt: null, deliveredAt: null, returnedAt: null,
+        deliveryAttempt: { increment: 1 },
+      },
+    }),
+    prisma.qrOrderStatusEvent.create({ data: { qrOrderId: id, status: 'CONFIRMED', note, actorId } }),
+    prisma.auditLog.create({
+      data: { actorId, action: 'QR_ORDER_REPLACEMENT', entity: 'QrOrder', entityId: id, metadata: JSON.stringify({ reason: reason.trim() }) },
+    }),
+  ]);
+  return updated;
 };
 
 export const setQrOrderStatus = async (id: string, actorId: string, status: string, note?: string) => {

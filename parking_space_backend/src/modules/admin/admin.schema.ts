@@ -157,6 +157,11 @@ export const setQrOrderStatusSchema = z.object({
 });
 
 /** Admin records which physical sticker (by its printed token) went into the package at dispatch. */
+export const qrOrderReplacementSchema = z.object({
+  reason: z.string().trim().min(2, 'Add a short reason').max(300),
+});
+export type QrOrderReplacementInput = z.infer<typeof qrOrderReplacementSchema>;
+
 export const dispatchStickerSchema = z.object({
   token: z.string().trim().min(4).max(40),
 });

@@ -5,6 +5,31 @@
 @layer base {
   :root {
     color-scheme: light dark;
+    /* Brand blue (RGB triplets — consumed by the `brand` colour in tailwind.config) */
+    --brand-50: 238 246 255;
+    --brand-100: 217 234 255;
+    --brand-200: 184 213 255;
+    --brand-300: 137 182 255;
+    --brand-400: 88 141 255;
+    --brand-500: 47 102 255;
+    --brand-600: 31 75 224;
+    --brand-700: 26 60 179;
+    --brand-800: 26 51 144;
+    --brand-900: 27 47 114;
+  }
+  /* QR Calling product: green is the primary colour (matches the mobile home hero).
+     Set on <html> for QR routes (see App.tsx) or on a section for a local QR block. */
+  .theme-qr {
+    --brand-50: 236 253 245;
+    --brand-100: 209 250 229;
+    --brand-200: 167 243 208;
+    --brand-300: 110 231 183;
+    --brand-400: 52 211 153;
+    --brand-500: 16 185 129;
+    --brand-600: 5 150 105;
+    --brand-700: 4 120 87;
+    --brand-800: 6 95 70;
+    --brand-900: 6 78 59;
   }
   html,
   body,
@@ -33,6 +58,11 @@
   }
   .btn-primary {
     @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  }
+  /* QR primary button: the green gradient pill from the mobile home hero */
+  .theme-qr .btn-primary,
+  .btn-qr {
+    @apply rounded-full bg-gradient-to-r from-emerald-500 to-green-500 font-bold text-white shadow-lg shadow-emerald-500/30 hover:from-emerald-600 hover:to-green-600;
   }
   .btn-ghost {
     @apply btn bg-transparent text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800;

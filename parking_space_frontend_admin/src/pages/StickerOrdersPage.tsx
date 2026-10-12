@@ -1,13 +1,14 @@
 import { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, CheckCircle2, IndianRupee, MapPin, Package, PackageX, Pencil, QrCode, RotateCcw, Truck, UserCog } from 'lucide-react';
+import { Ban, CheckCircle2, FileText, IndianRupee, MapPin, Package, PackageX, Pencil, QrCode, Repeat, RotateCcw, Truck, UserCog } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { statusCls, fmtDateTime, errMsg, ORDER_STATUS_LABEL, type QrOrderStatus } from '@/lib/qrCallingFormat';
 import { ModalShell } from '@/components/VehicleActionsMenu';
 import { KebabMenu, MenuItem, MenuDivider } from '@/components/KebabMenu';
 import { QrVehicleEditDrawer } from '@/components/QrVehicleEditDrawer';
+import { StickerQrPanel, FulfilmentSummary, ReplacementModal, downloadOrderStickerPdf, type OrderFulfilment } from '@/components/OrderStickerQr';
 import { digits10, isPhone10, phoneInputProps } from '@/lib/phone';
 import { QrFilterBar, EMPTY_QR_FILTERS, VehicleTypeBadge, EmergencyBlock, qrFilterParams, useDebounced, type QrFilters, type EmergencyInfo } from '@/components/QrFilters';
 
@@ -24,6 +25,7 @@ interface OrderRow {
   deliveredAt: string | null; returnedAt: string | null; deliveryAttempt: number;
   qrConfigured: boolean; qrToken: string | null; qrConfiguredAt: string | null;
   dispatchedStickerToken: string | null; dispatchedAt: string | null;
+  stickerToken: string | null; stickerUrl: string | null; fulfilment: OrderFulfilment;
   createdAt: string;
 }
 
@@ -244,7 +246,7 @@ const DispatchStickerModal = ({
  * status stays consistent across the app rather than drifting per-page.
  */
 const StickerOrderActionsMenu = ({
-  order, isPending, onSetStatus, onMarkReturned, onRefund, onDispatchSticker, onEditShipping, onEditCustomer,
+  order, isPending, onSetStatus, onMarkReturned, onRefund, onDispatchSticker, onEditShipping, onEditCustomer, onReplacement,
 }: {
   order: OrderRow;
   isPending: boolean;
@@ -254,6 +256,7 @@ const StickerOrderActionsMenu = ({
   onDispatchSticker: () => void;
   onEditShipping: () => void;
   onEditCustomer: () => void;
+  onReplacement: () => void;
 }) => {
   const nextAction = ORDER_NEXT_ACTION[order.status];
   const canReturn = ORDER_RETURNABLE_FROM.includes(order.status);
@@ -278,6 +281,16 @@ const StickerOrderActionsMenu = ({
         <MenuItem icon={<QrCode className="h-4 w-4" />} onClick={onDispatchSticker} disabled={isPending}>
           {order.dispatchedStickerToken ? 'Update dispatched sticker' : 'Record dispatched sticker'}
         </MenuItem>
+        {order.stickerToken && (
+          <MenuItem icon={<FileText className="h-4 w-4" />} onClick={() => { void downloadOrderStickerPdf(order.id, order.plate ?? order.stickerToken!); }}>
+            Download sticker for reprint
+          </MenuItem>
+        )}
+        {order.status === 'DELIVERED' && order.paymentStatus === 'PAID' && order.stickerToken && (
+          <MenuItem icon={<Repeat className="h-4 w-4" />} onClick={onReplacement} disabled={isPending}>
+            Send replacement sticker (lost / damaged)
+          </MenuItem>
+        )}
         {hasFulfilmentActions && <MenuDivider />}
         {nextAction && (
           <MenuItem icon={<nextAction.icon className="h-4 w-4" />} onClick={() => onSetStatus(nextAction.next)} disabled={isPending}>
@@ -318,6 +331,7 @@ export default function StickerOrdersPage() {
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
   const [shippingId, setShippingId] = useState<string | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
+  const [replacingId, setReplacingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<QrFilters>(EMPTY_QR_FILTERS);
   const dq = useDebounced(filters.q);
 
@@ -401,6 +415,7 @@ export default function StickerOrdersPage() {
                       <td>
                         <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(o.status))}>{ORDER_STATUS_LABEL[o.status]}</span>
                         {o.deliveryAttempt > 1 && <span className="ml-1.5 text-[11px] text-slate-400">Attempt {o.deliveryAttempt}</span>}
+                        <FulfilmentSummary f={o.fulfilment} />
                       </td>
                       <td>
                         {o.qrConfigured ? (
@@ -436,6 +451,7 @@ export default function StickerOrdersPage() {
                           onDispatchSticker={() => setDispatchingId(o.id)}
                           onEditShipping={() => setShippingId(o.id)}
                           onEditCustomer={() => setEditingVehicle(o.registrationId)}
+                          onReplacement={() => setReplacingId(o.id)}
                         />
                       </td>
                     </tr>
@@ -445,6 +461,9 @@ export default function StickerOrdersPage() {
                           <p className="font-semibold">{o.shippingName} · {o.shippingPhone}</p>
                           <p className="text-slate-500 dark:text-slate-400">{o.addressLine}, {o.city}, {o.state} — {o.pincode}</p>
                           {o.note && <p className="mt-1 text-xs text-slate-400">Note: {o.note}</p>}
+                          <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+                            <StickerQrPanel orderId={o.id} token={o.stickerToken} url={o.stickerUrl} plate={o.plate} />
+                          </div>
                           <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700"><EmergencyBlock info={o.emergency} /></div>
                           <OrderTimeline orderId={o.id} />
                         </td>
@@ -464,6 +483,10 @@ export default function StickerOrdersPage() {
       {refundingId && (() => {
         const order = items.find((i) => i.id === refundingId);
         return order ? <RefundModal order={order} onClose={() => setRefundingId(null)} onDone={refresh} /> : null;
+      })()}
+      {replacingId && (() => {
+        const order = items.find((i) => i.id === replacingId);
+        return order ? <ReplacementModal orderId={order.id} plate={order.plate} onClose={() => setReplacingId(null)} onDone={refresh} /> : null;
       })()}
       {shippingId && (() => {
         const order = items.find((i) => i.id === shippingId);

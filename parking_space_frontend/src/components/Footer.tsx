@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Mail, Phone, Shield, BadgeCheck, HeartHandshake } from 'lucide-react';
+import { Mail, Phone, Shield, BadgeCheck, HeartHandshake, Lock, Truck } from 'lucide-react';
 import {
   BRAND_NAME,
   LOGO_URL,
@@ -7,6 +7,7 @@ import {
   SUPPORT_PHONE,
   SUPPORT_PHONE_DISPLAY,
   VENDOR_URL,
+  QR_STICKER_PRICE,
 } from '@/lib/config';
 
 interface FooterLink {
@@ -15,6 +16,8 @@ interface FooterLink {
   /** Optional click handler — useful for forcing a scroll-to-top when the link
    *  target is the same as the current path (router does nothing in that case). */
   onClick?: () => void;
+  /** Open in a new tab (e.g. policy pages, so an in-progress form isn't lost). */
+  newTab?: boolean;
 }
 
 // A `to` starting with `http(s)://` is treated as an external link.
@@ -39,6 +42,7 @@ const Column = ({ title, items }: { title: string; items: FooterLink[] }) => (
             <Link
               to={i.to}
               onClick={i.onClick}
+              {...(i.newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
               className="text-slate-600 transition hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-300"
             >
               {i.label}
@@ -62,12 +66,20 @@ const TRUST = [
   { icon: HeartHandshake, title: '24×7 support', desc: 'Talk to a human in under a minute.' },
 ];
 
-export const Footer = () => (
+// Trust points for the QR Calling product pages.
+const QR_TRUST = [
+  { icon: Lock, title: 'Your number stays private', desc: 'Every call is masked, your number is never shown.' },
+  { icon: BadgeCheck, title: `Pay once, ₹${QR_STICKER_PRICE}`, desc: 'Secure checkout. Lifetime validity, no renewals.' },
+  { icon: Truck, title: 'Delivered to your door', desc: 'Dispatched in 1–2 days, delivered in 3–7.' },
+];
+
+/** `variant="qr"` swaps the parking trust strip for QR Calling trust points. */
+export const Footer = ({ variant = 'parking' }: { variant?: 'parking' | 'qr' }) => (
   <footer className="mt-16 border-t border-slate-200/70 bg-gradient-to-b from-white to-slate-50 dark:border-slate-800/70 dark:from-slate-950 dark:to-slate-900">
     {/* Trust strip */}
     <div className="border-b border-slate-200/70 dark:border-slate-800/70">
       <div className="mx-auto grid max-w-6xl gap-4 px-4 py-6 sm:grid-cols-3">
-        {TRUST.map(({ icon: Icon, title, desc }) => (
+        {(variant === 'qr' ? QR_TRUST : TRUST).map(({ icon: Icon, title, desc }) => (
           <div key={title} className="flex items-start gap-3">
             <span className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/10 text-brand-600 ring-1 ring-brand-500/20">
               <Icon className="h-5 w-5" />
@@ -134,6 +146,7 @@ export const Footer = () => (
         items={[
           { label: 'Privacy policy', to: '/privacy' },
           { label: 'Terms', to: '/terms' },
+          { label: 'Shipping policy', to: '/shipping-policy', newTab: true },
         ]}
       />
     </div>

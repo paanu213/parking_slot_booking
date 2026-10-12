@@ -159,11 +159,88 @@ export const ExplorePage = () => {
 
   return (
     <>
-      {/* QR CALLING HERO — carries the h1. Matches the approved reference
-          mockup: light background, blue used only as accent (badge/CTA/
-          overlay), real product photo on the right. */}
-      <section className="border-b border-slate-200/60 bg-white dark:border-slate-800/60 dark:bg-slate-950">
-        <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-10 sm:py-14 md:grid-cols-[1.15fr,1fr] md:gap-8 lg:gap-12">
+      {/* QR CALLING HERO.
+          Mobile and desktop are two separate layouts (only one is ever displayed):
+          - Mobile: dark poster style — copy over the photo, green accents, feature row at the bottom.
+          - Desktop (md+): light background, copy left, product photo right. */}
+      <section className="relative border-b border-slate-200/60 md:bg-white dark:border-slate-800/60 md:dark:bg-slate-950">
+        {/* ── Mobile hero ─────────────────────────────────────────────── */}
+        <div className="relative isolate overflow-hidden bg-slate-950 md:hidden">
+          <div aria-hidden className="absolute inset-0 -z-10">
+            {/* Soft, dark fill from the same photo (trees / sky bokeh) behind the headline */}
+            <img
+              src="/images/qr-hero-scan.jpg"
+              alt=""
+              className="absolute inset-0 h-full w-full scale-110 object-cover object-[30%_center] blur-md brightness-[0.45]"
+              loading="eager"
+            />
+            {/* The scan itself — phone + sticker on the car — crisp, anchored to the bottom */}
+            <div className="absolute inset-x-0 bottom-0 aspect-[3/4] [-webkit-mask-image:linear-gradient(to_bottom,transparent,black_45%)] [mask-image:linear-gradient(to_bottom,transparent,black_45%)]">
+              <img
+                src="/images/qr-hero-scan.jpg"
+                srcSet="/images/qr-hero-scan.jpg 900w, /images/qr-hero-scan@2x.jpg 1400w"
+                sizes="200vw"
+                alt=""
+                className="h-full w-full object-cover object-[88%_center]"
+                loading="eager"
+                fetchPriority="high"
+              />
+            </div>
+            {/* Readability: dark from the left (copy column) and the bottom (feature row) */}
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/45 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-transparent via-45% to-slate-950" />
+          </div>
+
+          <div className="px-5 pb-7 pt-10">
+            <span aria-hidden className="block h-1 w-14 rounded-full bg-emerald-400" />
+
+            <h1 className="mt-5 font-display font-extrabold leading-[1.02] tracking-tight text-white">
+              <span className="block text-[2.75rem]">One Scan.</span>
+              <span className="block text-[2.75rem] text-emerald-400">One Call.</span>
+              <span className="mt-1 block text-[1.7rem]">No Number Shared.</span>
+            </h1>
+
+            <p className="mt-4 max-w-[19rem] text-[15px] leading-relaxed text-slate-200">
+              A simple QR sticker for your car or bike. Let anyone contact you when they need to,
+              while your phone number stays private.
+            </p>
+
+            <div className="mt-6">
+              <Link
+                to="/qr-calling"
+                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-green-500 px-6 py-3 text-[15px] font-bold text-white shadow-lg shadow-emerald-500/30 transition hover:from-emerald-600 hover:to-green-600"
+              >
+                Get Your QR Sticker <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            {/* Space for the photo to show — the phone scanning the sticker */}
+            <div aria-hidden className="h-44" />
+
+            <div className="grid grid-cols-4 gap-1.5">
+              {[
+                { icon: Lock, circle: 'bg-gradient-to-br from-blue-500 to-blue-800 text-white ring-blue-300/40', title: 'Call masking' },
+                { icon: Phone, circle: 'bg-gradient-to-br from-emerald-500 to-green-700 text-white ring-emerald-300/40', title: 'Instant calling' },
+                { icon: ShieldCheck, circle: 'bg-gradient-to-br from-amber-700 to-yellow-950 text-amber-300 ring-amber-400/50', title: 'Safe & secure' },
+                { icon: Car, circle: 'bg-gradient-to-br from-blue-600 to-indigo-900 text-white ring-blue-300/40', title: 'For cars & bikes' },
+              ].map(({ icon: Icon, circle, title }) => (
+                <div key={title} className="flex flex-col items-center text-center">
+                  <span className={cn('flex h-12 w-12 items-center justify-center gap-0.5 rounded-full shadow-lg ring-2', circle)}>
+                    {Icon === Car ? (
+                      <><Car className="h-4 w-4" /><Bike className="h-4 w-4" /></>
+                    ) : (
+                      <Icon className="h-5 w-5" />
+                    )}
+                  </span>
+                  <p className="mt-2 text-[12px] font-bold leading-tight text-white">{title}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Desktop hero (unchanged design) ─────────────────────────── */}
+        <div className="theme-qr mx-auto hidden max-w-6xl items-center gap-10 px-4 py-14 md:grid md:grid-cols-[1.15fr,1fr] md:gap-8 lg:gap-12">
           {/* Left: copy */}
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -175,11 +252,12 @@ export const ExplorePage = () => {
               </span>
             </div>
 
-            <h1 className="mt-4 font-display text-4xl font-extrabold leading-[1.1] tracking-tight text-slate-900 dark:text-white sm:text-5xl">
+            {/* Visual headline only — the mobile hero above carries the page's h1 */}
+            <p role="heading" aria-level={2} className="mt-4 font-display text-5xl font-extrabold leading-[1.1] tracking-tight text-slate-900 dark:text-white">
               Park with confidence.
               <br />
-              Stay reachable.
-            </h1>
+              <span className="text-emerald-500">Stay reachable.</span>
+            </p>
 
             <p className="mt-4 max-w-md text-base text-slate-500 dark:text-slate-400">
               A simple QR code sticker for your vehicle. Let anyone scan and call you,
@@ -187,14 +265,8 @@ export const ExplorePage = () => {
             </p>
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
-              <Link to="/qr-calling" className="btn gap-2 bg-brand-600 text-white hover:bg-brand-700">
+              <Link to="/qr-calling" className="btn btn-qr gap-2 px-6 py-3 text-[15px]">
                 Get your QR sticker <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                to="/qr-calling#how-it-works"
-                className="btn gap-2 border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-              >
-                How it works
               </Link>
             </div>
 
@@ -217,7 +289,7 @@ export const ExplorePage = () => {
             </div>
           </div>
 
-          {/* Right: product photo + floating badges */}
+          {/* Right: product photo + floating badges (desktop only — on mobile the photo is the background) */}
           <div className="relative mx-auto w-full max-w-md">
             <img
               src="/images/qr-hero-scan.jpg"
