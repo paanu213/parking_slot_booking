@@ -692,6 +692,22 @@ export const refundQrOrder: RequestHandler = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+export const getQrOrderStickerPdf: RequestHandler = async (req, res, next) => {
+  try {
+    const { filename, pdf } = await service.getQrOrderStickerPdf(req.params.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdf);
+  } catch (e) { next(e); }
+};
+
+export const sendQrOrderReplacement: RequestHandler = async (req, res, next) => {
+  try {
+    const { reason } = req.body as { reason: string };
+    res.json(await service.sendQrOrderReplacement(req.params.id, req.user!.sub, reason));
+  } catch (e) { next(e); }
+};
+
 export const dispatchQrOrderSticker: RequestHandler = async (req, res, next) => {
   try {
     const { token } = req.body as DispatchStickerInput;

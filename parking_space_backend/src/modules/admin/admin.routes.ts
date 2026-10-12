@@ -38,6 +38,7 @@ import {
   blockCallGloballySchema,
   setQrOrderStatusSchema,
   dispatchStickerSchema,
+  qrOrderReplacementSchema,
   generateQrBatchSchema,
   updateQrBatchSchema,
   qrStickerDisableSchema,
@@ -165,6 +166,8 @@ r.patch('/qr/orders/:id/details', validate(adminQrOrderDetailsSchema), ctrl.admi
 r.patch('/qr/orders/:id/status', validate(setQrOrderStatusSchema), ctrl.setQrOrderStatus);
 r.post('/qr/orders/:id/refund', validate(refundSchema), ctrl.refundQrOrder);
 r.patch('/qr/orders/:id/dispatch-sticker', validate(dispatchStickerSchema), ctrl.dispatchQrOrderSticker);
+r.get('/qr/orders/:id/sticker-pdf', ctrl.getQrOrderStickerPdf);
+r.post('/qr/orders/:id/replacement', validate(qrOrderReplacementSchema), ctrl.sendQrOrderReplacement);
 r.get('/qr/payments', ctrl.listQrPayments);
 
 // --- QR sticker batches (print runs) + individual sticker lifecycle ---
