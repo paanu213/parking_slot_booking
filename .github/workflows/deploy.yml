@@ -22,6 +22,12 @@ name: Deploy to Hostinger
 on:
   push:
     branches: [main]
+    # Backend-only pushes (parking_space_backend/, packages/types/) shouldn't
+    # rebuild+rsync an unchanged customer SPA — Hostinger's own Node.js manager
+    # picks up backend changes independently of this workflow either way.
+    paths:
+      - 'parking_space_frontend/**'
+      - '.github/workflows/deploy.yml'
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
