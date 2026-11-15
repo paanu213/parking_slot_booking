@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
   Menu,
+  SlidersHorizontal,
   X,
   LayoutDashboard,
   Users,
@@ -15,23 +16,55 @@ import {
   Sun,
   Moon,
   Sparkles,
+  PhoneCall,
+  History,
+  ClipboardList,
+  Package,
+  Layers,
 } from 'lucide-react';
 import { ProfileMenu } from '@/components/ProfileMenu';
 import { useTheme } from '@/store/theme';
 import { cn } from '@/lib/cn';
 import { BRAND_NAME, LOGO_URL } from '@/lib/config';
 
-const NAV: { to: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard },
-  { to: '/vendors', label: 'Vendors', icon: Users },
-  { to: '/requests', label: 'Requests', icon: Inbox },
-  { to: '/customers', label: 'Customers', icon: UserRound },
-  { to: '/spaces', label: 'Spaces', icon: MapPin },
-  { to: '/bookings', label: 'Bookings', icon: CalendarCheck },
-  { to: '/commissions', label: 'Commissions', icon: Percent },
-  { to: '/payments', label: 'Payments', icon: Wallet },
-  { to: '/admins', label: 'Admins', icon: ShieldCheck },
-  { to: '/amenities', label: 'Amenities', icon: Sparkles },
+type NavItem = { to: string; label: string; icon: React.ComponentType<{ className?: string }> };
+type NavSection = { heading: string | null; items: NavItem[] };
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    heading: null,
+    items: [{ to: '/', label: 'Overview', icon: LayoutDashboard }],
+  },
+  {
+    heading: 'Parking Space',
+    items: [
+      { to: '/vendors', label: 'Vendors', icon: Users },
+      { to: '/requests', label: 'Requests', icon: Inbox },
+      { to: '/customers', label: 'Customers', icon: UserRound },
+      { to: '/spaces', label: 'Spaces', icon: MapPin },
+      { to: '/bookings', label: 'Bookings', icon: CalendarCheck },
+      { to: '/commissions', label: 'Commissions', icon: Percent },
+      { to: '/payments', label: 'Payments', icon: Wallet },
+      { to: '/amenities', label: 'Amenities', icon: Sparkles },
+    ],
+  },
+  {
+    heading: 'QR Code',
+    items: [
+      { to: '/qr-calling', label: 'QR Calling', icon: PhoneCall },
+      { to: '/registrations', label: 'Registrations', icon: ClipboardList },
+      { to: '/sticker-orders', label: 'Sticker Orders', icon: Package },
+      { to: '/qr-batches', label: 'QR Batches', icon: Layers },
+      { to: '/qr-settings', label: 'Call Limits', icon: SlidersHorizontal },
+    ],
+  },
+  {
+    heading: 'System',
+    items: [
+      { to: '/admins', label: 'Admins', icon: ShieldCheck },
+      { to: '/audit-log', label: 'Audit Log', icon: History },
+    ],
+  },
 ];
 
 export const AppShell = ({ children }: { children: React.ReactNode }) => {
@@ -127,25 +160,34 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
 };
 
 const SidebarNav = ({ onNavigate }: { onNavigate: () => void }) => (
-  <nav className="space-y-1 text-sm">
-    {NAV.map(({ to, label, icon: Icon }) => (
-      <NavLink
-        key={to}
-        to={to}
-        end
-        onClick={onNavigate}
-        className={({ isActive }) =>
-          cn(
-            'flex items-center gap-3 rounded-xl px-3 py-2 transition',
-            'hover:bg-slate-100 dark:hover:bg-slate-800/70',
-            isActive &&
-              'bg-gradient-to-r from-brand-500/10 to-transparent font-semibold text-brand-700 dark:text-brand-300',
-          )
-        }
-      >
-        <Icon className="h-4 w-4" />
-        {label}
-      </NavLink>
+  <nav className="space-y-4 text-sm">
+    {NAV_SECTIONS.map((section, i) => (
+      <div key={section.heading ?? `section-${i}`} className="space-y-1">
+        {section.heading && (
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            {section.heading}
+          </p>
+        )}
+        {section.items.map(({ to, label, icon: Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 rounded-xl px-3 py-2 transition',
+                'hover:bg-slate-100 dark:hover:bg-slate-800/70',
+                isActive &&
+                  'bg-gradient-to-r from-brand-500/10 to-transparent font-semibold text-brand-700 dark:text-brand-300',
+              )
+            }
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </NavLink>
+        ))}
+      </div>
     ))}
   </nav>
 );

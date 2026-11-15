@@ -36,6 +36,13 @@ import { VendorDetailsPage } from '@/pages/VendorDetailsPage';
 import { SlotBookingsPage } from '@/pages/SlotBookingsPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { AccountPage } from '@/pages/AccountPage';
+import QrCallingPage from '@/pages/QrCallingPage';
+import { QrVehicleDetailPage } from '@/pages/QrVehicleDetailPage';
+import { AuditLogPage } from '@/pages/AuditLogPage';
+import RegistrationsPage from '@/pages/RegistrationsPage';
+import StickerOrdersPage from '@/pages/StickerOrdersPage';
+import QrBatchesPage from '@/pages/QrBatchesPage';
+import QrSettingsPage from '@/pages/QrSettingsPage';
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SUB_ADMIN'];
 
@@ -1915,6 +1922,13 @@ export default function App() {
                     <Route path="/payments" element={<PaymentsPage />} />
                     <Route path="/admins" element={<AdminsPage />} />
                     <Route path="/amenities" element={<AmenitiesPage />} />
+                    <Route path="/qr-calling" element={<QrCallingPage />} />
+                    <Route path="/qr-calling/vehicles/:id" element={<QrVehicleDetailPage />} />
+                    <Route path="/audit-log" element={<AuditLogPage />} />
+                    <Route path="/registrations" element={<RegistrationsPage />} />
+                    <Route path="/sticker-orders" element={<StickerOrdersPage />} />
+                    <Route path="/qr-batches" element={<QrBatchesPage />} />
+                    <Route path="/qr-settings" element={<QrSettingsPage />} />
                   </Routes>
                 </AppShell>
               </AuthGuard>

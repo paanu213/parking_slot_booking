@@ -8,6 +8,7 @@ import { ListYourSpacePage } from '@/pages/ListYourSpacePage';
 import { ServicePartnerPage } from '@/pages/ServicePartnerPage';
 import { PrivacyPage } from '@/pages/PrivacyPage';
 import { TermsPage } from '@/pages/TermsPage';
+import { ShippingPolicyPage } from '@/pages/ShippingPolicyPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { LocationDetailPage } from '@/pages/LocationDetailPage';
@@ -17,6 +18,11 @@ import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { HelpPage } from '@/pages/HelpPage';
 import { SavedSpacesPage } from '@/pages/SavedSpacesPage';
+import { MyVehiclesPage } from '@/pages/MyVehiclesPage';
+import { ScanPage } from '@/pages/ScanPage';
+import { QrCallingLandingPage } from '@/pages/QrCallingLandingPage';
+import { QrOrdersPage } from '@/pages/QrOrdersPage';
+import { TransactionsPage } from '@/pages/TransactionsPage';
 import { useAuth } from '@/store/auth';
 import { useSaved } from '@/store/savedSpaces';
 import { api } from '@/lib/api';
@@ -82,6 +88,17 @@ const ScrollToTop = () => {
   return null;
 };
 
+const QR_ROUTE = /^\/(qr-calling|qr-orders|vehicles|c)(\/|$)/;
+
+/** QR Calling pages use green as the primary colour — see `.theme-qr` in styles/index.css. */
+const QrThemeSync = () => {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.documentElement.classList.toggle('theme-qr', QR_ROUTE.test(pathname));
+  }, [pathname]);
+  return null;
+};
+
 const Protected = ({ children }: { children: React.ReactNode }) => {
   const { user, hydrated } = useAuth();
   const loc = useLocation();
@@ -102,6 +119,7 @@ export default function App() {
         <HydrateSession />
         <HydrateSavedSpaces />
         <ScrollToTop />
+        <QrThemeSync />
         <Header />
         <Routes>
           <Route path="/" element={<ExplorePage />} />
@@ -110,10 +128,14 @@ export default function App() {
           <Route path="/become-partner" element={<ServicePartnerPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
+          <Route path="/shipping-policy" element={<ShippingPolicyPage />} />
           <Route path="/locations/:id" element={<LocationDetailPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/help" element={<HelpPage />} />
+          <Route path="/c" element={<ScanPage />} />
+          <Route path="/c/:token" element={<ScanPage />} />
+          <Route path="/qr-calling" element={<QrCallingLandingPage />} />
           <Route
             path="/profile"
             element={
@@ -139,6 +161,22 @@ export default function App() {
             }
           />
           <Route
+            path="/vehicles"
+            element={
+              <Protected>
+                <MyVehiclesPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/qr-orders"
+            element={
+              <Protected>
+                <QrOrdersPage />
+              </Protected>
+            }
+          />
+          <Route
             path="/bookings"
             element={
               <Protected>
@@ -151,6 +189,14 @@ export default function App() {
             element={
               <Protected>
                 <CheckoutPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/transactions"
+            element={
+              <Protected>
+                <TransactionsPage />
               </Protected>
             }
           />

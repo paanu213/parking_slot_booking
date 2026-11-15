@@ -33,3 +33,12 @@ export const PRICING = {
   PLATFORM_FEE_PCT: 5,
   GST_PCT: 18,
 } as const;
+
+/**
+ * QR Calling — one-time sticker fee, shown on the landing page and order
+ * form. Must match the snapshot the backend stores on QrOrder
+ * (STICKER_PRICE_PAISE in qrOrders.service.ts). Lifetime validity by
+ * default; admin can set a per-vehicle expiry under individual terms
+ * (VehicleRegistration.validUntil) — there's no recurring charge.
+ */
+export const QR_STICKER_PRICE = 500; // ₹, one-time, lifetime

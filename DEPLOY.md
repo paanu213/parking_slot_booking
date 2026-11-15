@@ -151,8 +151,10 @@ DATABASE_URL=mysql://u577205845_dbuser:password@srv1749.hstgr.io:3306/u577205845
 COOKIE_DOMAIN=autosahay.com
 COOKIE_SECURE=true
 
-# All three frontends allowed
-CORS_ORIGINS=https://admin.autosahay.com,https://vendor.autosahay.com,https://autosahay.com
+# All three frontends allowed — autosahay.com redirects to www.autosahay.com,
+# so BOTH must be listed or the browser's CORS check silently blocks every
+# API call from the live site (this happened in production on 2026-09-03).
+CORS_ORIGINS=https://admin.autosahay.com,https://vendor.autosahay.com,https://autosahay.com,https://www.autosahay.com
 
 # ... fill in R2, JWT secrets, Razorpay, etc.
 ```
@@ -329,7 +331,9 @@ send the session cookie → login silently fails. Add each domain under
 ### Backend must allow every origin
 
 After the domains exist, set the Hostinger backend `.env` to list **all** of them
-(prod + stage), then restart the backend:
+(prod + stage), then restart the backend. If a domain redirects apex → `www` (or
+vice versa), list **both** — the browser sends whichever one it actually loaded
+from, and a missing entry silently blocks every API call from that origin:
 
 ```
 CORS_ORIGINS=https://admin.autosahay.com,https://vendor.autosahay.com,https://<customer-domain>,https://stageadmin.autosahay.com,https://stagevendor.autosahay.com,https://stagecustomer.autosahay.com
