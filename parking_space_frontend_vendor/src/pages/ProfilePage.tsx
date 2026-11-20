@@ -646,7 +646,7 @@ export const ProfilePage = () => {
               {!hasAadharDoc && !kycOpen && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                    Pending — not uploaded
+                    Pending, not uploaded
                   </span>
                   <ShieldCheck className="h-8 w-8 text-slate-200 dark:text-slate-700" />
                   <p className="text-sm font-medium text-slate-400">No KYC documents on record</p>

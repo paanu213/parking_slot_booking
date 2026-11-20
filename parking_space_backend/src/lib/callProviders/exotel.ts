@@ -38,7 +38,7 @@ export const exotelProvider: CallProvider = {
 
   async initiateMaskedCall(p: InitiateMaskedCallParams): Promise<InitiateMaskedCallResult> {
     if (!env.EXOTEL_API_KEY || !env.EXOTEL_API_TOKEN || !env.EXOTEL_ACCOUNT_SID) {
-      throw ServerError('Exotel is not configured — set EXOTEL_API_KEY / EXOTEL_API_TOKEN / EXOTEL_ACCOUNT_SID');
+      throw ServerError('Exotel is not configured. Set EXOTEL_API_KEY / EXOTEL_API_TOKEN / EXOTEL_ACCOUNT_SID');
     }
 
     const form = new URLSearchParams({
@@ -97,7 +97,7 @@ export const exotelProvider: CallProvider = {
         case 'canceled':
         case 'cancelled':   return 'FAILED';
         default:
-          logger.warn({ event: 'exotel_webhook_unknown_status', rawStatus, body }, 'Unrecognized Exotel call status — defaulting to FAILED');
+          logger.warn({ event: 'exotel_webhook_unknown_status', rawStatus, body }, 'Unrecognized Exotel call status, defaulting to FAILED');
           return 'FAILED';
       }
     })();

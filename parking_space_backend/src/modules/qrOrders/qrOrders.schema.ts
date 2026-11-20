@@ -15,8 +15,9 @@ const orderVehicleSchema = RegisterVehicleInput.pick({
 
 export const createQrOrderSchema = z.object({
   vehicle:       orderVehicleSchema,
-  shippingName:  z.string().trim().min(2).max(80),
-  shippingPhone: z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit mobile number'),
+  // Delivery name/phone default to the vehicle's name and contact number (one contact per order).
+  shippingName:  z.string().trim().min(2).max(80).optional(),
+  shippingPhone: z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit mobile number').optional(),
   addressLine:   z.string().trim().min(5).max(300),
   city:          z.string().trim().min(2).max(80),
   state:         z.string().trim().min(2).max(80),

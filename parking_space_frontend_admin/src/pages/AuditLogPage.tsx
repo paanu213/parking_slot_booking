@@ -52,7 +52,7 @@ export const AuditLogPage = () => {
         </div>
         <div>
           <h1 className="text-2xl font-bold">Audit Log</h1>
-          <p className="text-sm text-slate-500">Every admin action, who did it, and when — most recent 300.</p>
+          <p className="text-sm text-slate-500">Every admin action, who did it, and when, most recent 300.</p>
         </div>
       </div>
 

@@ -214,7 +214,7 @@ const Step1 = ({
               setVendorErr('');
             }}
           >
-            <option value="">— Select a vendor —</option>
+            <option value="">Select a vendor</option>
             {approvedVendors.map((v: any) => (
               <option key={v.id} value={v.id}>{v.businessName}</option>
             ))}
@@ -265,7 +265,7 @@ const Step1 = ({
       <div>
         <label className="mb-1 block text-xs font-medium text-slate-500">
           City / Town <span className="text-red-500">*</span>
-          <span className="ml-1.5 font-normal text-slate-400">(auto from pincode — edit if needed)</span>
+          <span className="ml-1.5 font-normal text-slate-400">(auto from pincode, edit if needed)</span>
         </label>
         <input className="input w-full" placeholder="City / town" required {...register('city')} />
       </div>
@@ -616,7 +616,7 @@ const Step4 = ({
   return (
     <div className="space-y-5">
       <p className="text-sm text-slate-500">
-        Review everything below. The space will be <strong>created and immediately published</strong> — no approval needed.
+        Review everything below. The space will be <strong>created and immediately published</strong>, no approval needed.
       </p>
 
       {/* Vendor + Space details */}

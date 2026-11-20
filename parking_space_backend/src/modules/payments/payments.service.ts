@@ -34,7 +34,7 @@ export const createOrder = async (userId: string, bookingId: string) => {
   const booking = await prisma.booking.findFirst({ where: { id: bookingId, userId } });
   if (!booking) throw NotFound('Booking not found');
   if (booking.status !== 'PENDING_PAYMENT') {
-    throw BadRequest(`Booking is ${booking.status.toLowerCase()} — cannot create a new order`);
+    throw BadRequest(`Booking is ${booking.status.toLowerCase()}, cannot create a new order`);
   }
 
   const order = await rzp.orders.create({

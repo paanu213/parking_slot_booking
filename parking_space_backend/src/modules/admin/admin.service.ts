@@ -5,6 +5,7 @@
  * All persistence goes through Prisma; no HTTP concerns live here.
  */
 import { nanoid } from 'nanoid';
+import { effectiveValidUntil } from '../../lib/qrValidity.js';
 import { normalizePlate } from '@ps/types';
 import { prisma } from '../../lib/prisma.js';
 import { env } from '../../config/env.js';
@@ -20,6 +21,10 @@ import { decryptField, encryptField, hmacHash } from '../../lib/crypto.js';
 import { getGateway } from '../../lib/paymentGateway/index.js';
 import { generateStickerBatchPdf } from '../../lib/stickerPdf.js';
 import { updateVehicle } from '../vehicles/vehicles.service.js';
+import { createQrOrder } from '../qrOrders/qrOrders.service.js';
+import { recordDetailChanges, getDetailsHistory } from '../../lib/detailsChangeLog.js';
+import { getStickerPricePaise, setStickerPricePaise } from '../../lib/qrPricing.js';
+import { activeStickerOf, lockVehicle, parseStickerCode, REPLACEMENT_BATCH_LABEL } from '../../lib/qrStickerRules.js';
 import type {
   UpdateVendorInput,
   VendorLeadStatusInput,
@@ -39,6 +44,7 @@ import type {
   UpdateQrBatchInput,
   AdminUpdateVehicleInput,
   AdminQrOrderDetailsInput,
+  AdminCreateQrOrderInput,
 } from './admin.schema.js';
 
 const ADMIN_USER_SELECT = { fullName: true, email: true, phone: true, status: true } as const;
@@ -979,7 +985,7 @@ export const refundBooking = async (id: string, actorId: string, body: RefundInp
   // says REFUNDED. Never trust a client/admin click alone to mean money moved.
   const payment = booking.payments[0];
   if (!payment) throw BadRequest('No paid payment record found for this booking');
-  if (!payment.providerPaymentId) throw BadRequest('Payment has no gateway reference — cannot refund');
+  if (!payment.providerPaymentId) throw BadRequest('Payment has no gateway reference, cannot refund');
 
   const gateway = getGateway();
   const refund = await gateway.refund({
@@ -1501,6 +1507,21 @@ export const updateCallLimitsSetting = async (actorId: string, patch: Partial<Re
   return callLimitsView();
 };
 
+/** QR sticker price (pack of 2). Applies to orders created from now on; existing orders keep their own price. */
+export const getQrPricingSetting = async () => ({ stickerPricePaise: await getStickerPricePaise() });
+
+export const updateQrPricingSetting = async (actorId: string, stickerPrice: number) => {
+  const before = await getStickerPricePaise();
+  const after = await setStickerPricePaise(stickerPrice * 100);
+  await prisma.auditLog.create({
+    data: {
+      actorId, action: 'QR_STICKER_PRICE_UPDATE', entity: 'Setting', entityId: 'qr_sticker_price_paise',
+      metadata: JSON.stringify({ fromPaise: before, toPaise: after }),
+    },
+  });
+  return { stickerPricePaise: after };
+};
+
 export const setBookingCommissionStatus = async (
   id: string,
   actorId: string,
@@ -1603,8 +1624,8 @@ export const commissionBookings = async (
       commissionPaidAt: b.commissionPaidAt,
       createdAt: b.createdAt,
       vendorId: b.slot?.location?.vendor?.id ?? null,
-      vendorName: b.slot?.location?.vendor?.businessName ?? '—',
-      spaceName: b.slot?.location?.name ?? '—',
+      vendorName: b.slot?.location?.vendor?.businessName ?? '-',
+      spaceName: b.slot?.location?.name ?? '-',
     })),
   };
 };
@@ -1667,7 +1688,7 @@ export const qrOverview = async () => {
   const busiestCars = await Promise.all(
     busiestCarsRaw.map(async (g) => {
       const reg = await prisma.vehicleRegistration.findUnique({ where: { id: g.registrationId } });
-      return { registrationId: g.registrationId, plate: reg ? decryptField(reg.plateNumber) : '—', calls: g._count._all };
+      return { registrationId: g.registrationId, plate: reg ? decryptField(reg.plateNumber) : '-', calls: g._count._all };
     }),
   );
 
@@ -1758,7 +1779,8 @@ export const listQrVehicles = async (f: QrVehicleFilters = {}) => {
     status:                r.status,
     emergencyPublic:       r.emergencyPublic,
     ownerName:             r.ownerName,
-    validUntil:            r.validUntil,
+    validUntil:            effectiveValidUntil(r),
+    validityCustom:        r.validUntil !== null,
     callCount:             r._count.calls,
     emergencyContactCount: r._count.emergencyContacts,
     emergency:             qrEmergencyView(r),
@@ -1784,6 +1806,7 @@ export const getQrVehicle = async (id: string) => {
       user:              { select: { id: true, fullName: true, email: true, phone: true } },
       emergencyContacts: { orderBy: { sortOrder: 'asc' } },
       qrOrders:          { orderBy: { createdAt: 'desc' }, take: 1, select: { city: true, state: true } },
+      qrStickers:        { where: { status: 'CLAIMED' }, orderBy: { claimedAt: 'desc' }, take: 1, select: { token: true, claimedAt: true, batch: { select: { id: true, label: true } } } },
       calls:             { orderBy: { initiatedAt: 'desc' }, take: 50 },
     },
   });
@@ -1803,10 +1826,14 @@ export const getQrVehicle = async (id: string) => {
     ownerName:       r.ownerName,
     bloodGroup:      r.bloodGroup,
     medicalNotes:    r.medicalNotes ? decryptField(r.medicalNotes) : null,
-    validUntil:      r.validUntil,
+    validUntil:      effectiveValidUntil(r),
+    validityCustom:  r.validUntil !== null,
     city:            r.qrOrders[0]?.city ?? null,
     state:           r.qrOrders[0]?.state ?? null,
     owner:           r.user,
+    linkedSticker:   r.qrStickers[0]
+      ? { token: r.qrStickers[0].token, url: stickerUrl(r.qrStickers[0].token), claimedAt: r.qrStickers[0].claimedAt, batch: r.qrStickers[0].batch }
+      : null,
     emergencyContacts: r.emergencyContacts.map((c) => ({
       id: c.id, name: c.name, relation: c.relation, phone: decryptField(c.phone), showPublic: c.showPublic,
     })),
@@ -1893,6 +1920,9 @@ export const adminUpdateQrVehicle = async (id: string, actorId: string, input: A
     if (other && other.id !== reg.userId) throw Conflict('Another account already uses that phone number');
   }
 
+  // Change history for the plate and the account holder (before the write, so old values are captured).
+  const accountBefore = customer ? await prisma.user.findUnique({ where: { id: reg.userId }, select: { fullName: true, phone: true } }) : null;
+
   await prisma.$transaction(async (tx) => {
     if (plateChange) {
       // A soft-deleted row still occupies the unique hash — clear it, same as registerVehicle does.
@@ -1910,8 +1940,26 @@ export const adminUpdateQrVehicle = async (id: string, actorId: string, input: A
     }
   });
 
+  if (plateChange && plateNumber !== undefined) {
+    await recordDetailChanges({
+      actorId, entity: 'VehicleRegistration', entityId: id,
+      changes: [{ field: 'plateNumber', label: 'Number plate', from: decryptField(reg.plateNumber), to: plateNumber }],
+    });
+  }
+  if (customer && accountBefore) {
+    await recordDetailChanges({
+      actorId, entity: 'User', entityId: reg.userId,
+      changes: [
+        ...(customer.fullName !== undefined ? [{ field: 'accountName', label: 'Account name', from: accountBefore.fullName, to: customer.fullName }] : []),
+        ...(customer.phone !== undefined ? [{ field: 'accountPhone', label: 'Account mobile', from: accountBefore.phone, to: customer.phone }] : []),
+      ],
+    });
+  }
+
   // Everything else reuses the owner's own update path (same encryption, same ICE-list replace).
-  if (Object.keys(profile).length > 0) await updateVehicle(reg.userId, id, profile);
+  if (Object.keys(profile).length > 0) await updateVehicle(reg.userId, id, profile, actorId);
+
+  // (Delivery name/phone on this vehicle's orders are kept in step inside updateVehicle.)
 
   await prisma.auditLog.create({
     data: {
@@ -1936,7 +1984,7 @@ export const reassignQrVehicle = async (id: string, actorId: string, input: Reas
   if (!registration) throw NotFound('Vehicle not found');
 
   const newOwner = await prisma.user.findUnique({ where: { email: input.ownerEmail } });
-  if (!newOwner) throw NotFound('No account found with that email — the new owner needs an AutoSahay account first');
+  if (!newOwner) throw NotFound('No account found with that email, the new owner needs an AutoSahay account first');
   if (newOwner.id === registration.userId) throw Conflict('This car is already registered to that account');
 
   const updated = await prisma.vehicleRegistration.update({ where: { id }, data: { userId: newOwner.id } });
@@ -1956,7 +2004,7 @@ export const reassignQrVehicle = async (id: string, actorId: string, input: Reas
 
 /**
  * Sets (or clears, with `null`) the QR sticker's validity end date for this
- * car — the one-time sticker fee is lifetime by default; this is the
+ * car — the one-time sticker fee is valid 10 years by default; this is the
  * individual-terms override. Past the date, scan.service treats the sticker
  * like a paused registration (calls stop resolving) until admin extends or
  * clears it again.
@@ -2103,8 +2151,8 @@ export const listQrBlockedNumbers = async () => {
       id:        r.id,
       scope:     r.scope,
       reason:    r.reason,
-      plate:     r.registrationId ? (regMap.get(r.registrationId) ?? '—') : null,
-      blockedBy: r.createdById ? (adminMap.get(r.createdById) ?? '—') : 'Owner',
+      plate:     r.registrationId ? (regMap.get(r.registrationId) ?? '-') : null,
+      blockedBy: r.createdById ? (adminMap.get(r.createdById) ?? '-') : 'Owner',
       createdAt: r.createdAt,
     })),
   };
@@ -2126,6 +2174,7 @@ export const unblockQrNumber = async (id: string, actorId: string) => {
 
 export interface QrOrderFilters {
   status?: string; paymentStatus?: string; q?: string; vehicleType?: string; city?: string; state?: string;
+  channel?: string; // order type: WEBSITE, INFLUENCER, CAMPAIGN, SUPPORT, OFFLINE_SALE, OTHER
 }
 
 export const listQrOrders = async (params: QrOrderFilters) => {
@@ -2139,6 +2188,7 @@ export const listQrOrders = async (params: QrOrderFilters) => {
       ...(status ? { status: status as any } : {}),
       ...(paymentStatuses ? { paymentStatus: { in: paymentStatuses as any } } : {}),
       ...(params.city ? { city: params.city } : {}),
+      ...(params.channel ? { channel: params.channel as any } : {}),
       ...(params.state ? { state: params.state } : {}),
       ...(params.vehicleType ? { registration: { vehicleType: params.vehicleType as any } } : {}),
     },
@@ -2148,6 +2198,7 @@ export const listQrOrders = async (params: QrOrderFilters) => {
         select: {
           id: true,
           plateNumber: true,
+          contactPhone: true,
           vehicleType: true,
           emergencyPublic: true,
           bloodGroup: true,
@@ -2161,13 +2212,13 @@ export const listQrOrders = async (params: QrOrderFilters) => {
             where:   { status: 'CLAIMED' },
             orderBy: { claimedAt: 'desc' },
             take:    1,
-            select:  { token: true, claimedAt: true },
+            select:  { token: true, claimedAt: true, batch: { select: { id: true, label: true } } },
           },
         },
       },
       // Which physical sticker admin recorded as put in the package — set at
       // dispatch time, independent of whether the customer has since claimed it.
-      dispatchedSticker: { select: { token: true } },
+      dispatchedSticker: { select: { token: true, batch: { select: { id: true, label: true } } } },
     },
     orderBy: { createdAt: 'desc' },
     // Text search runs in memory over decrypted fields, so widen the window when searching.
@@ -2180,6 +2231,7 @@ export const listQrOrders = async (params: QrOrderFilters) => {
     const sticker = r.registration?.qrStickers?.[0] ?? null;
     // The QR this customer's car answers to: the claimed one, else the one recorded at dispatch.
     const stickerToken = sticker?.token ?? r.dispatchedSticker?.token ?? null;
+    const stickerBatch = (sticker ? sticker.batch : r.dispatchedSticker?.batch) ?? null;
     return {
       id:                r.id,
       registrationId:    r.registration?.id ?? null,
@@ -2195,6 +2247,8 @@ export const listQrOrders = async (params: QrOrderFilters) => {
       ownerName:         r.user.fullName,
       ownerEmail:        r.user.email,
       ownerPhone:        r.user.phone,
+      // The number that rings when the QR is scanned (masked calls). Not the account or delivery phone.
+      scanPhone:         r.registration ? decryptField(r.registration.contactPhone) : null,
       shippingName:      r.shippingName,
       shippingPhone:     r.shippingPhone,
       addressLine:       r.addressLine,
@@ -2215,6 +2269,10 @@ export const listQrOrders = async (params: QrOrderFilters) => {
       dispatchedAt:           r.dispatchedAt,
       stickerToken,
       stickerUrl:        stickerToken ? stickerUrl(stickerToken) : null,
+      stickerBatch,      // { id, label } of the QR batch this sticker was printed in
+      source:            r.source,
+      channel:           r.channel,
+      paymentMode:       r.paymentMode,
       fulfilment:        fulfilment.get(r.id) ?? { delivered: 0, returned: 0, replacements: 0 },
       createdAt:         r.createdAt,
     };
@@ -2247,45 +2305,85 @@ export const adminUpdateQrOrderDetails = async (id: string, actorId: string, inp
 };
 
 /**
- * Records which physical sticker (by its printed token) admin put in the
- * package for this order — a dispatch-time inventory record, independent of
- * qrSticker.status/claimedAt (which only flips once the customer scans and
- * configures it themselves via the public /c/:token flow). One sticker can
- * only ever be recorded as dispatched for one order.
+ * Records which physical sticker (by its printed code) went into the package
+ * for this order. Guards against every mapping mistake we know of:
+ *  - the order must be paid and active (not pending, not cancelled);
+ *  - once the order's vehicle has a QR set up, the code can't be swapped here
+ *    (that would leave the order pointing at a sticker the car doesn't use);
+ *    a different code goes through "Replace QR code";
+ *  - a disabled sticker, a sticker set up on another vehicle, or one already
+ *    recorded for another order is refused;
+ *  - correcting a wrong code before setup frees the old code back to stock
+ *    automatically, and the change is logged "from A to B".
+ * Accepts the printed code or a full scanned sticker URL.
  */
-export const dispatchQrOrderSticker = async (id: string, actorId: string, token: string) => {
-  const order = await prisma.qrOrder.findUnique({ where: { id } });
-  if (!order) throw NotFound('Order not found');
-
-  const sticker = await prisma.qrSticker.findUnique({ where: { token: token.trim() } });
-  if (!sticker) throw NotFound('No sticker found with that code');
-  if (sticker.status === 'DISABLED') throw BadRequest('That sticker has been disabled');
-
-  const alreadyAssigned = await prisma.qrOrder.findFirst({
-    where: { dispatchedStickerId: sticker.id, NOT: { id } },
+export const dispatchQrOrderSticker = async (id: string, actorId: string, rawToken: string) => {
+  const token = parseStickerCode(rawToken);
+  const order = await prisma.qrOrder.findUnique({
+    where:   { id },
+    include: {
+      dispatchedSticker: { select: { id: true, token: true } },
+      registration: {
+        select: { id: true, plateNumber: true, qrStickers: { where: { status: 'CLAIMED' }, take: 1, select: { id: true, token: true } } },
+      },
+    },
   });
-  if (alreadyAssigned) throw Conflict('This sticker code is already recorded against another order');
+  if (!order) throw NotFound('Order not found');
+  if (order.paymentStatus !== 'PAID' || order.status === 'PENDING' || order.status === 'CANCELLED') {
+    throw BadRequest('A sticker can only be recorded for a paid, active order');
+  }
 
-  const [updated] = await prisma.$transaction([
-    prisma.qrOrder.update({
-      where: { id },
-      data: { dispatchedStickerId: sticker.id, dispatchedAt: new Date() },
-    }),
-    prisma.qrOrderStatusEvent.create({
-      data: {
-        qrOrderId: id, status: order.status, actorId,
-        note: `Sticker ${sticker.token} recorded as dispatched`,
-      },
-    }),
-    prisma.auditLog.create({
-      data: {
-        actorId, action: 'QR_ORDER_STICKER_DISPATCHED', entity: 'QrOrder', entityId: id,
-        metadata: JSON.stringify({ token: sticker.token }),
-      },
-    }),
-  ]);
+  const plate = order.registration ? decryptField(order.registration.plateNumber) : 'this vehicle';
+  const linked = order.registration?.qrStickers[0] ?? null;
+  if (linked && linked.token !== token) {
+    throw Conflict(`${plate} already has QR ${linked.token} set up, so the code can't be changed here. Ship a reprint of ${linked.token}, or use "Replace QR code" to issue a new one.`);
+  }
+  if (order.dispatchedSticker?.token === token) return order; // nothing to change
 
-  return updated;
+  const sticker = await prisma.qrSticker.findUnique({
+    where:   { token },
+    include: {
+      dispatchedFor: { select: { id: true } },
+      registration:  { select: { plateNumber: true } },
+    },
+  });
+  if (!sticker) throw NotFound(`No sticker found with code ${token}`);
+  if (sticker.status === 'DISABLED') throw BadRequest(`Sticker ${token} is disabled. Pick another sticker from stock.`);
+  if (sticker.status === 'CLAIMED' && sticker.registrationId && sticker.registrationId !== order.registrationId) {
+    const other = sticker.registration ? decryptField(sticker.registration.plateNumber) : 'another vehicle';
+    throw Conflict(`Sticker ${token} is already linked to ${other}. Pick an unused sticker.`);
+  }
+  if (sticker.dispatchedFor && sticker.dispatchedFor.id !== id) {
+    throw Conflict(linked
+      ? `QR ${token} was already recorded on an earlier order for ${plate}. This order ships a reprint of it, nothing more to record.`
+      : `Sticker ${token} is already recorded against another order. Pick an unused sticker.`);
+  }
+
+  const previous = order.dispatchedSticker;
+  const note = previous
+    ? `Sticker code changed from ${previous.token} to ${sticker.token}, ${previous.token} is back in stock`
+    : `Sticker ${sticker.token} recorded as dispatched`;
+  try {
+    const [updated] = await prisma.$transaction([
+      prisma.qrOrder.update({
+        where: { id },
+        data: { dispatchedStickerId: sticker.id, dispatchedAt: new Date() },
+      }),
+      prisma.qrOrderStatusEvent.create({ data: { qrOrderId: id, status: order.status, actorId, note } }),
+      prisma.auditLog.create({
+        data: {
+          actorId, action: previous ? 'QR_ORDER_STICKER_CHANGED' : 'QR_ORDER_STICKER_DISPATCHED', entity: 'QrOrder', entityId: id,
+          metadata: JSON.stringify({ token: sticker.token, from: previous?.token ?? null }),
+        },
+      }),
+    ]);
+    return updated;
+  } catch (e) {
+    // Unique index on dispatchedStickerId: someone recorded it on another order a moment ago.
+    if ((e as { code?: string }).code === 'P2002') throw Conflict(`Sticker ${token} was just recorded against another order`);
+    throw e;
+  }
+
 };
 
 /** Full fulfilment timeline for one order — every status change, oldest first. */
@@ -2383,6 +2481,36 @@ export const listQrPayments = async (status?: string, searchRaw?: string) => {
  * plus the RETURNED -> CONFIRMED "resend" loop for damaged/misdelivered
  * stickers, which restarts pickup/dispatch/delivery from scratch.
  */
+/**
+ * After an order is cancelled or refunded, its dispatched sticker (if the
+ * customer never set it up) must not stay usable for free:
+ *  - never left us, or came back (CONFIRMED / RETURNED): back to stock;
+ *  - with the customer (picked up / out for delivery / delivered): switched off.
+ * A sticker already set up stays active; that is a support decision, and the
+ * admin can disable it from QR stickers.
+ */
+const SHIPPED_STATUSES = ['PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+const settleStickerAfterCancel = async (orderId: string, actorId: string, previousStatus: string) => {
+  const o = await prisma.qrOrder.findUnique({
+    where:  { id: orderId },
+    select: { dispatchedSticker: { select: { id: true, token: true, status: true } } },
+  });
+  const st = o?.dispatchedSticker;
+  if (!st || st.status !== 'UNCLAIMED') return;
+  const shipped = SHIPPED_STATUSES.includes(previousStatus);
+  await prisma.$transaction([
+    shipped
+      ? prisma.qrSticker.update({ where: { id: st.id }, data: { status: 'DISABLED', disabledAt: new Date(), disabledReason: 'Order cancelled or refunded after dispatch' } })
+      : prisma.qrOrder.update({ where: { id: orderId }, data: { dispatchedStickerId: null } }),
+    prisma.qrOrderStatusEvent.create({
+      data: { qrOrderId: orderId, status: 'CANCELLED', actorId, note: shipped ? `Sticker ${st.token} switched off` : `Sticker ${st.token} back in stock` },
+    }),
+    prisma.auditLog.create({
+      data: { actorId, action: shipped ? 'QR_STICKER_DISABLE' : 'QR_ORDER_STICKER_RELEASED', entity: 'QrSticker', entityId: st.id, metadata: JSON.stringify({ orderId, reason: 'order cancelled' }) },
+    }),
+  ]);
+};
+
 const QR_ORDER_TRANSITIONS: Record<string, string[]> = {
   PENDING:          ['CANCELLED'],
   CONFIRMED:        ['PICKED_UP', 'CANCELLED'],
@@ -2391,6 +2519,128 @@ const QR_ORDER_TRANSITIONS: Record<string, string[]> = {
   DELIVERED:        ['RETURNED'],
   RETURNED:         ['CONFIRMED'],
   CANCELLED:        [],
+};
+
+/** Change history (contact number, owner details, account mobile) for one registered vehicle. */
+export const getQrVehicleHistory = async (id: string) => {
+  const reg = await prisma.vehicleRegistration.findUnique({ where: { id }, select: { id: true, userId: true } });
+  if (!reg) throw NotFound('Vehicle not found');
+  return { items: await getDetailsHistory(reg.id, reg.userId) };
+};
+
+/** Customer lookup by email for the admin "New order" form. */
+export const lookupQrCustomer = async (email: string) => {
+  const user = await prisma.user.findUnique({
+    where:  { email: email.trim().toLowerCase() },
+    select: { id: true, fullName: true, email: true, phone: true, role: true, status: true, _count: { select: { qrOrders: true } } },
+  });
+  return { customer: user ? { ...user, orderCount: user._count.qrOrders } : null };
+};
+
+const CHANNEL_LABEL: Record<string, string> = {
+  WEBSITE: 'Website', INFLUENCER: 'Influencer', CAMPAIGN: 'Campaign', SUPPORT: 'Customer support', OFFLINE_SALE: 'Offline sale', OTHER: 'Other',
+};
+
+/**
+ * Admin creates a sticker order on someone's behalf. It becomes a normal
+ * order: the same vehicle registration, the same fulfilment queue, reprint
+ * and replacement. Complimentary and offline-paid orders are confirmed
+ * straight away; "customer pays online" orders wait in the customer's
+ * account until they pay.
+ */
+export const adminCreateQrOrder = async (actorId: string, input: AdminCreateQrOrderInput) => {
+  // 1) Customer: match by email, or create an account they can sign in to later (Google, same email).
+  let user = await prisma.user.findUnique({ where: { email: input.customer.email } });
+  if (user && user.status !== 'ACTIVE') throw BadRequest('This customer account is not active');
+  if (!user) {
+    const phoneTaken = input.customer.phone ? await prisma.user.findUnique({ where: { phone: input.customer.phone } }) : null;
+    user = await prisma.user.create({
+      data: {
+        email:    input.customer.email,
+        fullName: input.customer.fullName,
+        phone:    phoneTaken ? null : input.customer.phone ?? null,
+        role:     'CUSTOMER',
+      },
+    });
+  }
+
+  // 2) Vehicle + order, exactly like a website order.
+  const { order } = await createQrOrder(user.id, {
+    vehicle:       input.vehicle,
+    shippingName:  input.shippingName,
+    shippingPhone: input.shippingPhone,
+    addressLine:   input.addressLine,
+    city:          input.city,
+    state:         input.state,
+    pincode:       input.pincode,
+    note:          input.note,
+  });
+
+  // 3) Payment + confirmation.
+  const p = input.payment;
+  const now = new Date();
+  const channelLabel = CHANNEL_LABEL[input.channel];
+  const pricePaise =
+    p.mode === 'COMPLIMENTARY' ? 0 : p.mode === 'OFFLINE' ? Math.round(p.amount * 100) : await getStickerPricePaise();
+  const paid = p.mode !== 'ONLINE';
+  const paymentNote =
+    p.mode === 'COMPLIMENTARY'
+      ? `not paid${p.reason ? `: ${p.reason}` : ''}`
+      : p.mode === 'OFFLINE'
+        ? `paid ₹${p.amount} offline (${p.method.toLowerCase().replace('_', ' ')})`
+        : 'customer pays online';
+  const paidAt = p.mode === 'OFFLINE' && p.paidOn ? p.paidOn : now;
+
+  await prisma.$transaction([
+    prisma.qrOrder.update({
+      where: { id: order.id },
+      data: {
+        source:            'ADMIN',
+        channel:           input.channel,
+        paymentMode:       p.mode,
+        createdById:       actorId,
+        stickerPricePaise: pricePaise,
+        ...(paid
+          ? {
+              paymentStatus: 'PAID',
+              paidAt,
+              paymentRef:    p.mode === 'COMPLIMENTARY' ? 'COMPLIMENTARY' : `OFFLINE${p.reference ? `:${p.reference}` : ''}`,
+              status:        'CONFIRMED',
+              confirmedAt:   now,
+            }
+          : {}),
+      },
+    }),
+    ...(p.mode === 'OFFLINE'
+      ? [prisma.payment.create({
+          data: {
+            qrOrderId:         order.id,
+            provider:          'offline',
+            providerPaymentId: p.reference || null,
+            amount:            p.amount,
+            status:            'PAID',
+            rawResponse:       JSON.stringify({ method: p.method, reference: p.reference ?? null, paidOn: paidAt, recordedBy: actorId }),
+            createdAt:         paidAt,
+          },
+        })]
+      : []),
+    prisma.qrOrderStatusEvent.create({
+      data: {
+        qrOrderId: order.id,
+        status:    paid ? 'CONFIRMED' : 'PENDING',
+        note:      `Order created by admin (${channelLabel}, ${paymentNote})`,
+        actorId,
+      },
+    }),
+    prisma.auditLog.create({
+      data: {
+        actorId, action: 'QR_ORDER_ADMIN_CREATE', entity: 'QrOrder', entityId: order.id,
+        metadata: JSON.stringify({ channel: input.channel, paymentMode: p.mode, pricePaise, customerId: user.id }),
+      },
+    }),
+  ]);
+
+  return { orderId: order.id, customerId: user.id, status: paid ? 'CONFIRMED' : 'PENDING' };
 };
 
 /** Status-event notes for a replacement sticker start with this — it's how replacements are counted. */
@@ -2453,29 +2703,157 @@ export const getQrOrderStickerPdf = async (id: string) => {
  * which the customer sees too. The QR stays linked to the car, so calls keep
  * working and nothing needs re-configuring.
  */
-export const sendQrOrderReplacement = async (id: string, actorId: string, reason: string) => {
-  const { order, token } = await qrOrderStickerToken(id);
-  if (order.paymentStatus !== 'PAID') throw BadRequest('Only a paid order can get a replacement sticker');
-  if (order.status !== 'DELIVERED') throw BadRequest('A replacement can only be sent for a delivered order');
-  if (!token) throw BadRequest('No QR sticker is linked to this order yet');
+/** Orders that can be handed over in person: paid, not yet delivered, not cancelled. */
+const HANDOVER_FROM = ['CONFIRMED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'RETURNED'];
+export const HANDOVER_NOTE_PREFIX = 'Handed over to the customer in person';
 
-  const note = `${REPLACEMENT_NOTE_PREFIX} — ${reason.trim()}`;
-  const now = new Date();
+/**
+ * Offline hand-over: the admin team gives the stickers to the customer
+ * directly, so no courier is involved. Marks the order DELIVERED in one step
+ * and records it on the timeline (visible to the customer too).
+ */
+export const handoverQrOrder = async (
+  id: string,
+  actorId: string,
+  input: { handedOverOn?: Date; receivedBy?: string; note?: string },
+) => {
+  const order = await prisma.qrOrder.findUnique({ where: { id } });
+  if (!order) throw NotFound('Order not found');
+  if (order.paymentStatus !== 'PAID') throw BadRequest('Only a paid order can be handed over');
+  if (!HANDOVER_FROM.includes(order.status)) {
+    throw BadRequest(order.status === 'DELIVERED' ? 'This order is already delivered' : `Cannot hand over an order that is ${order.status.toLowerCase()}`);
+  }
+
+  const at = input.handedOverOn && input.handedOverOn.getTime() <= Date.now() ? input.handedOverOn : new Date();
+  const details = [input.receivedBy ? `received by ${input.receivedBy}` : null, input.note || null].filter(Boolean).join('. ');
+  const note = details ? `${HANDOVER_NOTE_PREFIX}, ${details}` : HANDOVER_NOTE_PREFIX;
+
   const [updated] = await prisma.$transaction([
-    prisma.qrOrder.update({
-      where: { id },
-      data: {
-        status: 'CONFIRMED',
-        confirmedAt: now, pickedUpAt: null, outForDeliveryAt: null, deliveredAt: null, returnedAt: null,
-        deliveryAttempt: { increment: 1 },
-      },
-    }),
-    prisma.qrOrderStatusEvent.create({ data: { qrOrderId: id, status: 'CONFIRMED', note, actorId } }),
+    prisma.qrOrder.update({ where: { id }, data: { status: 'DELIVERED', deliveredAt: at } }),
+    prisma.qrOrderStatusEvent.create({ data: { qrOrderId: id, status: 'DELIVERED', note, actorId, createdAt: at } }),
     prisma.auditLog.create({
-      data: { actorId, action: 'QR_ORDER_REPLACEMENT', entity: 'QrOrder', entityId: id, metadata: JSON.stringify({ reason: reason.trim() }) },
+      data: {
+        actorId, action: 'QR_ORDER_HANDOVER', entity: 'QrOrder', entityId: id,
+        metadata: JSON.stringify({ from: order.status, handedOverOn: at, receivedBy: input.receivedBy ?? null }),
+      },
     }),
   ]);
   return updated;
+};
+
+export const sendQrOrderReplacement = async (
+  id: string,
+  actorId: string,
+  input: { reason: string; mode?: 'REPRINT' | 'NEW_CODE'; token?: string },
+) => {
+  const reason = input.reason.trim();
+  const mode = input.mode ?? 'REPRINT';
+  const order = await prisma.qrOrder.findUnique({
+    where:   { id },
+    include: {
+      dispatchedSticker: { select: { id: true, token: true, status: true } },
+      registration: {
+        select: { id: true, status: true, userId: true, qrStickers: { where: { status: 'CLAIMED' }, take: 1, select: { id: true, token: true } } },
+      },
+    },
+  });
+  if (!order) throw NotFound('Order not found');
+  if (order.paymentStatus !== 'PAID') throw BadRequest('Only a paid order can get a replacement sticker');
+  if (order.status !== 'DELIVERED') throw BadRequest('A replacement can only be sent for a delivered order');
+
+  const current = order.registration?.qrStickers[0]
+    ?? (order.dispatchedSticker && order.dispatchedSticker.status !== 'DISABLED' ? order.dispatchedSticker : null);
+
+  const reopen = {
+    status: 'CONFIRMED' as const,
+    confirmedAt: new Date(), pickedUpAt: null, outForDeliveryAt: null, deliveredAt: null, returnedAt: null,
+    deliveryAttempt: { increment: 1 },
+  };
+
+  // Damaged or faded: reprint the same QR, nothing changes for the car.
+  if (mode === 'REPRINT') {
+    if (!current) throw BadRequest('No QR sticker is linked to this order yet');
+    const [updated] = await prisma.$transaction([
+      prisma.qrOrder.update({ where: { id }, data: reopen }),
+      prisma.qrOrderStatusEvent.create({ data: { qrOrderId: id, status: 'CONFIRMED', note: `${REPLACEMENT_NOTE_PREFIX}, reprint of the same QR: ${reason}`, actorId } }),
+      prisma.auditLog.create({
+        data: { actorId, action: 'QR_ORDER_REPLACEMENT', entity: 'QrOrder', entityId: id, metadata: JSON.stringify({ mode, token: current.token, reason }) },
+      }),
+    ]);
+    return updated;
+  }
+
+  // Lost, stolen or misused: a new code, linked to the car right away (the
+  // customer sets nothing up), and every old code of this car switched off in
+  // the same transaction, so there is never a moment with two live QRs.
+  const reg = order.registration;
+  if (!reg || reg.status === 'DELETED') throw BadRequest('The vehicle for this order was removed, so a new code can not be linked to it');
+  if (reg.userId !== order.userId) throw BadRequest('This vehicle now belongs to a different account. Replace the QR from that customer\'s order.');
+
+  let picked: { id: string; token: string } | null = null;
+  if (input.token?.trim()) {
+    const code = parseStickerCode(input.token);
+    const st = await prisma.qrSticker.findUnique({ where: { token: code }, include: { dispatchedFor: { select: { id: true } } } });
+    if (!st) throw NotFound(`No sticker found with code ${code}`);
+    if (st.status !== 'UNCLAIMED') throw Conflict(`Sticker ${code} is ${st.status === 'DISABLED' ? 'disabled' : 'already linked to a vehicle'}. Pick an unused sticker.`);
+    if (st.dispatchedFor) throw Conflict(`Sticker ${code} is already recorded against another order. Pick an unused sticker.`);
+    picked = { id: st.id, token: st.token };
+  }
+
+  const now = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    await lockVehicle(tx, reg.id);
+
+    let fresh = picked;
+    if (!fresh) {
+      // No stock sticker given: mint a new code in the replacements batch, ready to print.
+      const batch = (await tx.qrBatch.findFirst({ where: { label: REPLACEMENT_BATCH_LABEL }, orderBy: { createdAt: 'asc' } }))
+        ?? (await tx.qrBatch.create({ data: { label: REPLACEMENT_BATCH_LABEL, quantity: 0, note: 'Codes issued by "Replace QR code"', createdById: actorId } }));
+      fresh = await tx.qrSticker.create({ data: { batchId: batch.id, token: nanoid(8) }, select: { id: true, token: true } });
+      await tx.qrBatch.update({ where: { id: batch.id }, data: { quantity: { increment: 1 } } });
+    }
+
+    // Switch off the car's live code(s) and this order's unused dispatched code.
+    const old = await tx.qrSticker.findMany({
+      where: {
+        NOT: { id: fresh.id },
+        OR: [
+          { registrationId: reg.id, status: 'CLAIMED' },
+          ...(order.dispatchedStickerId ? [{ id: order.dispatchedStickerId, status: 'UNCLAIMED' as const }] : []),
+        ],
+      },
+      select: { id: true, token: true },
+    });
+    if (old.length) {
+      await tx.qrSticker.updateMany({
+        where: { id: { in: old.map((o) => o.id) } },
+        data:  { status: 'DISABLED', disabledAt: now, disabledReason: `Replaced by ${fresh.token}: ${reason}`.slice(0, 190) },
+      });
+    }
+
+    const claimed = await tx.qrSticker.updateMany({
+      where: { id: fresh.id, status: 'UNCLAIMED' },
+      data:  { status: 'CLAIMED', registrationId: reg.id, claimedByUserId: order.userId, claimedAt: now },
+    });
+    if (claimed.count !== 1) throw Conflict(`Sticker ${fresh.token} was just used elsewhere. Pick another sticker.`);
+
+    const updated = await tx.qrOrder.update({
+      where: { id },
+      data:  { ...reopen, dispatchedStickerId: fresh.id, dispatchedAt: now },
+    });
+    await tx.qrOrderStatusEvent.create({
+      data: { qrOrderId: id, status: 'CONFIRMED', actorId, note: `${REPLACEMENT_NOTE_PREFIX}, new QR code: ${reason}. The old QR is switched off.` },
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId, action: 'QR_ORDER_REPLACEMENT', entity: 'QrOrder', entityId: id,
+        metadata: JSON.stringify({ mode, reason, from: old.map((o) => o.token), to: fresh.token, minted: !picked }),
+      },
+    });
+    return { ...updated, newToken: fresh.token, disabledTokens: old.map((o) => o.token) };
+  });
+  return result;
+
 };
 
 export const setQrOrderStatus = async (id: string, actorId: string, status: string, note?: string) => {
@@ -2523,6 +2901,7 @@ export const setQrOrderStatus = async (id: string, actorId: string, status: stri
     }),
   ]);
 
+  if (status === 'CANCELLED') await settleStickerAfterCancel(id, actorId, order.status);
   return updated;
 };
 
@@ -2550,7 +2929,7 @@ export const refundQrOrder = async (id: string, actorId: string, amount: number,
 
   const payment = order.payments[0];
   if (!payment) throw BadRequest('No payment record found for this order');
-  if (!payment.providerPaymentId) throw BadRequest('Payment has no gateway reference — cannot refund');
+  if (!payment.providerPaymentId) throw BadRequest('Payment has no gateway reference, cannot refund');
 
   // Must actually refund at the gateway before the DB ever says REFUNDED.
   const gateway = getGateway();
@@ -2571,7 +2950,7 @@ export const refundQrOrder = async (id: string, actorId: string, amount: number,
     prisma.qrOrderStatusEvent.create({
       data: {
         qrOrderId: id, status: 'CANCELLED', actorId,
-        note: `Refunded ₹${amount}${note ? ` — ${note}` : ''}`,
+        note: `Refunded ₹${amount}${note ? `, ${note}` : ''}`,
       },
     }),
     prisma.qrOrder.update({
@@ -2586,6 +2965,7 @@ export const refundQrOrder = async (id: string, actorId: string, amount: number,
     }),
   ]);
 
+  await settleStickerAfterCancel(id, actorId, order.status);
   return updated;
 };
 
@@ -2710,13 +3090,55 @@ export const listQrBatchTokens = async (id: string) => {
   if (!batch) throw NotFound('Batch not found');
   const stickers = await prisma.qrSticker.findMany({
     where:   { batchId: id },
-    select:  { token: true },
     orderBy: { createdAt: 'asc' },
+    select: {
+      token: true, status: true, claimedAt: true,
+      registration: {
+        select: { plateNumber: true, vehicleType: true, contactPhone: true, user: { select: { fullName: true, email: true, phone: true } } },
+      },
+      // Sent in a package but not yet scanned and set up by the customer.
+      dispatchedFor: {
+        select: {
+          id: true, dispatchedAt: true, shippingName: true, shippingPhone: true,
+          user: { select: { email: true } },
+          registration: { select: { plateNumber: true, vehicleType: true } },
+        },
+      },
+    },
   });
-  return {
-    batch: { id: batch.id, label: batch.label },
-    items: stickers.map((s) => ({ token: s.token, url: stickerUrl(s.token) })),
-  };
+
+  const items = stickers.map((st) => {
+    const reg = st.registration;
+    const order = st.dispatchedFor;
+    // USED = linked to a vehicle; DISPATCHED = sent for an order, not set up yet; DISABLED; UNUSED.
+    const usage =
+      st.status === 'DISABLED' ? 'DISABLED'
+        : st.status === 'CLAIMED' && reg ? 'USED'
+        : order ? 'DISPATCHED'
+        : 'UNUSED';
+    return {
+      token: st.token,
+      url:   stickerUrl(st.token),
+      usage,
+      linkedAt: st.claimedAt,
+      customer:
+        usage === 'USED' && reg
+          ? { name: reg.user.fullName, email: reg.user.email, mobile: decryptField(reg.contactPhone) }
+          : order
+            ? { name: order.shippingName, email: order.user.email, mobile: order.shippingPhone }
+            : null,
+      vehicle:
+        usage === 'USED' && reg
+          ? { plate: decryptField(reg.plateNumber), type: reg.vehicleType }
+          : order?.registration
+            ? { plate: decryptField(order.registration.plateNumber), type: order.registration.vehicleType }
+            : null,
+      dispatchedAt: order?.dispatchedAt ?? null,
+    };
+  });
+
+  const counts = items.reduce<Record<string, number>>((acc, it) => ({ ...acc, [it.usage]: (acc[it.usage] ?? 0) + 1 }), {});
+  return { batch: { id: batch.id, label: batch.label }, counts, items };
 };
 
 export const listQrStickers = async (opts: { q?: string; status?: string; batchId?: string }) => {
@@ -2755,31 +3177,41 @@ export const listQrStickers = async (opts: { q?: string; status?: string; batchI
       plate:      s.registration ? decryptField(s.registration.plateNumber) : null,
       ownerEmail: s.registration?.user.email ?? null,
       claimedAt:  s.claimedAt,
+      disabledReason: s.disabledReason,
       createdAt:  s.createdAt,
     })),
   };
 };
 
-/** Safety action — return a claimed sticker to UNCLAIMED without touching the physical object. */
-export const unbindQrSticker = async (id: string, actorId: string) => {
-  const sticker = await prisma.qrSticker.findUnique({ where: { id } });
+/**
+ * Safety action: unlink a sticker from its vehicle without touching the
+ * physical object (e.g. it was set up on the wrong car). A disabled sticker
+ * stays disabled. The order's dispatch record is kept, so only that order's
+ * customer can set it up again.
+ */
+export const unbindQrSticker = async (id: string, actorId: string, reason?: string) => {
+  const sticker = await prisma.qrSticker.findUnique({ where: { id }, include: { registration: { select: { plateNumber: true } } } });
   if (!sticker) throw NotFound('Sticker not found');
+  if (!sticker.registrationId) throw BadRequest('This sticker is not linked to any vehicle');
 
   const updated = await prisma.qrSticker.update({
     where: { id },
     data:  {
-      status:          'UNCLAIMED',
+      status:          sticker.status === 'DISABLED' ? 'DISABLED' : 'UNCLAIMED',
       registrationId:  null,
       claimedByUserId: null,
       claimedAt:       null,
-      disabledAt:      null,
-      disabledReason:  null,
     },
   });
   await prisma.auditLog.create({
     data: {
       actorId, action: 'QR_STICKER_UNBIND', entity: 'QrSticker', entityId: id,
-      metadata: JSON.stringify({ previousRegistrationId: sticker.registrationId }),
+      metadata: JSON.stringify({
+        token: sticker.token,
+        previousRegistrationId: sticker.registrationId,
+        plate: sticker.registration ? decryptField(sticker.registration.plateNumber) : null,
+        reason: reason ?? null,
+      }),
     },
   });
   return updated;
@@ -2791,17 +3223,27 @@ export const setQrStickerDisabled = async (
   disabled: boolean,
   reason?: string,
 ) => {
-  const sticker = await prisma.qrSticker.findUnique({ where: { id } });
+  const sticker = await prisma.qrSticker.findUnique({ where: { id }, include: { registration: { select: { status: true } } } });
   if (!sticker) throw NotFound('Sticker not found');
+  if (disabled === (sticker.status === 'DISABLED')) return sticker; // already in that state
 
-  const nextStatus = disabled ? 'DISABLED' : sticker.registrationId ? 'CLAIMED' : 'UNCLAIMED';
-  const updated = await prisma.qrSticker.update({
-    where: { id },
-    data:  {
-      status:         nextStatus,
-      disabledAt:     disabled ? new Date() : null,
-      disabledReason: disabled ? (reason ?? null) : null,
-    },
+  // Re-enabling goes back to the car only if the car still exists and has no
+  // other live QR (e.g. this code was replaced); otherwise back to stock.
+  const backToCar = !disabled && !!sticker.registrationId && sticker.registration?.status !== 'DELETED';
+  const updated = await prisma.$transaction(async (tx) => {
+    if (backToCar) {
+      await lockVehicle(tx, sticker.registrationId!);
+      const other = await activeStickerOf(tx, sticker.registrationId!, sticker.id);
+      if (other) throw Conflict(`This vehicle already has a live QR (${other.token}). Disable that one first, or link this code to another order.`);
+    }
+    return tx.qrSticker.update({
+      where: { id },
+      data:  disabled
+        ? { status: 'DISABLED', disabledAt: new Date(), disabledReason: reason ?? null }
+        : backToCar
+          ? { status: 'CLAIMED', disabledAt: null, disabledReason: null }
+          : { status: 'UNCLAIMED', disabledAt: null, disabledReason: null, registrationId: null, claimedByUserId: null, claimedAt: null },
+    });
   });
   await prisma.auditLog.create({
     data: { actorId, action: disabled ? 'QR_STICKER_DISABLE' : 'QR_STICKER_ENABLE', entity: 'QrSticker', entityId: id },

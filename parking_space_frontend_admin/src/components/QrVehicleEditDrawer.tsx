@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { VehicleChangeHistory } from '@/components/VehicleChangeHistory';
 import { Plus, Trash2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -51,6 +52,7 @@ export const QrVehicleEditDrawer = ({
     });
   }, [v]);
 
+  const qc = useQueryClient();
   const save = useMutation({
     mutationFn: () => {
       if (!f || !v) throw new Error('not loaded');
@@ -73,7 +75,12 @@ export const QrVehicleEditDrawer = ({
         ...(Object.keys(customer).length ? { customer } : {}),
       });
     },
-    onSuccess: () => { onSaved(); onClose(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-qr-vehicle-history', vehicleId] });
+      qc.invalidateQueries({ queryKey: ['admin-qr-vehicle', vehicleId] });
+      onSaved();
+      onClose();
+    },
   });
 
   const set = <K extends keyof FormState>(k: K, val: FormState[K]) =>
@@ -119,8 +126,9 @@ export const QrVehicleEditDrawer = ({
                   <input className="input w-full font-mono uppercase" value={f.plateNumber} onChange={(e) => set('plateNumber', e.target.value)} />
                 </div>
                 <div>
-                  <Label>Contact number (rings on scan)</Label>
+                  <Label>Contact number</Label>
                   <input {...phoneInputProps} className="input w-full" value={f.contactPhone} onChange={(e) => set('contactPhone', digits10(e.target.value))} placeholder="10-digit mobile" />
+                  <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">Rings when someone scans the QR (masked calls) and is used for delivery.</p>
                 </div>
                 <div>
                   <Label>Owner name on card</Label>
@@ -145,10 +153,11 @@ export const QrVehicleEditDrawer = ({
                   <input className="input w-full" value={f.customerName} onChange={(e) => set('customerName', e.target.value)} />
                 </div>
                 <div>
-                  <Label>Mobile number</Label>
+                  <Label>Account mobile</Label>
                   <input {...phoneInputProps} className="input w-full" value={f.customerPhone} onChange={(e) => set('customerPhone', digits10(e.target.value))} placeholder="10-digit mobile" />
+                  <p className="mt-1 text-xs text-slate-400">For contacting the customer. Not used for scan calls.</p>
                 </div>
-                <p className="text-xs text-slate-400">Email ({v?.owner.email}) can&apos;t be changed here — it is their login.</p>
+                <p className="text-xs text-slate-400">Email ({v?.owner.email}) can&apos;t be changed here, it is their login.</p>
               </section>
 
               <section className="space-y-3">
@@ -159,7 +168,7 @@ export const QrVehicleEditDrawer = ({
                 <div className="w-40">
                   <Label>Blood group</Label>
                   <select className="input w-full" value={f.bloodGroup} onChange={(e) => set('bloodGroup', e.target.value)}>
-                    <option value="">—</option>
+                    <option value="">-</option>
                     {BLOOD_GROUPS.map((b) => <option key={b}>{b}</option>)}
                   </select>
                 </div>
@@ -192,6 +201,10 @@ export const QrVehicleEditDrawer = ({
                     </button>
                   )}
                 </div>
+              </section>
+
+              <section className="border-t border-slate-200 pt-5 dark:border-slate-800">
+                <VehicleChangeHistory vehicleId={vehicleId} compact />
               </section>
             </>
           )}

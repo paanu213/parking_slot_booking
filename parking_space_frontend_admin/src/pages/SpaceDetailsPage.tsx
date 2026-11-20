@@ -10,12 +10,12 @@ import { api } from '@/lib/api';
 import { PendingChanges } from '@/components/PendingChanges';
 
 const fmtDate = (d?: string | null) =>
-  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
 
 const fmtDateTime = (d?: string | null) =>
   d ? new Date(d).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  }) : '—';
+  }) : '-';
 
 const fmtINR = (n?: number | null) => `₹${Number(n ?? 0).toLocaleString('en-IN')}`;
 
@@ -70,7 +70,7 @@ export default function SpaceDetailsPage() {
   });
   const rejectEdits = useMutation({
     mutationFn: () => api.post(`/admin/spaces/${id}/reject-edits`, { note: editNote || undefined }),
-    onSuccess: () => { invalidate(); setRejectingEdits(false); setEditNote(''); setFlash('Vendor changes rejected — the space keeps its current values.'); },
+    onSuccess: () => { invalidate(); setRejectingEdits(false); setEditNote(''); setFlash('Vendor changes rejected, the space keeps its current values.'); },
   });
 
   // Add a slot directly (admin action — no approval step).
@@ -227,7 +227,7 @@ export default function SpaceDetailsPage() {
             {rejectingEdits ? (
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-slate-500">
-                  Reason for rejecting these changes (optional — shown to the vendor)
+                  Reason for rejecting these changes (optional, shown to the vendor)
                 </label>
                 <textarea
                   className="input w-full text-sm"
@@ -429,7 +429,7 @@ export default function SpaceDetailsPage() {
           </div>
           {addSlot.isError && <p className="mt-1 text-xs text-red-500">Could not add slot. Check the code isn’t a duplicate.</p>}
           <p className="mt-1 text-[10px] text-slate-400">
-            Added directly — no separate approval. Monthly = 30-day pass; leave blank to disable monthly bookings.
+            Added directly, no separate approval. Monthly = 30-day pass; leave blank to disable monthly bookings.
           </p>
         </div>
       </div>

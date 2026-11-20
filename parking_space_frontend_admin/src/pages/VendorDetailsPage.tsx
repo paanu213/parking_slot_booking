@@ -59,7 +59,7 @@ const normalizeVT = (v: string) => (v === 'CAR' ? 'FOUR_WHEELER' : v);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmtDate = (d?: string | null) =>
-  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
 
 const fmtINR = (n?: number | null) =>
   `₹${Number(n ?? 0).toLocaleString('en-IN')}`;
@@ -565,7 +565,7 @@ const SpaceCard = ({
 
           {hasPendingEdits && (
             <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800/40 dark:bg-blue-900/20 dark:text-blue-300">
-              This space has vendor edits awaiting review — use Approve Changes / Reject Changes above. To modify it yourself, use Edit.
+              This space has vendor edits awaiting review, use Approve Changes / Reject Changes above. To modify it yourself, use Edit.
             </p>
           )}
         </div>
@@ -630,7 +630,7 @@ const SpaceCard = ({
               </button>
             </div>
             {addSlot.isError && <p className="mt-1 text-xs text-red-500">Could not add slot. Check the code isn’t a duplicate.</p>}
-            <p className="mt-1 text-[10px] text-slate-400">Added directly — no separate approval.</p>
+            <p className="mt-1 text-[10px] text-slate-400">Added directly, no separate approval.</p>
           </div>
         </div>
       )}
@@ -687,7 +687,7 @@ const SpaceCard = ({
                     className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                   >
                     <AmenityIcon icon={a.amenity?.icon ?? ''} className="h-3.5 w-3.5" />
-                    {a.amenity?.name ?? '—'}
+                    {a.amenity?.name ?? '-'}
                   </span>
                 ))}
               </div>
@@ -1088,7 +1088,7 @@ export const VendorDetailsPage = () => {
               label="Account created"
               value={
                 origin.createdVia === 'ADMIN'
-                  ? `By admin${origin.createdBy?.fullName ? ` — ${origin.createdBy.fullName}` : ''} · ${fmtDate(origin.createdAt ?? v.createdAt)}`
+                  ? `By admin${origin.createdBy?.fullName ? `, ${origin.createdBy.fullName}` : ''} · ${fmtDate(origin.createdAt ?? v.createdAt)}`
                   : `Self-registration · ${fmtDate(origin.createdAt ?? v.createdAt)}`
               }
             />
@@ -1258,7 +1258,7 @@ const AadharStatus = ({ vendor }: { vendor: any }) => {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-        Pending — not uploaded
+        Pending, not uploaded
       </span>
       <input ref={ref} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ''; }} />
@@ -1317,7 +1317,7 @@ const BOOKING_STATUS_CLS: Record<string, string> = {
 };
 
 const fmtDateTime = (d?: string | null) =>
-  d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+  d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
 
 const VendorBookingsCard = ({ bookings, total }: { bookings: any[]; total: number }) => (
   <div className="card">
@@ -1354,7 +1354,7 @@ const VendorBookingsCard = ({ bookings, total }: { bookings: any[]; total: numbe
             {bookings.map((b) => {
               const customerName = b.isDirectBooking
                 ? (b.guestName ?? 'Walk-in Guest')
-                : (b.user?.fullName ?? '—');
+                : (b.user?.fullName ?? '-');
               const customerSub = b.isDirectBooking
                 ? (b.guestPhone ?? 'Direct booking')
                 : (b.user?.email ?? '');
@@ -1384,7 +1384,7 @@ const VendorBookingsCard = ({ bookings, total }: { bookings: any[]; total: numbe
                   <td className="text-xs text-slate-500">
                     {b.isDirectBooking
                       ? (b.paymentMethod ?? 'Direct')
-                      : (payment?.status ?? '—')}
+                      : (payment?.status ?? '-')}
                   </td>
                   <td>
                     <span

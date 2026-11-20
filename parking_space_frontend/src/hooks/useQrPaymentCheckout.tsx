@@ -53,7 +53,7 @@ const loadRazorpayScript = (): Promise<void> => {
     script.onload = () => resolve();
     script.onerror = () => {
       razorpayScriptPromise = null;
-      reject(new Error('Could not load the payment window — check your connection and try again'));
+      reject(new Error('Could not load the payment window. Check your connection and try again'));
     };
     document.body.appendChild(script);
   });
@@ -75,7 +75,7 @@ export interface PaymentError {
 
 export const friendlyPaymentError = (e: unknown): PaymentError => {
   if (e instanceof ApiError) {
-    if (e.status === undefined) return { message: 'Network error — check your connection and try again. Nothing was charged.' };
+    if (e.status === undefined) return { message: 'Network error. Check your connection and try again. Nothing was charged.' };
     if (/already registered by another owner/i.test(e.message)) return { message: 'This plate is already registered to another account.' };
     return { message: e.message };
   }
@@ -110,7 +110,7 @@ export const useQrPaymentCheckout = (onPaid: (qrOrderId: string) => void) => {
       modal: {
         ondismiss: () => {
           api.post(`/customer/me/qr-orders/${orderId}/payment-cancelled`, { providerOrderId: checkout.orderId }).catch(() => {});
-          setPaymentError({ message: "Payment cancelled — you closed the window before it finished. Nothing was charged." });
+          setPaymentError({ message: "Payment cancelled, you closed the window before it finished. Nothing was charged." });
         },
       },
     });
@@ -120,7 +120,7 @@ export const useQrPaymentCheckout = (onPaid: (qrOrderId: string) => void) => {
         providerOrderId: checkout.orderId, code: err.code, description: err.description, reason: err.reason, source: err.source, step: err.step,
       }).catch(() => {});
       setPaymentError({
-        message: err.description || 'The payment failed — often a bank decline or a dropped connection. No amount was charged.',
+        message: err.description || 'The payment failed, often a bank decline or a dropped connection. No amount was charged.',
       });
     });
     rzp.open();

@@ -112,7 +112,7 @@ export const EditSpaceSlideOver = ({ space, onClose, onSaved }: Props) => {
                 rows={3}
                 value={form.description}
                 onChange={(e) => set('description', e.target.value)}
-                placeholder="Optional — visible to customers"
+                placeholder="Optional, visible to customers"
               />
             </Field>
 

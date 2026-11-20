@@ -22,7 +22,7 @@ export default function RequestsPage() {
       <div>
         <h1 className="text-2xl font-bold">Requests</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Partner requests from the customer website — parking-space listings and service partners.
+          Partner requests from the customer website, parking-space listings and service partners.
         </p>
       </div>
 

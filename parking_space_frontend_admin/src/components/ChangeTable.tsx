@@ -62,7 +62,7 @@ export const ChangeTable = ({
     const f = formatValue?.(key, v);
     if (f !== undefined) return f;
     const s = norm(v);
-    return s === '' ? '—' : s;
+    return s === '' ? '-' : s;
   };
   const submitted = submittedAt
     ? new Date(submittedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })

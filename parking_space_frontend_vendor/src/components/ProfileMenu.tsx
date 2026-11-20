@@ -126,7 +126,7 @@ export const ProfileMenu = () => {
                 <p className="truncate font-display text-base font-semibold">{displayName}</p>
                 <Sparkles className="h-3.5 w-3.5 opacity-80" />
               </div>
-              <p className="truncate text-xs text-white/80">{user?.email ?? '—'}</p>
+              <p className="truncate text-xs text-white/80">{user?.email ?? '-'}</p>
               <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-white/30">
                 <Building2 className="h-3 w-3" /> Vendor workspace
               </span>

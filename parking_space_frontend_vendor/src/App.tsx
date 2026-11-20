@@ -210,7 +210,7 @@ const Dashboard = () => {
             icon={<Percent className="h-4 w-4 text-amber-500" />}
             label="Total Commission"
             value={`₹${Number(commission?.totalCommission ?? 0).toLocaleString('en-IN')}`}
-            sub={`at ${commission?.rate ?? '—'}% rate`}
+            sub={`at ${commission?.rate ?? '-'}% rate`}
             accent="amber"
             linkTo="/commissions"
           />
@@ -267,14 +267,14 @@ const Dashboard = () => {
                   <tr key={b.id}>
                     <td>
                       <p className="text-sm font-medium">
-                        {b.isDirectBooking ? (b.guestName ?? 'Walk-in Guest') : (b.user?.fullName ?? '—')}
+                        {b.isDirectBooking ? (b.guestName ?? 'Walk-in Guest') : (b.user?.fullName ?? '-')}
                       </p>
                       <p className="text-xs text-slate-400">
                         {b.isDirectBooking ? (b.guestPhone ?? 'Direct') : (b.user?.email ?? '')}
                       </p>
                     </td>
                     <td className="text-sm">
-                      {b.slot?.location?.name ?? '—'}
+                      {b.slot?.location?.name ?? '-'}
                       <span className="ml-1 font-mono text-xs text-slate-400">· {b.slot?.code}</span>
                     </td>
                     <td className="text-xs text-slate-500">{fmtDate(b.startAt)}</td>

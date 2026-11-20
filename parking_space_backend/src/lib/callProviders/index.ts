@@ -9,7 +9,7 @@ const providers: Record<string, CallProvider> = {
 
 export const getProvider = (name: string = env.CALL_PROVIDER): CallProvider => {
   const provider = providers[name];
-  if (!provider) throw new Error(`Unknown call provider "${name}" — check CALL_PROVIDER / the webhook URL`);
+  if (!provider) throw new Error(`Unknown call provider "${name}", check CALL_PROVIDER / the webhook URL`);
   return provider;
 };
 

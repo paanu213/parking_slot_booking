@@ -45,7 +45,7 @@ export const CancelBookingModal = ({
 
   const customerName = booking.isDirectBooking && !booking.user
     ? (booking.guestName ?? 'Walk-in Guest')
-    : (booking.user?.fullName ?? '—');
+    : (booking.user?.fullName ?? '-');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -76,9 +76,9 @@ export const CancelBookingModal = ({
             <span className="text-slate-400">Customer</span>
             <span className="font-medium text-right">{customerName}</span>
             <span className="text-slate-400">Space</span>
-            <span className="font-medium text-right">{booking.slot?.location?.name ?? '—'}</span>
+            <span className="font-medium text-right">{booking.slot?.location?.name ?? '-'}</span>
             <span className="text-slate-400">Slot</span>
-            <span className="font-medium text-right font-mono">{booking.slot?.code ?? '—'}</span>
+            <span className="font-medium text-right font-mono">{booking.slot?.code ?? '-'}</span>
             <span className="text-slate-400">Amount</span>
             <span className="font-semibold text-right">{formatINR(Number(booking.totalAmount))}</span>
           </div>

@@ -300,7 +300,7 @@ export const BookingsPage = () => {
               ) : (
                 <span className="inline-flex items-center gap-1.5">
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                    {commissionData?.rate ?? '—'}%
+                    {commissionData?.rate ?? '-'}%
                   </span>
                   <button
                     className="inline-flex items-center gap-1 text-xs text-amber-700 hover:underline dark:text-amber-400"
@@ -443,11 +443,11 @@ export const BookingsPage = () => {
                   ));
                   const customerName = b.isDirectBooking && !b.user
                     ? (b.guestName ?? 'Walk-in Guest')
-                    : (b.user?.fullName ?? '—');
+                    : (b.user?.fullName ?? '-');
                   const customerSub = b.isDirectBooking && !b.user
                     ? b.guestPhone ?? b.guestVehicleNumber ?? ''
                     : (b.user?.email ?? '');
-                  const vendorName  = b.slot?.location?.vendor?.businessName ?? '—';
+                  const vendorName  = b.slot?.location?.vendor?.businessName ?? '-';
                   const vendorEmail = b.slot?.location?.vendor?.user?.email ?? '';
 
                   return (
@@ -529,7 +529,7 @@ export const BookingsPage = () => {
                       {/* Commission */}
                       <td>
                         {b.status === 'CANCELLED' ? (
-                          <span className="text-xs text-slate-300">—</span>
+                          <span className="text-xs text-slate-300">-</span>
                         ) : (
                           <div>
                             <p className="text-sm font-semibold">{inr(Number(b.commissionAmount ?? 0))}</p>
@@ -558,7 +558,7 @@ export const BookingsPage = () => {
                               {pay.label}
                             </span>
                           ) : (
-                            <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+                            <span className="text-xs text-slate-300 dark:text-slate-600">-</span>
                           );
                         })()}
                       </td>

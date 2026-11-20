@@ -55,7 +55,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/registrations', label: 'Registrations', icon: ClipboardList },
       { to: '/sticker-orders', label: 'Sticker Orders', icon: Package },
       { to: '/qr-batches', label: 'QR Batches', icon: Layers },
-      { to: '/qr-settings', label: 'Call Limits', icon: SlidersHorizontal },
+      { to: '/qr-settings', label: 'QR Config', icon: SlidersHorizontal },
     ],
   },
   {

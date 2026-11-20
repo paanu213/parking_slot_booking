@@ -92,15 +92,15 @@ function normalise(b: any): Row {
   return {
     id:            b.id,
     date:          b.createdAt,
-    reference:     b.reference ?? '—',
+    reference:     b.reference ?? '-',
     orderId:       payment?.providerOrderId ?? null,
     isDirect,
-    customerName:  isDirect ? (b.guestName  ?? 'Walk-in Guest') : (b.user?.fullName ?? '—'),
+    customerName:  isDirect ? (b.guestName  ?? 'Walk-in Guest') : (b.user?.fullName ?? '-'),
     customerEmail: isDirect ? (b.guestPhone ?? '')               : (b.user?.email   ?? ''),
-    spaceName:     b.slot?.location?.name               ?? '—',
+    spaceName:     b.slot?.location?.name               ?? '-',
     city:          b.slot?.location?.city               ?? '',
     vendorId:      b.slot?.location?.vendor?.id         ?? '',
-    vendorName:    b.slot?.location?.vendor?.businessName ?? '—',
+    vendorName:    b.slot?.location?.vendor?.businessName ?? '-',
     paymentMethod: isDirect ? (b.paymentMethod ?? null) : (payment ? 'ONLINE' : null),
     amount:        Number(b.totalAmount ?? 0),
     refundAmount:  isDirect
@@ -170,7 +170,7 @@ const RefundModal = ({ row, onClose }: { row: Row; onClose: () => void }) => {
           <div>
             <label className="mb-1 block text-sm font-medium">Reason / Note</label>
             <textarea className="input w-full text-sm" rows={2}
-              placeholder="e.g. Customer cancelled — full refund"
+              placeholder="e.g. Customer cancelled, full refund"
               value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
           {err && <p className="text-sm text-red-500">{err}</p>}
@@ -279,7 +279,7 @@ export const PaymentsPage = () => {
 
   // All vendors from the vendors endpoint, sorted by name
   const vendors: { id: string; name: string }[] = (vendorsData?.items ?? [])
-    .map((v: any) => ({ id: v.id, name: v.businessName ?? '—' }))
+    .map((v: any) => ({ id: v.id, name: v.businessName ?? '-' }))
     .sort((a: { id: string; name: string }, b: { id: string; name: string }) => a.name.localeCompare(b.name));
 
   // Stats
@@ -472,7 +472,7 @@ export const PaymentsPage = () => {
                             {mm.icon} {mm.label}
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-400">—</span>
+                          <span className="text-xs text-slate-400">-</span>
                         )}
                       </td>
 
@@ -491,7 +491,7 @@ export const PaymentsPage = () => {
                             )}
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-400">—</span>
+                          <span className="text-xs text-slate-400">-</span>
                         )}
                       </td>
 

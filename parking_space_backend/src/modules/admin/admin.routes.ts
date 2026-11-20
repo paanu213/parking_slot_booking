@@ -39,6 +39,10 @@ import {
   setQrOrderStatusSchema,
   dispatchStickerSchema,
   qrOrderReplacementSchema,
+  adminCreateQrOrderSchema,
+  qrPricingSchema,
+  qrOrderHandoverSchema,
+  qrStickerUnbindSchema,
   generateQrBatchSchema,
   updateQrBatchSchema,
   qrStickerDisableSchema,
@@ -145,6 +149,7 @@ r.get('/qr/overview', ctrl.qrOverview);
 r.get('/qr/vehicles', ctrl.listQrVehicles);
 r.get('/qr/vehicles/:id', ctrl.getQrVehicle);
 r.patch('/qr/vehicles/:id', validate(adminUpdateVehicleSchema), ctrl.adminUpdateQrVehicle);
+r.get('/qr/vehicles/:id/history', ctrl.getQrVehicleHistory);
 r.post('/qr/vehicles/:id/reassign', validate(reassignVehicleSchema), ctrl.reassignQrVehicle);
 r.patch('/qr/vehicles/:id/validity', validate(setVehicleValiditySchema), ctrl.setVehicleValidity);
 r.patch('/qr/vehicles/:id/status', validate(qrVehicleStatusSchema), ctrl.setQrVehicleStatus);
@@ -153,6 +158,8 @@ r.get('/qr/settings/daily-cap', ctrl.getCallDailyCapSetting);
 r.patch('/qr/settings/daily-cap', validate(callDailyCapSchema), ctrl.updateCallDailyCapSetting);
 r.get('/qr/filter-options', ctrl.getQrFilterOptions);
 r.get('/qr/diagnostics/exotel', ctrl.exotelDiagnostics);
+r.get('/qr/settings/pricing', ctrl.getQrPricingSetting);
+r.patch('/qr/settings/pricing', validate(qrPricingSchema), ctrl.updateQrPricingSetting);
 r.get('/qr/settings/call-limits', ctrl.getCallLimitsSetting);
 r.patch('/qr/settings/call-limits', validate(callLimitsSchema), ctrl.updateCallLimitsSetting);
 r.get('/qr/calls', ctrl.listQrCalls);
@@ -161,6 +168,8 @@ r.get('/qr/calls/:id/reveal', ctrl.revealQrCallerNumber);
 r.get('/qr/blocked', ctrl.listQrBlockedNumbers);
 r.delete('/qr/blocked/:id', ctrl.unblockQrNumber);
 r.get('/qr/orders', ctrl.listQrOrders);
+r.post('/qr/orders', validate(adminCreateQrOrderSchema), ctrl.adminCreateQrOrder);
+r.get('/qr/customers/lookup', ctrl.lookupQrCustomer);
 r.get('/qr/orders/:id/events', ctrl.listQrOrderEvents);
 r.patch('/qr/orders/:id/details', validate(adminQrOrderDetailsSchema), ctrl.adminUpdateQrOrderDetails);
 r.patch('/qr/orders/:id/status', validate(setQrOrderStatusSchema), ctrl.setQrOrderStatus);
@@ -168,6 +177,7 @@ r.post('/qr/orders/:id/refund', validate(refundSchema), ctrl.refundQrOrder);
 r.patch('/qr/orders/:id/dispatch-sticker', validate(dispatchStickerSchema), ctrl.dispatchQrOrderSticker);
 r.get('/qr/orders/:id/sticker-pdf', ctrl.getQrOrderStickerPdf);
 r.post('/qr/orders/:id/replacement', validate(qrOrderReplacementSchema), ctrl.sendQrOrderReplacement);
+r.post('/qr/orders/:id/handover', validate(qrOrderHandoverSchema), ctrl.handoverQrOrder);
 r.get('/qr/payments', ctrl.listQrPayments);
 
 // --- QR sticker batches (print runs) + individual sticker lifecycle ---
@@ -178,7 +188,7 @@ r.get('/qr/batches/:id/sticker-pdf', ctrl.generateStickerPdf);
 r.get('/qr/batches/:id/tokens', ctrl.listQrBatchTokens);
 r.patch('/qr/batches/:id', validate(updateQrBatchSchema), ctrl.updateQrBatch);
 r.get('/qr/stickers', ctrl.listQrStickers);
-r.post('/qr/stickers/:id/unbind', ctrl.unbindQrSticker);
+r.post('/qr/stickers/:id/unbind', validate(qrStickerUnbindSchema), ctrl.unbindQrSticker);
 r.patch('/qr/stickers/:id/disable', validate(qrStickerDisableSchema), ctrl.setQrStickerDisabled);
 
 // --- Audit log — every admin action across the app writes a row here ---

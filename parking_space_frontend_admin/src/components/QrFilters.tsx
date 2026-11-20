@@ -131,7 +131,7 @@ export const EmergencyBlock = ({ info }: { info: EmergencyInfo | null | undefine
       {info.contacts.map((c) => (
         <p key={c.id} className="flex items-center gap-1.5">
           <Users className="h-3.5 w-3.5 text-slate-400" />
-          {c.name}{c.relation ? ` (${c.relation})` : ''} —{' '}
+          {c.name}{c.relation ? ` (${c.relation})` : ''}, {' '}
           <a href={`tel:${c.phone}`} onClick={(e) => e.stopPropagation()} className="text-brand-600 hover:underline">{c.phone}</a>
           {!c.showPublic && <span className="text-xs text-slate-400">(hidden on card)</span>}
         </p>

@@ -66,7 +66,7 @@ const getActiveVirtualNumbers = async (providerName: string) => {
   // A provider's ExoPhone/virtual number is purchased out-of-band in their
   // dashboard — never invented here.
   if (providerName === 'exotel') {
-    if (exotelVirtualNumbers.length === 0) throw new Error('EXOTEL_VIRTUAL_NUMBERS is not configured — set it in .env');
+    if (exotelVirtualNumbers.length === 0) throw new Error('EXOTEL_VIRTUAL_NUMBERS is not configured. Set it in .env');
     return prisma.$transaction(
       exotelVirtualNumbers.map((e164) => prisma.virtualNumber.create({ data: { e164, provider: providerName } })),
     );
@@ -196,7 +196,7 @@ export const initiateCall = async (
       lastErr = e;
       logger.warn(
         { event: 'call_virtual_number_failed', provider: provider.name, virtualNumber: vn.e164, err: e },
-        'Call provider rejected this virtual number — trying the next one',
+        'Call provider rejected this virtual number, trying the next one',
       );
     }
   }
@@ -210,7 +210,7 @@ export const initiateCall = async (
         rawPayload: JSON.stringify({ placementFailed: true, error: lastErr instanceof Error ? lastErr.message : String(lastErr), debug }),
       },
     });
-    throw lastErr instanceof HttpError ? lastErr : ServerError('Could not place the call — please try again');
+    throw lastErr instanceof HttpError ? lastErr : ServerError('Could not place the call, please try again');
   }
 
   await prisma.callSession.update({

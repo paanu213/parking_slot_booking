@@ -51,7 +51,7 @@ export const RegisterPage = () => {
     try {
       const res = await api.post('/auth/register', parsed.data);
       setSession(res.data.user, res.data.accessToken);
-      toast.success('Account created', 'You’re all set — happy parking!');
+      toast.success('Account created', 'You’re all set, happy parking!');
       nav('/');
     } catch (e) {
       setSubmitError(errorMessage(e));

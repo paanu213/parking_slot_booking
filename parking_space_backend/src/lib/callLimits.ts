@@ -54,7 +54,7 @@ export const CALL_LIMIT_DEFS = {
   globalDaily: {
     key: 'qr_call_global_daily',
     label: 'Platform-wide calls per day',
-    description: 'Overall cost guard — total calls across all cars and callers in a day.',
+    description: 'Overall cost guard, total calls across all cars and callers in a day.',
     unit: 'calls/day', default: env.CALL_GLOBAL_DAILY_CAP, min: 1, max: 100000,
   },
 } as const satisfies Record<string, CallLimitDef>;

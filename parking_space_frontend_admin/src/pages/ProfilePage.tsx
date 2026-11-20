@@ -125,7 +125,7 @@ export const ProfilePage = () => {
       >
         <span className="inline-flex items-center gap-2 text-sm font-medium">
           <Settings className="h-4 w-4 text-slate-400" />
-          Account Settings — change password
+          Account Settings, change password
         </span>
         <ArrowLeft className="h-4 w-4 rotate-180 text-slate-400" />
       </button>

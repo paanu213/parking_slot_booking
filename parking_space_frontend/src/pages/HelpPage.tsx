@@ -12,7 +12,7 @@ const FAQS = [
   },
   {
     q: 'How do I contact a parking space owner?',
-    a: 'Open any space\'s detail page and use the "Call host" button — it dials the property\'s contact number directly so you can confirm availability and details.',
+    a: 'Open any space\'s detail page and use the "Call host" button, it dials the property\'s contact number directly so you can confirm availability and details.',
   },
   {
     q: 'How do I save a space for later?',
@@ -44,7 +44,7 @@ export const HelpPage = () => {
           </span>
           <div>
             <h1 className="font-display text-2xl font-bold">Help &amp; support</h1>
-            <p className="text-sm text-slate-500">We're here to help — reach out anytime</p>
+            <p className="text-sm text-slate-500">We're here to help. Reach out anytime</p>
           </div>
         </div>
 

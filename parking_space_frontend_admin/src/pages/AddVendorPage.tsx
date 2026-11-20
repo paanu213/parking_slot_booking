@@ -233,7 +233,7 @@ export const AddVendorPage = () => {
         <div>
           <h1 className="text-2xl font-bold">Add Vendor</h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            Create a vendor account directly — it will be marked as approved immediately.
+            Create a vendor account directly, it will be marked as approved immediately.
           </p>
         </div>
       </div>
@@ -316,7 +316,7 @@ export const AddVendorPage = () => {
               </div>
             </Field>
 
-            <Field label="Personal Phone" hint="Optional — personal contact number">
+            <Field label="Personal Phone" hint="Optional, personal contact number">
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -348,7 +348,7 @@ export const AddVendorPage = () => {
           <Field
             label="Temporary Password"
             required
-            hint="Share this with the vendor — they should change it on first login"
+            hint="Share this with the vendor, they should change it on first login"
             error={errors.tempPassword}
           >
             <div className="relative">

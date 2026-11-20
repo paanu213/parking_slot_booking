@@ -471,6 +471,30 @@ enum QrPaymentStatus {
   REFUNDED
 }
 
+// Where a sticker order came from: the customer website, or created by admin.
+enum QrOrderSource {
+  WEBSITE
+  ADMIN
+}
+
+// Order type, kept for every order: WEBSITE for customer website orders,
+// the rest are chosen by admin when creating an order from the admin panel.
+enum QrOrderChannel {
+  WEBSITE
+  INFLUENCER
+  CAMPAIGN
+  SUPPORT
+  OFFLINE_SALE
+  OTHER
+}
+
+// How the order is paid: online via Razorpay, collected offline, or free.
+enum QrPaymentMode {
+  ONLINE
+  OFFLINE
+  COMPLIMENTARY
+}
+
 model VehicleRegistration {
   id              String             @id @default(cuid())
   userId          String
@@ -633,6 +657,11 @@ model QrOrder {
   paymentStatus     QrPaymentStatus @default(PENDING)
   paidAt            DateTime?
   paymentRef        String?                                  // Razorpay payment id once paid
+  // Admin-created orders (influencers, campaigns, support, offline sales).
+  source            QrOrderSource   @default(WEBSITE)
+  channel           QrOrderChannel  @default(WEBSITE)
+  paymentMode       QrPaymentMode   @default(ONLINE)
+  createdById       String?                                  // admin user who created it (source = ADMIN)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 

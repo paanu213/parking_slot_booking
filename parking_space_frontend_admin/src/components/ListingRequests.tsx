@@ -8,7 +8,7 @@ import {
 import { api } from '@/lib/api';
 
 const fmtDate = (d?: string | null) =>
-  d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
 
 const STATUS_CLS: Record<string, string> = {
   PENDING:  'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
@@ -129,9 +129,9 @@ export const ListingRequests = ({ leadType }: { leadType: 'PARKING' | 'SERVICE' 
                       <Detail icon={<Phone className="h-3.5 w-3.5" />} label="Phone" value={<a href={`tel:${lead.phone}`} className="text-brand-600 underline dark:text-brand-400">{lead.phone}</a>} />
                       <Detail icon={<MapPin className="h-3.5 w-3.5" />} label="City" value={lead.city} />
                       {isService ? (
-                        <Detail icon={<Wrench className="h-3.5 w-3.5" />} label="Service" value={lead.serviceCategory ?? '—'} />
+                        <Detail icon={<Wrench className="h-3.5 w-3.5" />} label="Service" value={lead.serviceCategory ?? '-'} />
                       ) : (
-                        <Detail icon={<Hash className="h-3.5 w-3.5" />} label="Approx. slots" value={lead.slotsApprox != null ? String(lead.slotsApprox) : '—'} />
+                        <Detail icon={<Hash className="h-3.5 w-3.5" />} label="Approx. slots" value={lead.slotsApprox != null ? String(lead.slotsApprox) : '-'} />
                       )}
                       <Detail icon={<Clock className="h-3.5 w-3.5" />} label="Submitted" value={fmtDate(lead.createdAt)} />
                       {lead.reviewedAt && <Detail icon={<Clock className="h-3.5 w-3.5" />} label="Reviewed" value={fmtDate(lead.reviewedAt)} />}

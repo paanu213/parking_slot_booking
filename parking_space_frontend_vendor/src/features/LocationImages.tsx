@@ -139,7 +139,7 @@ export const LocationImages = ({ locationId, images }: Props) => {
 
       {upload.isError && (
         <p className="text-xs text-rose-600">
-          Upload failed — {(upload.error as any)?.response?.data?.message ?? 'please try again.'}
+          Upload failed, {(upload.error as any)?.response?.data?.message ?? 'please try again.'}
         </p>
       )}
     </div>

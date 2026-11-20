@@ -152,7 +152,7 @@ export const MyVehiclesPage = () => {
               </span>
               <h2 className="mt-4 font-display text-lg font-bold">No vehicles yet</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Vehicles show up here once you order a QR sticker for them — the sticker is what
+                Vehicles show up here once you order a QR sticker for them, the sticker is what
                 lets people scan and call you.
               </p>
               <Link to="/qr-calling" className="btn-primary mt-5 inline-flex gap-1.5">
@@ -235,7 +235,7 @@ const VehicleCard = ({
         {(v.silentFrom || v.silentTo) && (
           <span className="inline-flex items-center gap-1.5">
             <Moon className="h-3.5 w-3.5 text-slate-400" />
-            Silent {v.silentFrom ?? '—'} → {v.silentTo ?? '—'}
+            Silent {v.silentFrom ?? '-'} → {v.silentTo ?? '-'}
           </span>
         )}
       </div>
@@ -325,15 +325,9 @@ const CallHistory = ({ vehicleId }: { vehicleId: string }) => {
   );
 };
 
-/** The one-time sticker fee is lifetime by default; admin can set a per-vehicle end date. */
+/** QR stickers are valid for 10 years from registration (or a custom end date set by admin). */
 const QrValidityBadge = ({ validUntil }: { validUntil: string | null }) => {
-  if (!validUntil) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-        <InfinityIcon className="h-3.5 w-3.5" /> QR validity: Lifetime
-      </span>
-    );
-  }
+  if (!validUntil) return null;
   const expired = new Date(validUntil).getTime() < Date.now();
   const dateStr = new Date(validUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   return (

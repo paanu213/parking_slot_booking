@@ -41,6 +41,7 @@ import { QrVehicleDetailPage } from '@/pages/QrVehicleDetailPage';
 import { AuditLogPage } from '@/pages/AuditLogPage';
 import RegistrationsPage from '@/pages/RegistrationsPage';
 import StickerOrdersPage from '@/pages/StickerOrdersPage';
+import NewStickerOrderPage from '@/pages/NewStickerOrderPage';
 import QrBatchesPage from '@/pages/QrBatchesPage';
 import QrSettingsPage from '@/pages/QrSettingsPage';
 
@@ -534,7 +535,7 @@ const Overview = () => {
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard label="Total Commission" value={inr(commission?.totalCommission ?? 0)}
-                    sub={`at ${commission?.rate ?? '—'}% rate`} icon={Percent} tone="amber" />
+                    sub={`at ${commission?.rate ?? '-'}% rate`} icon={Percent} tone="amber" />
           <StatCard label="Collected" value={inr(commission?.paidCommission ?? 0)}
                     sub="received from vendors" icon={CheckCircle2} tone="emerald" />
           <StatCard label="Pending Collection" value={inr(commission?.pendingCommission ?? 0)}
@@ -563,7 +564,7 @@ const Overview = () => {
           ) : (stats?.recent?.pendingVendors ?? []).length === 0 ? (
             <div className="flex items-center gap-2 px-4 py-6 text-sm text-slate-400">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              All clear — no pending vendors
+              All clear, no pending vendors
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -603,7 +604,7 @@ const Overview = () => {
           ) : (stats?.recent?.pendingSpaces ?? []).length === 0 && (stats?.recent?.spaceEdits ?? []).length === 0 ? (
             <div className="flex items-center gap-2 px-4 py-6 text-sm text-slate-400">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              All clear — no spaces pending review
+              All clear, no spaces pending review
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -669,7 +670,7 @@ const Overview = () => {
           ) : (stats?.recent?.profileEdits ?? []).length === 0 ? (
             <div className="flex items-center gap-2 px-4 py-6 text-sm text-slate-400">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              All clear — no pending profile edits
+              All clear, no pending profile edits
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -725,7 +726,7 @@ const Overview = () => {
         ) : (stats?.recent?.listingLeads ?? []).length === 0 ? (
           <div className="flex items-center gap-2 px-4 py-6 text-sm text-slate-400">
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            All clear — no new listing requests
+            All clear, no new listing requests
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -798,7 +799,7 @@ const Overview = () => {
                         <p className="text-sm font-medium">
                           {b.isDirectBooking
                             ? (b.guestName ?? 'Walk-in Guest')
-                            : (b.user?.fullName ?? '—')}
+                            : (b.user?.fullName ?? '-')}
                         </p>
                         <p className="text-xs text-slate-400">
                           {b.isDirectBooking
@@ -1500,8 +1501,8 @@ const Vendors = () => {
                       <p className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
                         <AlertCircle className="h-3.5 w-3.5" />
                         {pendingCount > 1
-                          ? `${pendingCount} profile changes — review before approving`
-                          : 'Vendor requested a profile change — review before approving'}
+                          ? `${pendingCount} profile changes, review before approving`
+                          : 'Vendor requested a profile change, review before approving'}
                       </p>
                       <div className="mb-3 grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
                         {changedProfile.length === 0 ? (
@@ -1749,7 +1750,7 @@ const AmenitiesPage = () => {
         <div>
           <div className="mb-2 flex items-center justify-between">
             <label className="text-xs font-medium text-slate-500">
-              Icon{selectedIcon ? ` — ${selectedIcon}` : ' (pick one)'}
+              Icon{selectedIcon ? `, ${selectedIcon}` : ' (pick one)'}
             </label>
             {selectedIcon && (
               <div className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 dark:border-brand-800/50 dark:bg-brand-900/20">
@@ -1927,6 +1928,7 @@ export default function App() {
                     <Route path="/audit-log" element={<AuditLogPage />} />
                     <Route path="/registrations" element={<RegistrationsPage />} />
                     <Route path="/sticker-orders" element={<StickerOrdersPage />} />
+                    <Route path="/sticker-orders/new" element={<NewStickerOrderPage />} />
                     <Route path="/qr-batches" element={<QrBatchesPage />} />
                     <Route path="/qr-settings" element={<QrSettingsPage />} />
                   </Routes>

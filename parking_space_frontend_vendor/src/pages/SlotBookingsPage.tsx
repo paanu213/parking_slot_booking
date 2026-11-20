@@ -12,7 +12,7 @@ const fmtDateTime = (d?: string | null) =>
   d ? new Date(d).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
-  }) : '—';
+  }) : '-';
 
 const STATUS_CLS: Record<string, string> = {
   CONFIRMED:       'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
@@ -176,7 +176,7 @@ export const SlotBookingsPage = () => {
                   const tenseMeta = TENSE_META[tense];
                   const customerName = b.isDirectBooking
                     ? (b.guestName ?? 'Walk-in Guest')
-                    : (b.user?.fullName ?? '—');
+                    : (b.user?.fullName ?? '-');
                   const customerSub = b.isDirectBooking
                     ? (b.guestPhone ?? '')
                     : (b.user?.email ?? '');

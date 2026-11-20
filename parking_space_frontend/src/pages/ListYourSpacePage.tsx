@@ -51,12 +51,12 @@ const BENEFITS = [
   {
     icon: IndianRupee,
     title: 'Fast payouts',
-    desc: 'Settled directly to your bank or UPI — weekly cycle, no minimum threshold.',
+    desc: 'Settled directly to your bank or UPI, weekly cycle, no minimum threshold.',
   },
 ];
 
 const STEPS = [
-  { n: '1', title: 'Tell us about your space', desc: 'Fill the short form below — 30 seconds.' },
+  { n: '1', title: 'Tell us about your space', desc: 'Fill the short form below, 30 seconds.' },
   { n: '2', title: 'Quick verification call',  desc: "Our team rings to confirm details and walk through pricing." },
   { n: '3', title: 'Go live',                   desc: "Your spot shows up on AutoSahay search the same day approval clears." },
 ];
@@ -123,7 +123,7 @@ export const ListYourSpacePage = () => {
             </h1>
             <p className="mt-4 max-w-xl text-base text-white/80 sm:text-lg">
               List your spaces on {BRAND_NAME} and reach drivers actively looking to park in your
-              area — by the hour, day, or month. We handle the bookings, payments, and entry/exit
+              area, by the hour, day, or month. We handle the bookings, payments, and entry/exit
               records. You keep the keys.
             </p>
 
@@ -381,7 +381,7 @@ const SuccessCard = ({ onReset }: { onReset: () => void }) => (
     <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
       <CheckCircle2 className="h-7 w-7" />
     </span>
-    <h2 className="mt-4 font-display text-2xl font-bold">Thanks — we'll be in touch</h2>
+    <h2 className="mt-4 font-display text-2xl font-bold">Thanks, we'll be in touch</h2>
     <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
       Your details are with our partnerships team. Expect a call from us within 24 hours.
     </p>

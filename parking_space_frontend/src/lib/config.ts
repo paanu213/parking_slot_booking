@@ -10,7 +10,9 @@ const env = import.meta.env;
 
 export const API_URL = (env.VITE_API_URL as string | undefined) ?? 'http://localhost:4000/api';
 
-export const VENDOR_URL = (env.VITE_VENDOR_URL as string | undefined) ?? 'http://localhost:5174';
+// Always the live partner portal unless VITE_VENDOR_URL overrides it
+// (e.g. VITE_VENDOR_URL=http://localhost:5174 to test against a local vendor app).
+export const VENDOR_URL = (env.VITE_VENDOR_URL as string | undefined) || 'https://vendor.autosahay.com';
 
 /** Brand identity — keep both in sync. The logo is served from Cloudflare R2. */
 export const BRAND_NAME = 'AutoSahay';
@@ -37,8 +39,9 @@ export const PRICING = {
 /**
  * QR Calling — one-time sticker fee, shown on the landing page and order
  * form. Must match the snapshot the backend stores on QrOrder
- * (STICKER_PRICE_PAISE in qrOrders.service.ts). Lifetime validity by
+ * (STICKER_PRICE_PAISE in qrOrders.service.ts). Valid for 10 years by
  * default; admin can set a per-vehicle expiry under individual terms
  * (VehicleRegistration.validUntil) — there's no recurring charge.
  */
-export const QR_STICKER_PRICE = 500; // ₹, one-time, lifetime
+export const QR_STICKER_PRICE = 500; // ₹, one-time, pack of 2, valid 10 years
+export const QR_VALIDITY_YEARS = 10;

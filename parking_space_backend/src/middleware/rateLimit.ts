@@ -30,7 +30,7 @@ export const paymentLimiter = rateLimit({
   limit: 30,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: { code: 'RATE_LIMITED', message: 'Too many payment attempts — please wait a few minutes and try again' } },
+  message: { error: { code: 'RATE_LIMITED', message: 'Too many payment attempts, please wait a few minutes and try again' } },
 });
 
 // QR Calling public plate lookup — "15/hour + bot-check" per the blueprint's
@@ -49,6 +49,6 @@ export const scanLookupLimiter = rateLimit({
     } catch {
       /* logging is best-effort */
     }
-    res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many lookups — try again later' } });
+    res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many lookups, try again later' } });
   },
 });

@@ -1,6 +1,8 @@
 import { Fragment, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Plus, X } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { OrderSourceBadge, OrderTypeSelect, OrderPhones, paymentLabel } from '@/components/OrderStickerQr';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { QrFilterBar, EMPTY_QR_FILTERS, VehicleTypeBadge, EmergencyBlock, qrFilterParams, useDebounced, type QrFilters, type EmergencyInfo } from '@/components/QrFilters';
@@ -12,6 +14,8 @@ interface RegistrationRow {
   paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'; paidAt: string | null; paymentRef: string | null;
   stickerPricePaise: number; monthlyPricePaise: number;
   plate: string | null; vehicleType: 'CAR' | 'BIKE' | null; registrationId: string | null; emergency: EmergencyInfo | null;
+  source?: 'WEBSITE' | 'ADMIN'; channel?: string | null; paymentMode?: 'ONLINE' | 'OFFLINE' | 'COMPLIMENTARY';
+  scanPhone?: string | null;
   ownerName: string; ownerEmail: string; ownerPhone: string | null;
   shippingName: string; shippingPhone: string; addressLine: string;
   city: string; state: string; pincode: string; note: string | null;
@@ -34,7 +38,11 @@ const TABS: { value: FilterTab; label: string }[] = [
  * whole thing, including requests that never converted.
  */
 export default function RegistrationsPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const createdOrderId = (location.state as { createdOrderId?: string } | null)?.createdOrderId;
   const [tab, setTab] = useState<FilterTab>('ALL');
+  const [orderType, setOrderType] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filters, setFilters] = useState<QrFilters>(EMPTY_QR_FILTERS);
   const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
@@ -42,8 +50,8 @@ export default function RegistrationsPage() {
   const dq = useDebounced(filters.q);
 
   const { data, isLoading } = useQuery<{ items: RegistrationRow[] }>({
-    queryKey: ['admin-qr-registrations', tab, dq, filters.vehicleType, filters.state, filters.city],
-    queryFn: async () => (await api.get('/admin/qr/orders', { params: { paymentStatus: tab === 'ALL' ? undefined : tab, ...qrFilterParams({ ...filters, q: dq }, 'q') } })).data,
+    queryKey: ['admin-qr-registrations', tab, orderType, dq, filters.vehicleType, filters.state, filters.city],
+    queryFn: async () => (await api.get('/admin/qr/orders', { params: { paymentStatus: tab === 'ALL' ? undefined : tab, channel: orderType || undefined, ...qrFilterParams({ ...filters, q: dq }, 'q') } })).data,
   });
   const items = data?.items ?? [];
 
@@ -55,9 +63,22 @@ export default function RegistrationsPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold">Registrations</h1>
-          <p className="mt-1 text-sm text-slate-500">Every sticker request — paid, awaiting payment, or failed.</p>
+          <p className="mt-1 text-sm text-slate-500">Every sticker request: paid, awaiting payment, or failed.</p>
         </div>
+        <Link to="/sticker-orders/new" className="btn-primary ml-auto gap-1.5">
+          <Plus className="h-4 w-4" /> New order
+        </Link>
       </div>
+
+      {createdOrderId && (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Order created and waiting for the customer to pay online from their account.
+          <button type="button" onClick={() => navigate('.', { replace: true, state: null })} className="ml-auto rounded p-1 hover:bg-emerald-100 dark:hover:bg-emerald-500/20" aria-label="Dismiss">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <div className="flex w-fit gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
         {TABS.map(({ value, label }) => (
@@ -76,7 +97,10 @@ export default function RegistrationsPage() {
         ))}
       </div>
 
-      <QrFilterBar value={filters} onChange={setFilters} />
+      <div className="flex flex-wrap items-center gap-2">
+        <QrFilterBar value={filters} onChange={setFilters} />
+        <OrderTypeSelect value={orderType} onChange={setOrderType} />
+      </div>
 
       <div className="card overflow-x-auto">
         <table className="table">
@@ -94,12 +118,15 @@ export default function RegistrationsPage() {
                 return (
                   <Fragment key={o.id}>
                     <tr onClick={() => setExpanded(isOpen ? null : o.id)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                      <td className="font-mono font-semibold">{o.plate ?? '—'}</td>
+                      <td className="font-mono font-semibold">{o.plate ?? '-'}</td>
                       <td><VehicleTypeBadge type={o.vehicleType} /></td>
                       <td>
                         <p className="font-medium">{o.ownerName}</p>
+                        <OrderSourceBadge source={o.source} channel={o.channel} />
                         <p className="text-xs text-slate-400">{o.ownerEmail}</p>
-                        <a href={`tel:${o.shippingPhone}`} onClick={(e) => e.stopPropagation()} className="text-xs text-brand-600 hover:underline">{o.shippingPhone}</a>
+                        {o.ownerPhone
+                          ? <p className="text-xs text-slate-500">Account: <a href={`tel:${o.ownerPhone}`} onClick={(e) => e.stopPropagation()} className="text-brand-600 hover:underline">{o.ownerPhone}</a></p>
+                          : <p className="text-xs text-slate-400">No account mobile</p>}
                       </td>
                       <td>
                         {o.monthlyPricePaise > 0
@@ -107,7 +134,7 @@ export default function RegistrationsPage() {
                           : `₹${(o.stickerPricePaise / 100).toFixed(0)} one-time`}
                       </td>
                       <td>
-                        <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(o.paymentStatus))}>{o.paymentStatus}</span>
+                        <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(o.paymentStatus))}>{paymentLabel(o.paymentStatus, o.paymentMode)}</span>
                         {o.paymentRef && <span className="block text-[11px] text-slate-400">{o.paymentRef}</span>}
                       </td>
                       <td><span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(o.status))}>{ORDER_STATUS_LABEL[o.status]}</span></td>
@@ -117,8 +144,10 @@ export default function RegistrationsPage() {
                       <tr className="bg-slate-50 dark:bg-slate-800/30">
                         <td colSpan={7} className="space-y-3 px-3 py-3 text-sm">
                           <div>
-                            <p className="font-semibold">{o.shippingName} · {o.shippingPhone}</p>
-                            <p className="text-slate-500 dark:text-slate-400">{o.addressLine}, {o.city}, {o.state} — {o.pincode}</p>
+                            <div className="mb-3"><OrderPhones accountPhone={o.ownerPhone} scanPhone={o.scanPhone ?? null} deliveryPhone={o.shippingPhone} deliveryName={o.shippingName} /></div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Deliver to</p>
+                            <p className="font-semibold">{o.shippingName}</p>
+                            <p className="text-slate-500 dark:text-slate-400">{o.addressLine}, {o.city}, {o.state}, {o.pincode}</p>
                             {o.note && <p className="mt-1 text-xs text-slate-400">Note: {o.note}</p>}
                           </div>
                           <EmergencyBlock info={o.emergency} />

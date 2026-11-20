@@ -20,6 +20,7 @@ interface QrOrder {
   paymentStatus: 'PENDING' | 'PAID' | 'FAILED';
   paidAt: string | null;
   paymentRef: string | null;
+  paymentMode?: 'ONLINE' | 'OFFLINE' | 'COMPLIMENTARY';
   stickerPricePaise: number;
   monthlyPricePaise: number;
   shippingName: string;
@@ -54,11 +55,11 @@ interface PaymentAttempt {
 
 const FULFILMENT: Record<QrOrderStatus, { label: string; cls: string }> = {
   PENDING:          { label: 'Awaiting payment',            cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200' },
-  CONFIRMED:        { label: 'Order confirmed — yet to dispatch', cls: 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200' },
+  CONFIRMED:        { label: 'Order confirmed, yet to dispatch', cls: 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200' },
   PICKED_UP:        { label: 'Picked up for dispatch',      cls: 'bg-brand-100 text-brand-900 dark:bg-brand-900/30 dark:text-brand-100' },
   OUT_FOR_DELIVERY: { label: 'Out for delivery',             cls: 'bg-violet-100 text-violet-900 dark:bg-violet-900/30 dark:text-violet-200' },
   DELIVERED:        { label: 'Delivered',                    cls: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200' },
-  RETURNED:         { label: 'Returned — resending soon',    cls: 'bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-200' },
+  RETURNED:         { label: 'Returned, resending soon',    cls: 'bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-200' },
   CANCELLED:        { label: 'Cancelled',                    cls: 'bg-rose-100 text-rose-900 dark:bg-rose-900/30 dark:text-rose-200' },
 };
 
@@ -92,6 +93,7 @@ const PaymentHistory = ({ orderId }: { orderId: string }) => {
           <li key={a.id} className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800/50">
             <div>
               <span className={`rounded-full px-1.5 py-0.5 font-semibold ${s.cls}`}>{s.label}</span>
+              {a.provider === 'offline' && <span className="ml-1.5 text-slate-500 dark:text-slate-400">Offline payment</span>}
               {a.failureReason && <p className="mt-1 text-slate-500 dark:text-slate-400">{a.failureReason}</p>}
               {a.providerPaymentId && <p className="mt-0.5 font-mono text-[10px] text-slate-400">{a.providerPaymentId}</p>}
             </div>
@@ -230,30 +232,30 @@ export const QrOrdersPage = () => {
 
                 <div className="mt-3 flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
                   <Truck className="h-3.5 w-3.5 text-slate-400" />
-                  {o.shippingName} · {o.addressLine}, {o.city}, {o.state} — {o.pincode}
+                  {o.shippingName} · {o.addressLine}, {o.city}, {o.state}, {o.pincode}
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
                   <div className="text-sm">
-                    <p className="font-semibold">{inr(total)}</p>
+                    <p className="font-semibold">{o.paymentMode === 'COMPLIMENTARY' ? 'Complimentary' : inr(total)}</p>
                     <p className="text-xs text-slate-400">
                       {o.monthlyPricePaise > 0
                         ? `${inr(o.stickerPricePaise / 100)} sticker + ${inr(o.monthlyPricePaise / 100)} first month · then ${inr(o.monthlyPricePaise / 100)}/mo`
-                        : 'One-time — lifetime validity'}
+                        : 'One-time payment, valid for 10 years'}
                     </p>
                   </div>
 
                   {o.paymentStatus === 'PAID' ? (
                     <div className="text-right">
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
-                        <CheckCircle2 className="h-3 w-3" /> Paid
+                        <CheckCircle2 className="h-3 w-3" /> {o.paymentMode === 'COMPLIMENTARY' ? 'Free' : 'Paid'}
                       </span>
                       <p className="mt-1 text-[11px] text-slate-400">
-                        {o.paidAt ? fmtDate(o.paidAt) : ''}{o.paymentRef ? ` · ${o.paymentRef}` : ''}
+                        {o.paymentMode === 'OFFLINE' ? 'Paid offline · ' : ''}{o.paidAt ? fmtDate(o.paidAt) : ''}{o.paymentMode === 'ONLINE' && o.paymentRef ? ` · ${o.paymentRef}` : ''}
                       </p>
                     </div>
                   ) : o.status === 'CANCELLED' ? (
-                    <span className="text-xs text-slate-400">—</span>
+                    <span className="text-xs text-slate-400">-</span>
                   ) : (
                     <div className="text-right">
                       {o.paymentStatus === 'FAILED' && (

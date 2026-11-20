@@ -16,7 +16,7 @@ let cached: PaymentGateway | null = null;
 export const getGateway = (): PaymentGateway => {
   if (cached) return cached;
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
-    throw ServerError('Payments are not configured — set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET');
+    throw ServerError('Payments are not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET');
   }
   cached = createRazorpayGateway(env.RAZORPAY_KEY_ID, env.RAZORPAY_KEY_SECRET, env.RAZORPAY_WEBHOOK_SECRET);
   return cached;

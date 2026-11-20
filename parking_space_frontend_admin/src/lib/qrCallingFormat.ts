@@ -10,7 +10,7 @@ export type QrOrderStatus = 'PENDING' | 'CONFIRMED' | 'PICKED_UP' | 'OUT_FOR_DEL
 // CONFIRMED "resend" loop, which restarts pickup/dispatch/delivery fresh.
 export const ORDER_STATUS_LABEL: Record<QrOrderStatus, string> = {
   PENDING:           'Awaiting payment',
-  CONFIRMED:         'Order confirmed — yet to dispatch',
+  CONFIRMED:         'Order confirmed, yet to dispatch',
   PICKED_UP:         'Picked up from store',
   OUT_FOR_DELIVERY:  'Out for delivery',
   DELIVERED:         'Delivered',

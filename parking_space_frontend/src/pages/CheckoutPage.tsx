@@ -19,7 +19,7 @@ export const CheckoutPage = () => (
       <h1 className="mt-4 font-display text-2xl font-bold">Online payment coming soon</h1>
       <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
         We're finalising the secure online payment flow. For now, please reach out to the host
-        directly to confirm your slot — or talk to us:
+        directly to confirm your slot, or talk to us:
       </p>
 
       <div className="mt-5 grid gap-2 sm:grid-cols-2">

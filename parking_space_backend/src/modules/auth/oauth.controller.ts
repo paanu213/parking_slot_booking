@@ -66,5 +66,5 @@ export const facebookCallback: RequestHandler = async (req, res, next) => {
 };
 
 export const appleStart: RequestHandler = (_req, _res, next) => {
-  next(ServerError('Apple OAuth not yet configured — wire APPLE_* env vars and a signed client_secret JWT'));
+  next(ServerError('Apple OAuth not yet configured, wire APPLE_* env vars and a signed client_secret JWT'));
 };

@@ -16,6 +16,7 @@
  * they can only ever move a payment to FAILED, never to PAID.
  */
 import type { Prisma } from '@prisma/client';
+import { getStickerPricePaise } from '../../lib/qrPricing.js';
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../config/logger.js';
 import { getGateway } from '../../lib/paymentGateway/index.js';
@@ -28,12 +29,13 @@ import type {
 
 /**
  * Snapshot at request time — a later price change never rewrites past orders.
- * One-time fee, lifetime validity by default; MONTHLY_PRICE_PAISE stays at 0
+ * One-time fee, valid for 10 years by default (lib/qrValidity.ts); MONTHLY_PRICE_PAISE stays at 0
  * (there is no recurring charge) — the column is kept so past two-part orders
  * still read back correctly. Admin can set a per-vehicle expiry from the
- * lifetime default under individual commercial terms (VehicleRegistration.validUntil).
+ * 10-year default under individual commercial terms (VehicleRegistration.validUntil).
  */
-export const STICKER_PRICE_PAISE = 50_000; // ₹500 one-time, lifetime
+// The sticker price is admin-configurable (lib/qrPricing.ts, QR Config page).
+// Each order snapshots the price at creation, so old orders keep their amount.
 export const MONTHLY_PRICE_PAISE = 0;
 
 type Db = typeof prisma | Prisma.TransactionClient;
@@ -51,7 +53,7 @@ export const confirmOnPaymentOps = (db: Db, order: { id: string; status: string 
     ? [
         db.qrOrder.update({ where: { id: order.id }, data: { status: 'CONFIRMED', confirmedAt: new Date() } }),
         db.qrOrderStatusEvent.create({
-          data: { qrOrderId: order.id, status: 'CONFIRMED', note: 'Order confirmed — payment received' },
+          data: { qrOrderId: order.id, status: 'CONFIRMED', note: 'Order confirmed, payment received' },
         }),
       ]
     : [];
@@ -80,14 +82,24 @@ export const createQrOrder = async (userId: string, input: CreateQrOrderInput) =
     }
   }
 
+  const stickerPricePaise = await getStickerPricePaise();
+
+  // One contact per order: the courier uses the vehicle's name and contact number.
+  const shippingPhone = input.shippingPhone ?? input.vehicle.contactPhone;
+  const shippingName =
+    input.shippingName ?? (input.vehicle.ownerName?.trim() || (await prisma.user.findUnique({ where: { id: userId }, select: { fullName: true } }))?.fullName || 'Customer');
+
   const order = await prisma.qrOrder.create({
     data: {
       userId,
       registrationId:    registration.id,
-      stickerPricePaise: STICKER_PRICE_PAISE,
+      stickerPricePaise,
       monthlyPricePaise: MONTHLY_PRICE_PAISE,
-      shippingName:  input.shippingName,
-      shippingPhone: input.shippingPhone,
+      source:            'WEBSITE',
+      channel:           'WEBSITE', // order type; admin-created orders overwrite this
+      paymentMode:       'ONLINE',
+      shippingName,
+      shippingPhone,
       addressLine:   input.addressLine,
       city:          input.city,
       state:         input.state,
@@ -188,7 +200,7 @@ export const createQrCheckout = async (userId: string, qrOrderId: string, meta: 
     amount:    gatewayOrder.amount,
     currency:  gatewayOrder.currency,
     name:      'AutoSahay',
-    description: 'QR sticker — one-time payment, lifetime validity',
+    description: 'QR sticker pack of 2, one-time payment, valid for 10 years',
   };
 };
 
@@ -225,7 +237,7 @@ export const verifyQrPayment = async (userId: string, qrOrderId: string, input: 
     });
     logger.warn(
       { event: 'qr_payment_signature_invalid', qrOrderId: order.id, paymentId: payment.id },
-      'QR payment signature did not verify — possible tampering',
+      'QR payment signature did not verify, possible tampering',
     );
     throw BadRequest('Payment verification failed');
   }
@@ -248,7 +260,7 @@ export const verifyQrPayment = async (userId: string, qrOrderId: string, input: 
         { event: 'qr_payment_crosscheck_failed', qrOrderId: order.id, paymentId: payment.id, fetched },
         'QR payment failed gateway cross-check',
       );
-      throw BadRequest('Payment could not be confirmed — contact support if money was deducted');
+      throw BadRequest('Payment could not be confirmed. Contact support if money was deducted');
     }
   }
 

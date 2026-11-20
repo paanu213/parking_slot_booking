@@ -30,7 +30,7 @@ interface VehicleRow {
   status: 'ACTIVE' | 'PAUSED' | 'TRANSFERRED' | 'DELETED';
   emergencyPublic: boolean; ownerName: string | null;
   city: string | null; state: string | null; emergency: EmergencyInfo;
-  validUntil: string | null;
+  validUntil: string | null; validityCustom?: boolean;
   callCount: number; emergencyContactCount: number; owner: VehicleOwner; createdAt: string;
 }
 
@@ -227,7 +227,7 @@ export const CallLimitsSetting = () => {
 
       <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
         Applies to every car platform-wide and takes effect on the next call attempt. Only calls that connect count
-        toward the daily limits — failed, unanswered or declined calls don't. Not customer-editable.
+        toward the daily limits, failed, unanswered or declined calls don't. Not customer-editable.
       </p>
       {update.isError && (
         <p className="mt-1 text-xs text-rose-600">{errMsg(update.error, 'Could not update the call limits.')}</p>
@@ -262,7 +262,7 @@ const OverviewTab = () => {
         <StatCard label="Answer rate" value={`${data.answerRate}%`} sub={`avg ${data.avgDurationSec}s`} icon={TrendingUp} />
         <StatCard label="Failed / no-answer" value={data.failedTotal} icon={AlertTriangle} />
         <StatCard label="Numbers blocked" value={data.blockedNumbersCount} icon={Ban} />
-        <StatCard label="Spend today" value={`₹${(data.spendTodayPaise / 100).toFixed(2)}`} sub="cost guard — sums CallSession.costPaise" icon={IndianRupee} />
+        <StatCard label="Spend today" value={`₹${(data.spendTodayPaise / 100).toFixed(2)}`} sub="cost guard, sums CallSession.costPaise" icon={IndianRupee} />
         <StatCard label="Sticker revenue" value={`₹${(data.revenuePaise / 100).toFixed(2)}`} sub="received from QR sticker orders" icon={Wallet} />
         <StatCard label="Refunded" value={`₹${(data.refundedPaise / 100).toFixed(2)}`} sub="refunded from sticker orders" icon={Undo2} />
       </div>
@@ -388,22 +388,21 @@ const VehiclesTab = () => {
                       >
                         <ShieldCheck className="h-4 w-4" /> {v.emergency.contacts.length}
                       </button>
-                    ) : '—'}
+                    ) : '-'}
                   </td>
                   <td>
-                    {v.validUntil ? (
-                      <span className={cn('text-xs font-semibold', expired ? 'text-rose-600' : 'text-amber-700 dark:text-amber-400')}>
+                    {v.validUntil && (
+                      <span className={cn('text-xs font-semibold', expired ? 'text-rose-600' : v.validityCustom ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400')}>
                         {expired ? 'Expired ' : 'Until '}{new Date(v.validUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {v.validityCustom && !expired && <span className="block text-[10px] font-normal">custom date</span>}
                       </span>
-                    ) : (
-                      <span className="text-xs text-slate-400">Lifetime</span>
                     )}
                   </td>
                   <td>{v.callCount}</td>
                   <td className="text-xs text-slate-400">{fmtDateTime(v.createdAt)}</td>
                   <td className="text-right">
                     <VehicleActionsMenu
-                      vehicle={{ id: v.id, status: v.status, contactPhone: v.contactPhone, validUntil: v.validUntil }}
+                      vehicle={{ id: v.id, status: v.status, contactPhone: v.contactPhone, validUntil: v.validUntil, validityCustom: v.validityCustom }}
                       onChanged={refresh}
                     />
                   </td>
@@ -474,7 +473,7 @@ const CallsTab = () => {
                   <td><MaskedPhone masked={c.callerMasked} callId={c.id} /></td>
                   <td><span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(c.status))}>{c.status}</span></td>
                   <td className="text-xs text-slate-400">{fmtDateTime(c.initiatedAt)}</td>
-                  <td>{c.durationSec != null ? `${c.durationSec}s` : '—'}</td>
+                  <td>{c.durationSec != null ? `${c.durationSec}s` : '-'}</td>
                   <td className="text-right">
                     <button
                       type="button"
@@ -526,8 +525,8 @@ const BlockedTab = () => {
                     {r.scope === 'GLOBAL' ? 'All cars' : 'One car'}
                   </span>
                 </td>
-                <td className="font-mono">{r.plate ?? '—'}</td>
-                <td className="text-xs text-slate-500">{r.reason ?? '—'}</td>
+                <td className="font-mono">{r.plate ?? '-'}</td>
+                <td className="text-xs text-slate-500">{r.reason ?? '-'}</td>
                 <td className="text-xs text-slate-400">{r.blockedBy}</td>
                 <td className="text-xs text-slate-400">{fmtDateTime(r.createdAt)}</td>
                 <td className="text-right">
@@ -624,10 +623,10 @@ const PaymentsTab = () => {
                         </p>
                       </>
                     ) : (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-slate-400">-</span>
                     )}
                   </td>
-                  <td className="font-mono font-semibold">{p.customer?.plate ?? '—'}</td>
+                  <td className="font-mono font-semibold">{p.customer?.plate ?? '-'}</td>
                   <td>₹{Number(p.amount).toFixed(0)}</td>
                   <td>
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(p.status))}>{p.status}</span>

@@ -100,7 +100,7 @@ const FAQS = [
   },
   {
     q: 'Can I extend my booking on the go?',
-    a: 'Yes — open the booking in the app and tap Extend. If the slot is still free, the extension is instant.',
+    a: 'Yes. Open the booking in the app and tap Extend. If the slot is still free, the extension is instant.',
   },
   {
     q: 'Do you offer refunds?',
@@ -627,7 +627,7 @@ export const LocationDetailPage = () => {
               </h2>
               <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-700 dark:text-slate-300">
                 {loc.description ||
-                  `A verified, well-lit parking facility in the heart of ${loc.city}. Ideal for office commuters, mall visits, and event parking. Our attendants are on-site 24×7 and slot assignment happens digitally — no queues, no confusion.`}
+                  `A verified, well-lit parking facility in the heart of ${loc.city}. Ideal for office commuters, mall visits, and event parking. Our attendants are on-site 24×7 and slot assignment happens digitally, no queues, no confusion.`}
               </p>
             </div>
 
@@ -764,7 +764,7 @@ export const LocationDetailPage = () => {
                     <p className="mt-0.5 font-display text-lg font-bold text-brand-600">{inr(total)}</p>
                   </div>
                   <span className="text-xs text-slate-500">
-                    {hours}h · Slot {selectedSlot?.code ?? '—'}
+                    {hours}h · Slot {selectedSlot?.code ?? '-'}
                   </span>
                 </div>
                 <button
@@ -863,7 +863,7 @@ const SpaceSidebar = ({
           </dt>
           <dd className="mt-2 flex flex-wrap gap-1.5">
             {vehicleTypes.length === 0 ? (
-              <span className="text-xs text-slate-400">—</span>
+              <span className="text-xs text-slate-400">-</span>
             ) : (
               vehicleTypes.map(({ label, Icon }) => (
                 <span
