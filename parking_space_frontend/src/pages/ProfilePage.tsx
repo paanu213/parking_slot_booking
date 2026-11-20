@@ -84,7 +84,7 @@ export const ProfilePage = () => {
                 )}
               </Row>
               <Row label="Signed in via" value={data?.provider === 'GOOGLE' ? 'Google' : 'Email'} icon={<UserCircle2 className="h-4 w-4" />} />
-              <Row label="Member since" value={data?.createdAt ? new Date(data.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} icon={<CheckCircle2 className="h-4 w-4" />} />
+              <Row label="Member since" value={data?.createdAt ? new Date(data.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'} icon={<CheckCircle2 className="h-4 w-4" />} />
             </div>
 
             {/* Editable form */}
@@ -141,7 +141,7 @@ const Row = ({ label, value, icon, children }: { label: string; value?: string; 
   <div className="flex items-center gap-2 text-sm">
     <span className="text-slate-400">{icon}</span>
     <span className="w-28 shrink-0 text-slate-500">{label}</span>
-    <span className="font-medium text-slate-800 dark:text-slate-100">{value ?? '—'}</span>
+    <span className="font-medium text-slate-800 dark:text-slate-100">{value ?? '-'}</span>
     {children}
   </div>
 );

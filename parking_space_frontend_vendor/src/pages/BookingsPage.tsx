@@ -234,7 +234,7 @@ const CancelModal = ({
 
   const customerName = booking.isDirectBooking
     ? (booking.guestName ?? 'Walk-in Guest')
-    : (booking.user?.fullName ?? '—');
+    : (booking.user?.fullName ?? '-');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -263,9 +263,9 @@ const CancelModal = ({
             <span className="text-slate-400">Customer</span>
             <span className="font-medium text-right">{customerName}</span>
             <span className="text-slate-400">Space</span>
-            <span className="font-medium text-right">{booking.slot?.location?.name ?? '—'}</span>
+            <span className="font-medium text-right">{booking.slot?.location?.name ?? '-'}</span>
             <span className="text-slate-400">Slot</span>
-            <span className="font-medium font-mono text-right">{booking.slot?.code ?? '—'}</span>
+            <span className="font-medium font-mono text-right">{booking.slot?.code ?? '-'}</span>
             <span className="text-slate-400">Amount</span>
             <span className="font-semibold text-right">₹{Number(booking.totalAmount).toLocaleString('en-IN')}</span>
           </div>
@@ -990,7 +990,7 @@ export const BookingsPage = () => {
                     </tr>
                   )}
                   {filtered.map((b) => {
-                    const customerName = b.isDirectBooking ? b.guestName : b.user?.fullName ?? '—';
+                    const customerName = b.isDirectBooking ? b.guestName : b.user?.fullName ?? '-';
                     const customerSub  = b.isDirectBooking ? b.guestPhone : b.user?.email;
                     const hours = Math.max(1, Math.ceil(
                       (new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 3_600_000,
@@ -1031,14 +1031,14 @@ export const BookingsPage = () => {
                                   {b.guestVehicleNumber}
                                 </div>
                               ) : (
-                                <div className="text-xs text-slate-300 dark:text-slate-600">—</div>
+                                <div className="text-xs text-slate-300 dark:text-slate-600">-</div>
                               )}
                               {b.guestVehicleModel && (
                                 <div className="text-xs text-slate-400">{b.guestVehicleModel}</div>
                               )}
                             </>
                           ) : (
-                            <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+                            <span className="text-xs text-slate-300 dark:text-slate-600">-</span>
                           )}
                         </td>
 
@@ -1090,7 +1090,7 @@ export const BookingsPage = () => {
                         {/* Commission payable to company */}
                         <td className="px-3 py-2">
                           {b.status === 'CANCELLED' ? (
-                            <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+                            <span className="text-xs text-slate-300 dark:text-slate-600">-</span>
                           ) : (
                             <>
                               <div className="font-medium">₹{Number(b.commissionAmount ?? 0).toLocaleString('en-IN')}</div>
@@ -1119,7 +1119,7 @@ export const BookingsPage = () => {
                                 {pay.label}
                               </span>
                             ) : (
-                              <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+                              <span className="text-xs text-slate-300 dark:text-slate-600">-</span>
                             );
                           })()}
                         </td>
@@ -1274,7 +1274,7 @@ const DirectBookingFormFields = ({
             <option value="">Select a slot…</option>
             {activeSlots.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.code}{vtLabel(s.vehicleType) ? ` · ${vtLabel(s.vehicleType)}` : ''} — ₹{s.hourlyPrice}/hr
+                {s.code}{vtLabel(s.vehicleType) ? ` · ${vtLabel(s.vehicleType)}` : ''}, ₹{s.hourlyPrice}/hr
                 {s.monthlyPrice && Number(s.monthlyPrice) > 0
                   ? ` · ₹${s.monthlyPrice}/mo`
                   : ''}

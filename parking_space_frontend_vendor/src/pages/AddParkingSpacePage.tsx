@@ -228,7 +228,7 @@ const Step1 = ({
           </div>
           {pincodeState === 'error' && (
             <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              Pincode not found — please fill city &amp; state below manually.
+              Pincode not found, please fill city &amp; state below manually.
             </p>
           )}
         </div>
@@ -261,7 +261,7 @@ const Step1 = ({
       <div>
         <label className="mb-1 block text-xs font-medium text-slate-500">
           City / Town *
-          <span className="ml-1.5 font-normal text-slate-400">(auto from pincode — edit if needed)</span>
+          <span className="ml-1.5 font-normal text-slate-400">(auto from pincode, edit if needed)</span>
         </label>
         <input
           className={`input w-full ${pincodeState === 'found' ? 'bg-slate-50 dark:bg-slate-800/60' : ''}`}

@@ -1,14 +1,14 @@
 import { Fragment, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, CheckCircle2, FileText, IndianRupee, MapPin, Package, PackageX, Pencil, QrCode, Repeat, RotateCcw, Truck, UserCog } from 'lucide-react';
+import { Ban, CheckCircle2, Handshake, Plus, X, FileText, IndianRupee, MapPin, Package, PackageX, Pencil, QrCode, Repeat, RotateCcw, Truck, UserCog } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { statusCls, fmtDateTime, errMsg, ORDER_STATUS_LABEL, type QrOrderStatus } from '@/lib/qrCallingFormat';
 import { ModalShell } from '@/components/VehicleActionsMenu';
 import { KebabMenu, MenuItem, MenuDivider } from '@/components/KebabMenu';
 import { QrVehicleEditDrawer } from '@/components/QrVehicleEditDrawer';
-import { StickerQrPanel, FulfilmentSummary, ReplacementModal, downloadOrderStickerPdf, type OrderFulfilment } from '@/components/OrderStickerQr';
+import { StickerQrPanel, FulfilmentSummary, ReplacementModal, downloadOrderStickerPdf, OrderSourceBadge, OrderTypeSelect, OrderPhones, HandoverModal, paymentLabel, type OrderFulfilment } from '@/components/OrderStickerQr';
 import { digits10, isPhone10, phoneInputProps } from '@/lib/phone';
 import { QrFilterBar, EMPTY_QR_FILTERS, VehicleTypeBadge, EmergencyBlock, qrFilterParams, useDebounced, type QrFilters, type EmergencyInfo } from '@/components/QrFilters';
 
@@ -18,6 +18,8 @@ interface OrderRow {
   paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'; paidAt: string | null; paymentRef: string | null;
   stickerPricePaise: number; monthlyPricePaise: number;
   plate: string | null; vehicleType: 'CAR' | 'BIKE' | null; registrationId: string | null; emergency: EmergencyInfo | null;
+  source?: 'WEBSITE' | 'ADMIN'; channel?: string | null; paymentMode?: 'ONLINE' | 'OFFLINE' | 'COMPLIMENTARY';
+  scanPhone?: string | null;
   ownerName: string; ownerEmail: string; ownerPhone: string | null;
   shippingName: string; shippingPhone: string; addressLine: string;
   city: string; state: string; pincode: string; note: string | null;
@@ -26,6 +28,7 @@ interface OrderRow {
   qrConfigured: boolean; qrToken: string | null; qrConfiguredAt: string | null;
   dispatchedStickerToken: string | null; dispatchedAt: string | null;
   stickerToken: string | null; stickerUrl: string | null; fulfilment: OrderFulfilment;
+  stickerBatch?: { id: string; label: string } | null;
   createdAt: string;
 }
 
@@ -66,7 +69,7 @@ const OrderTimeline = ({ orderId }: { orderId: string }) => {
           <span className="text-slate-400">
             {fmtDateTime(e.createdAt)}{e.actor ? ` · ${e.actor.fullName}` : ''}
           </span>
-          {e.note && <span className="text-slate-500 dark:text-slate-400">— {e.note}</span>}
+          {e.note && <span className="text-slate-500 dark:text-slate-400">· {e.note}</span>}
         </li>
       ))}
     </ul>
@@ -86,7 +89,7 @@ const ReturnReasonModal = ({
   return (
     <ModalShell
       title="Mark sticker returned"
-      subtitle="Damaged, undeliverable, or sent back by the customer — record why. You can resend once it's ready to go out again."
+      subtitle="Damaged, undeliverable, or sent back by the customer, record why. You can resend once it's ready to go out again."
       onClose={onClose}
     >
       <textarea
@@ -125,7 +128,7 @@ const RefundModal = ({
   return (
     <ModalShell
       title="Refund this order"
-      subtitle="Sends the order to Cancelled and records the refund against the original payment — the same trail shown in Payments and Registrations."
+      subtitle="Sends the order to Cancelled and records the refund against the original payment, the same trail shown in Payments and Registrations."
       onClose={onClose}
     >
       <div className="mt-3 space-y-3">
@@ -171,7 +174,7 @@ const EditShippingModal = ({
   order, onClose, onDone,
 }: { order: OrderRow; onClose: () => void; onDone: () => void }) => {
   const [f, setF] = useState({
-    shippingName: order.shippingName, shippingPhone: digits10(order.shippingPhone), addressLine: order.addressLine,
+    addressLine: order.addressLine,
     city: order.city, state: order.state, pincode: order.pincode, note: order.note ?? '',
   });
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
@@ -180,14 +183,12 @@ const EditShippingModal = ({
     mutationFn: () => api.patch(`/admin/qr/orders/${order.id}/details`, { ...f, note: f.note.trim() || null }),
     onSuccess: () => { onDone(); onClose(); },
   });
-  const valid = f.shippingName.trim().length >= 2 && isPhone10(f.shippingPhone) && f.addressLine.trim().length >= 5
+  const valid = f.addressLine.trim().length >= 5
     && f.city.trim().length >= 2 && f.state.trim().length >= 2 && /^[0-9]{4,10}$/.test(f.pincode.trim());
 
   return (
-    <ModalShell title="Edit shipping details" subtitle="Correct the delivery name, phone or address for this order." onClose={onClose}>
+    <ModalShell title="Edit shipping details" subtitle="Correct the delivery address. The delivery name and number follow the vehicle's name and contact number (Edit customer details)." onClose={onClose}>
       <div className="mt-3 space-y-2">
-        <input className="input w-full" placeholder="Name" value={f.shippingName} onChange={(e) => set('shippingName', e.target.value)} />
-        <input {...phoneInputProps} className="input w-full" placeholder="10-digit mobile" value={f.shippingPhone} onChange={(e) => set('shippingPhone', digits10(e.target.value))} />
         <textarea rows={2} className="input w-full resize-none" placeholder="Address" value={f.addressLine} onChange={(e) => set('addressLine', e.target.value)} />
         <div className="grid grid-cols-2 gap-2">
           <input className="input" placeholder="City" value={f.city} onChange={(e) => set('city', e.target.value)} />
@@ -217,17 +218,19 @@ const DispatchStickerModal = ({
   return (
     <ModalShell
       title="Record dispatched sticker"
-      subtitle="Enter the unique code printed on the physical sticker going into this package, so it's traceable to this order."
+      subtitle={order.dispatchedStickerToken
+        ? `Currently ${order.dispatchedStickerToken}. Fix a wrong code here before the customer sets it up; the old code goes back to stock.`
+        : "Enter the code printed on the sticker going into this package, or paste its scanned link. Only this customer can then set it up, for this vehicle."}
       onClose={onClose}
     >
       <input
         autoFocus
         value={token}
         onChange={(e) => setToken(e.target.value)}
-        placeholder="e.g. a1b2c3d4"
+        placeholder="Sticker code or scanned link"
         className="input mt-3 w-full font-mono"
       />
-      {save.isError && <p className="mt-1 text-xs text-rose-600">{errMsg(save.error, 'Could not record this sticker — check the code is correct.')}</p>}
+      {save.isError && <p className="mt-1 text-xs text-rose-600">{errMsg(save.error, 'Could not record this sticker. Check the code is correct.')}</p>}
       <button
         type="button"
         onClick={() => save.mutate()}
@@ -246,7 +249,7 @@ const DispatchStickerModal = ({
  * status stays consistent across the app rather than drifting per-page.
  */
 const StickerOrderActionsMenu = ({
-  order, isPending, onSetStatus, onMarkReturned, onRefund, onDispatchSticker, onEditShipping, onEditCustomer, onReplacement,
+  order, isPending, onSetStatus, onMarkReturned, onRefund, onDispatchSticker, onEditShipping, onEditCustomer, onReplacement, onHandover,
 }: {
   order: OrderRow;
   isPending: boolean;
@@ -257,6 +260,7 @@ const StickerOrderActionsMenu = ({
   onEditShipping: () => void;
   onEditCustomer: () => void;
   onReplacement: () => void;
+  onHandover: () => void;
 }) => {
   const nextAction = ORDER_NEXT_ACTION[order.status];
   const canReturn = ORDER_RETURNABLE_FROM.includes(order.status);
@@ -278,20 +282,40 @@ const StickerOrderActionsMenu = ({
           Edit shipping details
         </MenuItem>
         <MenuDivider />
-        <MenuItem icon={<QrCode className="h-4 w-4" />} onClick={onDispatchSticker} disabled={isPending}>
-          {order.dispatchedStickerToken ? 'Update dispatched sticker' : 'Record dispatched sticker'}
-        </MenuItem>
+        {/* After setup the code is fixed to the car; a different code only goes through "Replace sticker". */}
+        {!order.qrConfigured && order.paymentStatus === 'PAID' && order.status !== 'CANCELLED' && (
+          <MenuItem icon={<QrCode className="h-4 w-4" />} onClick={onDispatchSticker} disabled={isPending}>
+            {order.dispatchedStickerToken ? 'Change dispatched sticker' : 'Record dispatched sticker'}
+          </MenuItem>
+        )}
         {order.stickerToken && (
           <MenuItem icon={<FileText className="h-4 w-4" />} onClick={() => { void downloadOrderStickerPdf(order.id, order.plate ?? order.stickerToken!); }}>
             Download sticker for reprint
           </MenuItem>
         )}
-        {order.status === 'DELIVERED' && order.paymentStatus === 'PAID' && order.stickerToken && (
-          <MenuItem icon={<Repeat className="h-4 w-4" />} onClick={onReplacement} disabled={isPending}>
-            Send replacement sticker (lost / damaged)
+        {/* Always listed on paid orders so it's discoverable; it unlocks once the order is delivered. */}
+        {order.paymentStatus === 'PAID' && order.status !== 'CANCELLED' && (
+          <MenuItem
+            icon={<Repeat className="h-4 w-4" />}
+            onClick={onReplacement}
+            disabled={isPending || order.status !== 'DELIVERED' || !order.stickerToken}
+          >
+            <span className="flex flex-col">
+              <span>Replace sticker (damaged / lost / stolen)</span>
+              {order.status !== 'DELIVERED' ? (
+                <span className="text-[11px] text-slate-400">Available after the order is delivered</span>
+              ) : !order.stickerToken ? (
+                <span className="text-[11px] text-slate-400">Record the dispatched sticker first</span>
+              ) : null}
+            </span>
           </MenuItem>
         )}
         {hasFulfilmentActions && <MenuDivider />}
+        {order.paymentStatus === 'PAID' && ['CONFIRMED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'RETURNED'].includes(order.status) && (
+          <MenuItem icon={<Handshake className="h-4 w-4" />} onClick={onHandover} disabled={isPending}>
+            Hand over to customer (offline)
+          </MenuItem>
+        )}
         {nextAction && (
           <MenuItem icon={<nextAction.icon className="h-4 w-4" />} onClick={() => onSetStatus(nextAction.next)} disabled={isPending}>
             {nextAction.label}
@@ -323,8 +347,12 @@ const StickerOrderActionsMenu = ({
  * request has nothing to dispatch; those live in the Registrations page.
  */
 export default function StickerOrdersPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const createdOrderId = (location.state as { createdOrderId?: string } | null)?.createdOrderId;
   const qc = useQueryClient();
   const [status, setStatus] = useState('');
+  const [orderType, setOrderType] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [returningId, setReturningId] = useState<string | null>(null);
   const [refundingId, setRefundingId] = useState<string | null>(null);
@@ -332,6 +360,7 @@ export default function StickerOrdersPage() {
   const [shippingId, setShippingId] = useState<string | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
   const [replacingId, setReplacingId] = useState<string | null>(null);
+  const [handoverId, setHandoverId] = useState<string | null>(null);
   const [filters, setFilters] = useState<QrFilters>(EMPTY_QR_FILTERS);
   const dq = useDebounced(filters.q);
 
@@ -339,8 +368,8 @@ export default function StickerOrdersPage() {
   // returns and refunds, so this stays the one place to see an order's full
   // lifecycle. Never-paid / failed attempts still live in Registrations only.
   const { data, isLoading } = useQuery<{ items: OrderRow[] }>({
-    queryKey: ['admin-qr-orders', status, dq, filters.vehicleType, filters.state, filters.city],
-    queryFn: async () => (await api.get('/admin/qr/orders', { params: { status: status || undefined, paymentStatus: 'PAID,REFUNDED', ...qrFilterParams({ ...filters, q: dq }, 'q') } })).data,
+    queryKey: ['admin-qr-orders', status, orderType, dq, filters.vehicleType, filters.state, filters.city],
+    queryFn: async () => (await api.get('/admin/qr/orders', { params: { status: status || undefined, paymentStatus: 'PAID,REFUNDED', channel: orderType || undefined, ...qrFilterParams({ ...filters, q: dq }, 'q') } })).data,
   });
   const items = data?.items ?? [];
 
@@ -368,10 +397,24 @@ export default function StickerOrdersPage() {
             <Link to="/registrations" className="font-semibold text-brand-600 hover:underline">Registrations</Link> for pending or failed requests.
           </p>
         </div>
+        <Link to="/sticker-orders/new" className="btn-primary ml-auto gap-1.5">
+          <Plus className="h-4 w-4" /> New order
+        </Link>
       </div>
+
+      {createdOrderId && (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Order created. It is confirmed and ready to dispatch below.
+          <button type="button" onClick={() => navigate('.', { replace: true, state: null })} className="ml-auto rounded p-1 hover:bg-emerald-100 dark:hover:bg-emerald-500/20" aria-label="Dismiss">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
       <QrFilterBar value={filters} onChange={setFilters} />
+      <OrderTypeSelect value={orderType} onChange={setOrderType} />
       <select value={status} onChange={(e) => setStatus(e.target.value)} className="input h-9 w-56 py-0">
         <option value="">All statuses</option>
         {(['CONFIRMED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'RETURNED', 'CANCELLED'] as QrOrderStatus[]).map((s) => (
@@ -396,12 +439,15 @@ export default function StickerOrdersPage() {
                 return (
                   <Fragment key={o.id}>
                     <tr onClick={() => setExpanded(isOpen ? null : o.id)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                      <td className="font-mono font-semibold">{o.plate ?? '—'}</td>
+                      <td className="font-mono font-semibold">{o.plate ?? '-'}</td>
                       <td><VehicleTypeBadge type={o.vehicleType} /></td>
                       <td>
                         <p className="font-medium">{o.ownerName}</p>
+                        <OrderSourceBadge source={o.source} channel={o.channel} />
                         <p className="text-xs text-slate-400">{o.ownerEmail}</p>
-                        <a href={`tel:${o.shippingPhone}`} onClick={(e) => e.stopPropagation()} className="text-xs text-brand-600 hover:underline">{o.shippingPhone}</a>
+                        {o.ownerPhone
+                          ? <p className="text-xs text-slate-500">Account: <a href={`tel:${o.ownerPhone}`} onClick={(e) => e.stopPropagation()} className="text-brand-600 hover:underline">{o.ownerPhone}</a></p>
+                          : <p className="text-xs text-slate-400">No account mobile</p>}
                       </td>
                       <td>
                         {o.monthlyPricePaise > 0
@@ -409,7 +455,7 @@ export default function StickerOrdersPage() {
                           : `₹${(o.stickerPricePaise / 100).toFixed(0)} one-time`}
                       </td>
                       <td>
-                        <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(o.paymentStatus))}>{o.paymentStatus}</span>
+                        <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(o.paymentStatus))}>{paymentLabel(o.paymentStatus, o.paymentMode)}</span>
                         {o.paymentRef && <span className="block text-[11px] text-slate-400">{o.paymentRef}</span>}
                       </td>
                       <td>
@@ -452,17 +498,20 @@ export default function StickerOrdersPage() {
                           onEditShipping={() => setShippingId(o.id)}
                           onEditCustomer={() => setEditingVehicle(o.registrationId)}
                           onReplacement={() => setReplacingId(o.id)}
+                          onHandover={() => setHandoverId(o.id)}
                         />
                       </td>
                     </tr>
                     {isOpen && (
                       <tr className="bg-slate-50 dark:bg-slate-800/30">
                         <td colSpan={9} className="px-3 py-3 text-sm">
-                          <p className="font-semibold">{o.shippingName} · {o.shippingPhone}</p>
-                          <p className="text-slate-500 dark:text-slate-400">{o.addressLine}, {o.city}, {o.state} — {o.pincode}</p>
+                          <div className="mb-3"><OrderPhones accountPhone={o.ownerPhone} scanPhone={o.scanPhone ?? null} deliveryPhone={o.shippingPhone} deliveryName={o.shippingName} /></div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Deliver to</p>
+                          <p className="font-semibold">{o.shippingName}</p>
+                          <p className="text-slate-500 dark:text-slate-400">{o.addressLine}, {o.city}, {o.state}, {o.pincode}</p>
                           {o.note && <p className="mt-1 text-xs text-slate-400">Note: {o.note}</p>}
                           <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
-                            <StickerQrPanel orderId={o.id} token={o.stickerToken} url={o.stickerUrl} plate={o.plate} />
+                            <StickerQrPanel orderId={o.id} token={o.stickerToken} url={o.stickerUrl} plate={o.plate} batch={o.stickerBatch} />
                           </div>
                           <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700"><EmergencyBlock info={o.emergency} /></div>
                           <OrderTimeline orderId={o.id} />
@@ -483,6 +532,10 @@ export default function StickerOrdersPage() {
       {refundingId && (() => {
         const order = items.find((i) => i.id === refundingId);
         return order ? <RefundModal order={order} onClose={() => setRefundingId(null)} onDone={refresh} /> : null;
+      })()}
+      {handoverId && (() => {
+        const order = items.find((i) => i.id === handoverId);
+        return order ? <HandoverModal orderId={order.id} defaultReceiver={order.shippingName} onClose={() => setHandoverId(null)} onDone={refresh} /> : null;
       })()}
       {replacingId && (() => {
         const order = items.find((i) => i.id === replacingId);

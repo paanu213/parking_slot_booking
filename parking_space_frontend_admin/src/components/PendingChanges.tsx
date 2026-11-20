@@ -71,7 +71,7 @@ export const PendingChanges = ({ space, requestedBy }: { space: any; requestedBy
           <ChangeTable
             key={i}
             rows={rows}
-            title={multiple ? `Change request #${i + 1}` : 'Requested changes — review before approving'}
+            title={multiple ? `Change request #${i + 1}` : 'Requested changes, review before approving'}
             submittedAt={req.submittedAt || space.updatedAt}
             footerNote={
               i === requests.length - 1

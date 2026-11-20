@@ -6,6 +6,7 @@ import { prisma } from '../../lib/prisma.js';
 import { BadRequest, NotFound } from '../../lib/http.js';
 import { decryptField } from '../../lib/crypto.js';
 import type { UpdateProfileInput } from './customer.schema.js';
+import { recordDetailChanges } from '../../lib/detailsChangeLog.js';
 
 export const getProfile = async (userId: string) => {
   const user = await prisma.user.findUnique({
@@ -29,6 +30,14 @@ export const updateProfile = async (userId: string, input: UpdateProfileInput) =
       throw BadRequest('Another account already uses that phone number');
     }
   }
+  const before = await prisma.user.findUnique({ where: { id: userId }, select: { fullName: true, phone: true } });
+  await recordDetailChanges({
+    actorId: userId, entity: 'User', entityId: userId,
+    changes: [
+      ...(fullName !== undefined ? [{ field: 'accountName', label: 'Account name', from: before?.fullName ?? null, to: fullName }] : []),
+      ...(phone !== undefined ? [{ field: 'accountPhone', label: 'Account mobile', from: before?.phone ?? null, to: phone || null }] : []),
+    ],
+  });
   return prisma.user.update({
     where: { id: userId },
     data: {

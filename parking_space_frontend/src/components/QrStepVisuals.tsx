@@ -1,5 +1,5 @@
 import { Lock, Phone, PhoneOff, ShieldCheck } from 'lucide-react';
-import { QR_STICKER_PRICE } from '@/lib/config';
+import { useQrPrice } from '@/hooks/useQrPrice';
 
 /*
  * Picture-style visuals for the four "how it works" steps on the QR Calling
@@ -52,7 +52,9 @@ const PhoneFrame = ({ children }: { children: React.ReactNode }) => (
 );
 
 /** Step 1 — ordering the sticker on the phone. */
-export const OrderVisual = () => (
+export const OrderVisual = () => {
+  const price = useQrPrice();
+  return (
   <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-emerald-100 via-emerald-50 to-white">
     <PhoneFrame>
       <div className="flex h-full flex-col bg-white px-2.5 pb-3 pt-5 text-slate-900">
@@ -66,16 +68,17 @@ export const OrderVisual = () => (
           </div>
         </div>
         <div className="mt-2 flex items-center justify-between text-[9px]">
-          <span className="text-slate-500">One-time · Lifetime</span>
-          <span className="font-extrabold">₹{QR_STICKER_PRICE}</span>
+          <span className="text-slate-500">Pack of 2 · 10 years</span>
+          <span className="font-extrabold">₹{price}</span>
         </div>
         <div className="mt-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-green-500 py-1.5 text-center text-[10px] font-bold text-white shadow">
-          Pay ₹{QR_STICKER_PRICE}
+          Pay ₹{price}
         </div>
       </div>
     </PhoneFrame>
   </div>
 );
+};
 
 /** Step 2 — the sticker on the car (close crop of the product photo). */
 export const StickVisual = () => (
@@ -123,4 +126,82 @@ export const CallVisual = () => (
       </div>
     </PhoneFrame>
   </div>
+);
+
+/** One printed sticker, as it ships — used by the product gallery. */
+export const StickerCard = ({ label, className }: { label?: string; className?: string }) => (
+  <div className={`relative rounded-xl bg-white p-2.5 text-slate-900 shadow-xl ring-1 ring-slate-200 ${className ?? ''}`}>
+    <div className="flex items-center justify-center gap-1">
+      <span className="h-2 w-2 rounded-full bg-amber-400" />
+      <p className="text-[10px] font-extrabold italic tracking-wide">
+        <span className="text-amber-500">AUTO</span> <span className="text-emerald-600">SAHAY</span>
+      </p>
+    </div>
+    <FakeQr className="mx-auto mt-1.5 w-full text-slate-900" />
+    <p className="mt-1.5 text-center text-[10px] font-bold">Scan to call owner</p>
+    <p className="text-center text-[8px] text-slate-500">Your number stays private</p>
+    {label && (
+      <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow">
+        {label}
+      </span>
+    )}
+  </div>
+);
+
+/** Gallery slide — what's in the pack: 2 identical stickers. */
+export const PackOfTwoVisual = () => (
+  <div className="relative flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-emerald-100 px-6">
+    <div className="flex items-end gap-4">
+      <StickerCard label="Front" className="w-[38%] min-w-[110px] -rotate-6" />
+      <StickerCard label="Back" className="w-[38%] min-w-[110px] rotate-6" />
+    </div>
+    <p className="mt-6 text-center text-sm font-bold text-slate-800">2 identical QR stickers in every order</p>
+    <p className="text-center text-xs text-slate-500">Same QR on both, stick one on the front, one on the back</p>
+  </div>
+);
+
+/** Gallery slide — where the two stickers go on a car (side-view illustration). */
+export const FrontBackVisual = () => (
+  <div className="relative flex h-full w-full flex-col items-center justify-center bg-gradient-to-b from-sky-50 to-white px-4">
+    <svg viewBox="0 0 400 170" className="w-full max-w-md" aria-hidden>
+      {/* road */}
+      <rect x="0" y="150" width="400" height="6" rx="3" fill="#cbd5e1" />
+      {/* body */}
+      <path d="M30 120 Q30 95 55 92 L110 88 L150 52 Q160 44 175 44 L265 44 Q282 44 292 54 L325 88 L360 94 Q378 98 378 118 L378 128 Q378 134 372 134 L36 134 Q30 134 30 128 Z" fill="#ffffff" stroke="#0f172a" strokeWidth="3" />
+      {/* windows */}
+      <path d="M122 88 L156 58 Q162 52 172 52 L212 52 L212 88 Z" fill="#bae6fd" stroke="#0f172a" strokeWidth="2" />
+      <path d="M220 52 L262 52 Q274 52 282 60 L310 88 L220 88 Z" fill="#bae6fd" stroke="#0f172a" strokeWidth="2" />
+      {/* lights */}
+      <rect x="32" y="104" width="14" height="8" rx="3" fill="#fde68a" />
+      <rect x="362" y="104" width="14" height="8" rx="3" fill="#f87171" />
+      {/* wheels */}
+      <circle cx="105" cy="136" r="20" fill="#0f172a" /><circle cx="105" cy="136" r="8" fill="#94a3b8" />
+      <circle cx="300" cy="136" r="20" fill="#0f172a" /><circle cx="300" cy="136" r="8" fill="#94a3b8" />
+      {/* sticker spots: front windshield + rear window */}
+      <rect x="134" y="66" width="18" height="18" rx="3" fill="#10b981" stroke="#fff" strokeWidth="2" />
+      <rect x="282" y="66" width="18" height="18" rx="3" fill="#10b981" stroke="#fff" strokeWidth="2" />
+    </svg>
+    <div className="mt-4 grid w-full max-w-md grid-cols-2 gap-3 text-center">
+      <div className="rounded-xl bg-white p-3 shadow ring-1 ring-slate-200">
+        <p className="text-xs font-bold uppercase tracking-wide text-emerald-600">Front</p>
+        <p className="text-xs text-slate-600">Windshield corner, seen when someone faces your car</p>
+      </div>
+      <div className="rounded-xl bg-white p-3 shadow ring-1 ring-slate-200">
+        <p className="text-xs font-bold uppercase tracking-wide text-emerald-600">Back</p>
+        <p className="text-xs text-slate-600">Rear window or bumper, seen from behind</p>
+      </div>
+    </div>
+    <p className="mt-3 text-[11px] text-slate-400">On a bike: one on the front visor, one at the back.</p>
+  </div>
+);
+
+/** Gallery slide — the real product photo, full frame. */
+export const ProductPhotoVisual = () => (
+  <img
+    src="/images/qr-hero-scan@2x.jpg"
+    alt="Someone scanning an AutoSahay QR sticker on a car to call the owner"
+    className="h-full w-full object-cover object-[70%_center]"
+    loading="eager"
+    fetchPriority="high"
+  />
 );

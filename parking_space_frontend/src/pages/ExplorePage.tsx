@@ -83,7 +83,7 @@ const HIGHLIGHTS = [
 ];
 
 const STEPS = [
-  { icon: Search, title: 'Search', desc: 'Tell us where and when — we find nearby verified spots.' },
+  { icon: Search, title: 'Search', desc: 'Tell us where and when, we find nearby verified spots.' },
   { icon: Calendar, title: 'Reserve', desc: 'Pick a slot, lock in the price, pay securely.' },
   { icon: Car, title: 'Park & go', desc: 'Show the QR at entry. We handle the rest.' },
 ];
@@ -98,7 +98,7 @@ const TESTIMONIALS = [
   {
     name: 'Vikram S.',
     role: 'Weekender · Banjara Hills',
-    body: 'Grabbed a monthly pass at GVK One — covered, valet, and cheaper than the mall rate. Brilliant.',
+    body: 'Grabbed a monthly pass at GVK One, covered, valet, and cheaper than the mall rate. Brilliant.',
     rating: 5,
   },
   {
@@ -112,7 +112,7 @@ const TESTIMONIALS = [
 const FAQS = [
   {
     q: 'Do I need to pay upfront?',
-    a: 'Yes — reservations are confirmed the moment your payment clears. This guarantees the slot is held for you and keeps prices predictable.',
+    a: 'Yes, reservations are confirmed the moment your payment clears. This guarantees the slot is held for you and keeps prices predictable.',
   },
   {
     q: 'Can I cancel or reschedule?',
@@ -124,7 +124,7 @@ const FAQS = [
   },
   {
     q: 'What if the space is full when I arrive?',
-    a: "That simply doesn't happen on reserved slots — but if it ever does, we refund 100% and help find you another space.",
+    a: "That simply doesn't happen on reserved slots, but if it ever does, we refund 100% and help find you another space.",
   },
 ];
 
@@ -536,7 +536,7 @@ export const ExplorePage = () => {
               </span>
               <div>
                 <h2 className="font-display text-2xl font-bold sm:text-3xl">
-                  Your car's other needs — covered soon
+                  Your car's other needs, covered soon
                 </h2>
                 <p className="mt-2 max-w-md text-sm text-white/80 sm:text-base">
                   We're expanding beyond parking into a trusted network of on-demand auto

@@ -15,13 +15,13 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmtDate = (d?: string | null) =>
-  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
 
 const fmtDateTime = (d?: string | null) =>
   d ? new Date(d).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
-  }) : '—';
+  }) : '-';
 
 const STATUS_CLS: Record<string, string> = {
   CONFIRMED:       'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
@@ -171,8 +171,8 @@ export const CustomerDetailsPage = () => {
     (b) => b.status !== 'CANCELLED' && getTense(b.startAt, b.endAt) === 'ACTIVE',
   ).length;
 
-  const displayName  = c.fullName ?? c.name ?? fallbackName ?? '—';
-  const displayPhone = c.phone ?? '—';
+  const displayName  = c.fullName ?? c.name ?? fallbackName ?? '-';
+  const displayPhone = c.phone ?? '-';
 
   return (
     <section className="space-y-5 p-6">
@@ -254,7 +254,7 @@ export const CustomerDetailsPage = () => {
             {kind === 'registered' && (
               <DetailRow icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={
                 <span className="inline-flex items-center gap-1.5">
-                  {c.email ?? '—'}
+                  {c.email ?? '-'}
                   {c.emailVerified
                     ? <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
                         <CheckCircle2 className="h-2.5 w-2.5" /> Verified
@@ -410,14 +410,14 @@ export const CustomerDetailsPage = () => {
                         )}
                       </td>
                       <td className="text-sm">
-                        <p className="font-medium">{b.slot?.location?.name ?? '—'}</p>
+                        <p className="font-medium">{b.slot?.location?.name ?? '-'}</p>
                         <p className="text-xs text-slate-400">
                           <span className="font-mono">{b.slot?.code}</span>
                           {b.slot?.location?.city && <> · {b.slot.location.city}</>}
                         </p>
                       </td>
                       <td className="text-sm text-slate-500">
-                        {b.slot?.location?.vendor?.businessName ?? '—'}
+                        {b.slot?.location?.vendor?.businessName ?? '-'}
                       </td>
                       <td className="text-xs text-slate-500 whitespace-nowrap">{fmtDateTime(b.startAt)}</td>
                       <td className="text-xs text-slate-500 whitespace-nowrap">{fmtDateTime(b.endAt)}</td>

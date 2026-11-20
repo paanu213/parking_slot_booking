@@ -120,16 +120,16 @@ if (env.NODE_ENV === 'production') {
   if (!env.COOKIE_SECURE) problems.push('COOKIE_SECURE must be true in production (cookies sent over HTTPS only)');
   if (corsOrigins.length === 0) problems.push('CORS_ORIGINS must list at least one allowed origin in production');
   if (/replace_with|change.?me|example|secret_minimum/i.test(env.JWT_ACCESS_SECRET)) {
-    problems.push('JWT_ACCESS_SECRET still looks like a placeholder — set a real random secret (openssl rand -hex 32)');
+    problems.push('JWT_ACCESS_SECRET still looks like a placeholder. Set a real random secret (openssl rand -hex 32)');
   }
   if (/replace_with|change.?me|example|secret_32_chars/i.test(env.JWT_REFRESH_SECRET)) {
-    problems.push('JWT_REFRESH_SECRET still looks like a placeholder — set a real random secret (openssl rand -hex 32)');
+    problems.push('JWT_REFRESH_SECRET still looks like a placeholder. Set a real random secret (openssl rand -hex 32)');
   }
   if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
     problems.push('JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different values');
   }
   if (/^0{64}$|^1{64}$|replace_with|change.?me|example/i.test(env.QR_DATA_KEY)) {
-    problems.push('QR_DATA_KEY still looks like a placeholder — set a real random key (openssl rand -hex 32)');
+    problems.push('QR_DATA_KEY still looks like a placeholder. Set a real random key (openssl rand -hex 32)');
   }
   // Razorpay: all three required in production — there's no fallback gateway,
   // so a missing/partial config means every payment endpoint 500s at request
@@ -137,7 +137,7 @@ if (env.NODE_ENV === 'production') {
   const rzpVars = [env.RAZORPAY_KEY_ID, env.RAZORPAY_KEY_SECRET, env.RAZORPAY_WEBHOOK_SECRET];
   const rzpSetCount = rzpVars.filter(Boolean).length;
   if (rzpSetCount < 3) {
-    problems.push('RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET must all be set — there is no demo/fallback gateway');
+    problems.push('RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET must all be set, there is no demo/fallback gateway');
   }
   // Exotel: only required if it's actually the selected call provider — the
   // mock provider stays valid in production for as long as no real vendor is wired up.
@@ -148,7 +148,7 @@ if (env.NODE_ENV === 'production') {
     }
   }
   if (problems.length > 0) {
-    console.error('Refusing to start — production environment is misconfigured:');
+    console.error('Refusing to start, production environment is misconfigured:');
     for (const p of problems) console.error(`  • ${p}`);
     process.exit(1);
   }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
   AlertTriangle, ArrowRight, Car, CheckCircle2, ChevronDown, Fingerprint, Lock, Gift, Home, IndianRupee, Loader2, LogIn,
@@ -12,53 +12,16 @@ import { Footer } from '@/components/Footer';
 import { cn } from '@/lib/cn';
 import { phoneInputProps, phoneRules } from '@/lib/phone';
 import { VehicleTypePicker, vehicleKindLabel, type VehicleKind } from '@/components/VehicleTypePicker';
-import { OrderVisual, StickVisual, ScanVisual, CallVisual } from '@/components/QrStepVisuals';
-import { API_URL, QR_STICKER_PRICE } from '@/lib/config';
+import { API_URL } from '@/lib/config';
+import { useQrPrice } from '@/hooks/useQrPrice';
 import { friendlyPaymentError, useQrPaymentCheckout } from '@/hooks/useQrPaymentCheckout';
 
-const FIRST_PAYMENT = QR_STICKER_PRICE; // one-time, lifetime — no recurring charge
-
-// Each step is shown as a picture (see components/QrStepVisuals) rather than an icon.
-const STEPS = [
-  { visual: OrderVisual, title: 'Get your sticker', desc: `Order it here for ₹${QR_STICKER_PRICE}, one time — one unique sticker per vehicle, yours for life.` },
-  { visual: StickVisual, title: 'Stick it on your vehicle', desc: 'Windshield, window or bumper — wherever it\'s easy to spot.' },
-  { visual: ScanVisual, title: 'Anyone can scan it', desc: 'They scan and enter the last 4 digits from your number plate, no app needed.' },
-  { visual: CallVisual, title: 'You get a masked call', desc: 'Your real number stays private. In an emergency, an opt-in ICE card can be shown too.' },
-];
-
-const FAQS = [
-  {
-    q: 'What is the AutoSahay QR Sticker?',
-    a: 'It is a QR sticker placed on your vehicle that allows others to contact you when there is an issue with your vehicle.',
-  },
-  {
-    q: 'When can someone scan the QR code?',
-    a: 'For situations such as your vehicle blocking another vehicle, lights being left on, windows being open, or other vehicle-related concerns.',
-  },
-  {
-    q: 'Will my mobile number be visible to others?',
-    a: 'No. Your mobile number can remain private while allowing others to contact you through AutoSahay.',
-  },
-  {
-    q: 'Can I edit or add an emergency contact number?',
-    a: 'Yes. You can add or update your emergency contact details whenever required through your AutoSahay account.',
-  },
-];
-
-const FEATURES = [
-  'Your phone number is never shown, every call is masked',
-  'Optional emergency (ICE) card: blood group, notes, family contacts',
-  'Silent hours + a daily call cap, fully in your control',
-  'Block a nuisance caller with one tap',
-];
 
 interface OrderForm {
   vehicleType: VehicleKind;
   plateNumber: string;
   contactPhone: string;
   ownerName: string;
-  shippingName: string;
-  shippingPhone: string;
   pincode: string;
   city: string;
   state: string;
@@ -117,58 +80,9 @@ const OrderStepper = ({ current }: { current: typeof ORDER_STEPS[number]['key'] 
   );
 };
 
-const HERO_STEPS = [
-  { icon: QrCode, label: 'Order your sticker' },
-  { icon: Car, label: 'Stick it on your vehicle' },
-  { icon: ScanLine, label: 'Someone scans it' },
-  { icon: PhoneCall, label: 'You get a masked call' },
-];
-
-/** Hero copy + call to action — shared by the mobile and desktop hero layouts. */
-const HeroIntro = () => (
-  <div>
-    <span aria-hidden className="block h-1 w-14 rounded-full bg-emerald-400" />
-    <span className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-300 ring-1 ring-white/15">
-      <QrCode className="h-3.5 w-3.5" /> QR Calling
-    </span>
-    <h1 className="mt-4 font-display text-[2rem] font-extrabold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl">
-      Let people reach you, <span className="text-emerald-400">without seeing your number.</span>
-    </h1>
-    <p className="mt-4 max-w-md text-[15px] leading-relaxed text-slate-300 sm:text-base">
-      Stick it on your car or bike. Anyone who needs you — a wrongly parked car, an accident, or
-      an emergency — scans it, enters the last 4 of your plate, and gets a masked call straight to you.
-    </p>
-    <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2">
-      <a href="#order" className="btn btn-qr gap-2 px-6 py-3 text-[15px]">
-        Get your QR sticker — ₹{QR_STICKER_PRICE} <ArrowRight className="h-4 w-4" />
-      </a>
-      <span className="text-xs text-slate-400">One-time · Lifetime validity</span>
-    </div>
-  </div>
-);
-
-/** The four steps as a numbered icon strip — the visual "how it works" inside the hero. */
-const HeroSteps = ({ compact }: { compact?: boolean }) => (
-  <ol className="grid grid-cols-4 gap-2">
-    {HERO_STEPS.map(({ icon: Icon, label }, i) => (
-      <li key={label} className="relative flex flex-col items-center text-center">
-        {i < HERO_STEPS.length - 1 && (
-          <span aria-hidden className="absolute left-[calc(50%+1.75rem)] right-[calc(-50%+1.75rem)] top-6 border-t-2 border-dashed border-emerald-400/50" />
-        )}
-        <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-green-700 shadow-lg ring-2 ring-emerald-300/40">
-          <Icon className="h-5 w-5" />
-          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-extrabold text-emerald-700">
-            {i + 1}
-          </span>
-        </span>
-        <p className={cn('mt-2 font-semibold leading-tight text-white', compact ? 'text-[11px]' : 'text-xs')}>{label}</p>
-      </li>
-    ))}
-  </ol>
-);
-
 /**
- * "Get your QR sticker" landing page + order wizard:
+ * QR sticker order page (/qr-calling/order) — reached from "Buy now" on the
+ * product page (QrProductPage, /qr-calling). Order wizard:
  *   sign in (Google) → details → preview & edit → pay (Razorpay — see
  * useQrPaymentCheckout) → confirmation. A failed/cancelled payment never
  * loses the form: it stays on this step with everything filled in and a
@@ -176,7 +90,13 @@ const HeroSteps = ({ compact }: { compact?: boolean }) => (
  */
 export const QrCallingLandingPage = () => {
   const { user, hydrated } = useAuth();
+  // Current admin-set price for the pack of 2 (one-time, valid 10 years). The
+  // backend snapshots the price onto the order, which is what gets charged.
+  const price = useQrPrice();
   const [step, setStep] = useState<'details' | 'preview' | 'done'>('details');
+  // Car/Bike picked on the product page arrives as ?vehicle=CAR|BIKE.
+  const [searchParams] = useSearchParams();
+  const initialVehicle: VehicleKind = searchParams.get('vehicle') === 'BIKE' ? 'BIKE' : 'CAR';
 
   const {
     register,
@@ -185,7 +105,7 @@ export const QrCallingLandingPage = () => {
     setValue,
     watch,
     formState: { errors },
-  } = useForm<OrderForm>({ defaultValues: { vehicleType: 'CAR' } });
+  } = useForm<OrderForm>({ defaultValues: { vehicleType: initialVehicle } });
   const vehicleType = watch('vehicleType');
 
   // Pincode → city/state/area auto-fill (same backend proxy the vendor
@@ -222,22 +142,6 @@ export const QrCallingLandingPage = () => {
       });
   }, [pincode, setValue]);
 
-  // "Same as above" — mirrors the car-owner name/number into the shipping
-  // fields instead of making the user type them twice. Phone always has a
-  // value up here (required); name is optional, so only lock the shipping
-  // name field once there's actually something to mirror into it.
-  const [sameAsAbove, setSameAsAbove] = useState(false);
-  const ownerNameForShipping = watch('ownerName');
-  const contactPhoneForShipping = watch('contactPhone');
-
-  useEffect(() => {
-    if (!sameAsAbove) return;
-    setValue('shippingPhone', contactPhoneForShipping ?? '', { shouldValidate: true, shouldDirty: true });
-    if ((ownerNameForShipping ?? '').trim()) {
-      setValue('shippingName', ownerNameForShipping ?? '', { shouldValidate: true, shouldDirty: true });
-    }
-  }, [sameAsAbove, ownerNameForShipping, contactPhoneForShipping, setValue]);
-
   // Payment — checkout is re-entrant: qrOrderId (once the order exists) and
   // paymentError persist across a failed/cancelled attempt so "Try again"
   // just reopens checkout, with every typed field still intact. Only the
@@ -261,8 +165,7 @@ export const QrCallingLandingPage = () => {
             contactPhone: v2.contactPhone.trim(),
             ownerName:    v2.ownerName.trim() || undefined,
           },
-          shippingName:  v2.shippingName.trim(),
-          shippingPhone: v2.shippingPhone.trim(),
+          // One contact per order: the name and contact number above are used for delivery.
           // Street + locality collapse into one line — the backend stores a single addressLine.
           addressLine:   [v2.addressLine.trim(), v2.area?.trim()].filter(Boolean).join(', '),
           city:          v2.city.trim(),
@@ -275,7 +178,7 @@ export const QrCallingLandingPage = () => {
       }
 
       const v2 = getValues();
-      await startCheckout(orderId, { name: v2.shippingName, contact: v2.shippingPhone, email: user?.email });
+      await startCheckout(orderId, { name: v2.ownerName.trim(), contact: v2.contactPhone.trim(), email: user?.email });
     } catch (e) {
       setPaymentError(friendlyPaymentError(e));
     } finally {
@@ -284,78 +187,27 @@ export const QrCallingLandingPage = () => {
   };
 
   const v = getValues();
-  const fullAddress = [v.addressLine, v.area, v.city, v.state].filter(Boolean).join(', ') + (v.pincode ? ` — ${v.pincode}` : '');
+  const fullAddress = [v.addressLine, v.area, v.city, v.state].filter(Boolean).join(', ') + (v.pincode ? `, ${v.pincode}` : '');
 
   return (
     <>
       <main>
-        {/* HERO — dark poster with the product photo; the 4 steps are part of the visual.
-            Mobile and desktop are separate layouts (only one is displayed). */}
-        <section className="relative isolate overflow-hidden bg-slate-950 text-white">
-          {/* ── Mobile ─────────────────────────────────────────────── */}
-          <div className="relative md:hidden">
-            <div aria-hidden className="absolute inset-0 -z-10">
-              <img
-                src="/images/qr-hero-scan.jpg"
-                alt=""
-                className="absolute inset-0 h-full w-full scale-110 object-cover object-[30%_center] blur-md brightness-[0.45]"
-                loading="eager"
-              />
-              <div className="absolute inset-x-0 bottom-0 aspect-[3/4] [-webkit-mask-image:linear-gradient(to_bottom,transparent,black_45%)] [mask-image:linear-gradient(to_bottom,transparent,black_45%)]">
-                <img
-                  src="/images/qr-hero-scan.jpg"
-                  srcSet="/images/qr-hero-scan.jpg 900w, /images/qr-hero-scan@2x.jpg 1400w"
-                  sizes="200vw"
-                  alt=""
-                  className="h-full w-full object-cover object-[88%_center]"
-                  loading="eager"
-                  fetchPriority="high"
-                />
-              </div>
-              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/45 to-transparent" />
-              <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-transparent via-45% to-slate-950" />
+        {/* Product summary — this page is the order form; the product page is /qr-calling */}
+        <section className="border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-950">
+          <div className="mx-auto flex max-w-5xl items-center gap-4">
+            <Link to="/qr-calling" className="hidden shrink-0 text-xs font-semibold text-slate-500 hover:text-brand-600 sm:block">
+              ← Back to product
+            </Link>
+            <img src="/images/qr-hero-scan.jpg" alt="" className="h-14 w-14 shrink-0 rounded-xl object-cover object-[70%_center] ring-1 ring-slate-200 dark:ring-slate-700" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-display text-sm font-bold sm:text-base">AutoSahay Smart QR Sticker, Pack of 2</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">2 identical stickers, front and back · Valid for 10 years</p>
             </div>
-
-            <div className="px-5 pb-7 pt-10">
-              <HeroIntro />
-              {/* Space for the photo — the phone scanning the sticker */}
-              <div aria-hidden className="h-40" />
-              <HeroSteps compact />
-            </div>
+            <p className="shrink-0 font-display text-lg font-extrabold">₹{price}</p>
           </div>
-
-          {/* ── Desktop ────────────────────────────────────────────── */}
-          <div className="mx-auto hidden max-w-6xl grid-cols-[1fr,1.1fr] items-center gap-12 px-4 py-16 md:grid lg:py-20">
-            <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 [background:radial-gradient(600px_400px_at_15%_10%,rgba(16,185,129,0.18),transparent_60%)]" />
-            <HeroIntro />
-
-            <div className="relative">
-              <div className="overflow-hidden rounded-3xl shadow-2xl shadow-black/50 ring-1 ring-white/10">
-                <img
-                  src="/images/qr-hero-scan.jpg"
-                  srcSet="/images/qr-hero-scan.jpg 900w, /images/qr-hero-scan@2x.jpg 1400w"
-                  sizes="(min-width: 1024px) 600px, 50vw"
-                  alt="Someone scanning an AutoSahay QR sticker on a car to call the owner"
-                  width={1400}
-                  height={933}
-                  className="aspect-[4/3] w-full object-cover object-[70%_center]"
-                  loading="eager"
-                  fetchPriority="high"
-                />
-              </div>
-              {/* Privacy badge */}
-              <div className="absolute -left-5 top-6 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-slate-900 shadow-xl">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                  <Lock className="h-4 w-4" />
-                </span>
-                <p className="text-xs font-bold leading-tight">Your number<br />stays private</p>
-              </div>
-              {/* The steps, on frosted glass over the photo */}
-              <div className="absolute inset-x-4 -bottom-8 rounded-2xl bg-slate-950/80 p-4 ring-1 ring-white/15 backdrop-blur-md">
-                <HeroSteps />
-              </div>
-            </div>
-          </div>
+          <Link to="/qr-calling" className="mx-auto mt-2 block max-w-5xl text-xs font-semibold text-slate-500 hover:text-brand-600 sm:hidden">
+            ← Back to product
+          </Link>
         </section>
 
                 {/* ORDER WIZARD */}
@@ -365,7 +217,7 @@ export const QrCallingLandingPage = () => {
               <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Get started</p>
               <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">Order your QR sticker</h2>
               <p className="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
-                Two minutes: sign in, add your car, review, and pay.
+                Two minutes: sign in, add your vehicle, review and pay. You'll get 2 identical stickers, front and back.
               </p>
             </div>
 
@@ -394,20 +246,19 @@ export const QrCallingLandingPage = () => {
                 <Line label="Vehicle" value={vehicleKindLabel(v.vehicleType)} />
                 <Line label="Number plate" value={v.plateNumber} />
                 <Line label="Contact number" value={v.contactPhone} />
-                {v.ownerName?.trim() && <Line label="Owner name" value={v.ownerName} />}
+                <Line label="Your name" value={v.ownerName} />
                 <div className="my-2 border-t border-slate-200 dark:border-slate-700" />
-                <Line label="Deliver to" value={v.shippingName} />
-                <Line label="Delivery phone" value={v.shippingPhone} />
+                <Line label="Deliver to" value={`${v.ownerName} · ${v.contactPhone}`} />
                 <Line label="Address" value={fullAddress} />
                 {v.note?.trim() && <Line label="Note" value={v.note} />}
               </dl>
 
               <div className="rounded-xl border-2 border-brand-100 bg-brand-50/40 p-4 text-sm dark:border-brand-500/20 dark:bg-brand-500/5">
-                <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">QR sticker — one-time, lifetime</span><span>₹{QR_STICKER_PRICE}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">QR stickers, pack of 2 (valid 10 years)</span><span>₹{price}</span></div>
                 <div className="mt-2 flex justify-between border-t border-brand-200 pt-2 font-semibold dark:border-brand-500/20">
-                  <span>Pay now</span><span>₹{FIRST_PAYMENT}</span>
+                  <span>Pay now</span><span>₹{price}</span>
                 </div>
-                <p className="mt-1 text-xs text-slate-400">One payment, no renewals — your QR sticker works for life.</p>
+                <p className="mt-1 text-xs text-slate-400">One payment, no renewals, your QR sticker works for life.</p>
               </div>
 
               {paymentError && (
@@ -416,7 +267,7 @@ export const QrCallingLandingPage = () => {
                   <div>
                     <p className="text-sm font-bold text-rose-700 dark:text-rose-300">Payment didn't go through</p>
                     <p className="mt-0.5 text-sm text-rose-600 dark:text-rose-300/90">{paymentError.message}</p>
-                    <p className="mt-1 text-xs text-rose-500 dark:text-rose-400">Nothing was lost — your details are right here. Try again whenever you're ready.</p>
+                    <p className="mt-1 text-xs text-rose-500 dark:text-rose-400">Nothing was lost, your details are right here. Try again whenever you're ready.</p>
                   </div>
                 </div>
               )}
@@ -434,7 +285,7 @@ export const QrCallingLandingPage = () => {
                 ) : (
                   <IndianRupee className="h-4 w-4" />
                 )}
-                {starting ? 'Starting payment…' : paymentError ? `Try again — Pay ₹${FIRST_PAYMENT}` : `Pay ₹${FIRST_PAYMENT}`}
+                {starting ? 'Starting payment…' : paymentError ? `Try again, Pay ₹${price}` : `Pay ₹${price}`}
               </button>
               <p className="text-center text-xs text-slate-500 dark:text-slate-400">
                 Dispatched in 1–2 business days, delivered in 3–7.{' '}
@@ -462,7 +313,7 @@ export const QrCallingLandingPage = () => {
                   </div>
                   <button
                     type="button"
-                    onClick={() => googleLogin('/qr-calling#order')}
+                    onClick={() => googleLogin('/qr-calling/order')}
                     className="btn-primary shrink-0 gap-2"
                   >
                     <LogIn className="h-4 w-4" /> Continue with Google
@@ -499,8 +350,13 @@ export const QrCallingLandingPage = () => {
                   {errors.contactPhone && <p className="mt-1 text-xs text-rose-600">{errors.contactPhone.message}</p>}
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Your name <span className="text-xs text-slate-400">(optional)</span></label>
-                  <input className="input mt-1 w-full" {...register('ownerName')} />
+                  <label className="text-sm font-medium">Your name</label>
+                  <input
+                    className={cn('input mt-1 w-full', errors.ownerName && 'border-rose-500')}
+                    {...register('ownerName', { required: 'Enter your name', validate: (v) => v.trim().length >= 2 || 'Enter your name' })}
+                  />
+                  {errors.ownerName ? <p className="mt-1 text-xs text-rose-600">{errors.ownerName.message}</p>
+                    : <p className="mt-1 text-xs text-slate-400">Your name and contact number are also used for delivery.</p>}
                 </div>
               </div>
 
@@ -509,42 +365,6 @@ export const QrCallingLandingPage = () => {
                   <Truck className="h-4 w-4" /> Shipping address
                 </h3>
 
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/50">
-                  <input
-                    type="checkbox"
-                    checked={sameAsAbove}
-                    onChange={(e) => setSameAsAbove(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                  />
-                  Same as above — use my name &amp; number for delivery
-                </label>
-
-                <div>
-                  <label className="text-sm font-medium">Recipient name</label>
-                  <input
-                    className={cn(
-                      'input mt-1 w-full',
-                      errors.shippingName && 'border-rose-500',
-                      sameAsAbove && !!ownerNameForShipping?.trim() && 'bg-slate-50 dark:bg-slate-800/60',
-                    )}
-                    disabled={sameAsAbove && !!ownerNameForShipping?.trim()}
-                    {...register('shippingName', { required: 'Required' })}
-                  />
-                  {sameAsAbove && !ownerNameForShipping?.trim() && (
-                    <p className="mt-1 text-xs text-slate-400">Add "Your name" above to auto-fill this, or type it here.</p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Phone for delivery</label>
-                  <input
-                    {...phoneInputProps}
-                    className={cn('input mt-1 w-full', errors.shippingPhone && 'border-rose-500', sameAsAbove && 'bg-slate-50 dark:bg-slate-800/60')}
-                    disabled={sameAsAbove}
-                    placeholder="10-digit mobile number"
-                    {...register('shippingPhone', phoneRules('Required'))}
-                  />
-                  {errors.shippingPhone && <p className="mt-1 text-xs text-rose-600">{errors.shippingPhone.message}</p>}
-                </div>
                 <div>
                   <label className="text-sm font-medium">Pincode</label>
                   <div className="relative mt-1">
@@ -569,10 +389,10 @@ export const QrCallingLandingPage = () => {
                     <p className="mt-1 text-xs text-rose-600">{errors.pincode.message}</p>
                   ) : pincodeState === 'error' ? (
                     <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                      Pincode not found — fill in the fields below manually.
+                      Pincode not found, fill in the fields below manually.
                     </p>
                   ) : pincodeState === 'idle' ? (
-                    <p className="mt-1 text-xs text-slate-400">Enter your pincode first — we'll fill in the rest.</p>
+                    <p className="mt-1 text-xs text-slate-400">Enter your pincode first, we'll fill in the rest.</p>
                   ) : null}
                 </div>
 
@@ -665,7 +485,7 @@ export const QrCallingLandingPage = () => {
               ) : (
                 <button
                   type="button"
-                  onClick={() => googleLogin('/qr-calling#order')}
+                  onClick={() => googleLogin('/qr-calling/order')}
                   className="btn-primary w-full justify-center gap-2"
                 >
                   <LogIn className="h-4 w-4" /> Sign in with Google to continue
@@ -681,112 +501,6 @@ export const QrCallingLandingPage = () => {
           )}
           </div>
         </section>
-
-        {/* HOW IT WORKS — one picture per step (photo crops + phone mock-ups) */}
-        <section id="how-it-works" className="bg-gradient-to-b from-white via-emerald-50/60 to-white py-16 dark:from-slate-950 dark:via-emerald-500/[0.05] dark:to-slate-950">
-          <div className="mx-auto mb-10 max-w-6xl px-4 text-center">
-            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">How it works</p>
-            <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">Four steps, done once</h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
-              Set it up in minutes. After that, anyone can reach you, and nobody sees your number.
-            </p>
-          </div>
-
-          {/* Mobile: swipeable row · tablet: 2×2 · desktop: 4 across */}
-          <ol className="mx-auto flex max-w-6xl snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-4 [scrollbar-width:none] sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-4 [&::-webkit-scrollbar]:hidden">
-            {STEPS.map(({ visual: Visual, title, desc }, i) => (
-              <li key={title} className="group w-[78%] shrink-0 snap-center sm:w-auto">
-                <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-slate-100 shadow-lg shadow-slate-900/10 ring-1 ring-slate-900/5 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-xl dark:bg-slate-800 dark:ring-white/10">
-                  <Visual />
-                  <span className="absolute left-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-green-600 text-sm font-extrabold text-white shadow-lg ring-2 ring-white">
-                    {i + 1}
-                  </span>
-                </div>
-                <h3 className="mt-4 font-display text-base font-bold">{title}</h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{desc}</p>
-              </li>
-            ))}
-          </ol>
-          <p className="mt-2 text-center text-xs text-slate-400 sm:hidden">Swipe to see all 4 steps →</p>
-        </section>
-
-        {/* FEATURES + ICE callout */}
-        <section className="mx-auto max-w-5xl px-4 pb-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="card p-6">
-              <div className="flex items-center gap-2">
-                <Fingerprint className="h-5 w-5 text-brand-600" />
-                <h3 className="font-display text-base font-semibold">Your number stays private</h3>
-              </div>
-              <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                {FEATURES.map((f) => (
-                  <li key={f} className="flex items-start gap-2">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" /> {f}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="card border-rose-200 p-6 dark:border-rose-900/40">
-              <div className="flex items-center gap-2">
-                <ShieldPlus className="h-5 w-5 text-rose-500" />
-                <h3 className="font-display text-base font-semibold">Optional emergency card</h3>
-              </div>
-              <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                Off by default. If you switch it on, a scanner can see your blood group, medical
-                notes, and family contacts, every field opt-in, shown only after they verify your
-                plate. Family numbers are direct <span className="font-mono text-xs">tel:</span> links,
-                so an ambulance or bystander can call instantly.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* PRICING */}
-        <section className="mx-auto max-w-2xl px-4 py-14">
-          <div className="mb-10 text-center">
-            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Pricing</p>
-            <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">Pay Once. Lifetime validity.</h2>
-          </div>
-          <div className="card mx-auto max-w-sm p-6 text-center">
-            <span className="mx-auto inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
-              <Gift className="h-3.5 w-3.5" /> One-time, lifetime
-            </span>
-            <p className="mt-3 font-display text-4xl font-bold">₹{QR_STICKER_PRICE}</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">No renewals, no monthly fee</p>
-            <ul className="mt-4 space-y-1.5 text-left text-sm text-slate-600 dark:text-slate-300">
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> QR sticker, shipped to your address</li>
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> Configure & Use</li>
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> Lifetime validity (no renewals)</li>
-            </ul>
-          </div>
-          <p className="mx-auto mt-4 max-w-xl text-center text-xs text-slate-400">
-            You'll review every detail before payment. Pay ₹{QR_STICKER_PRICE} once — that's it.
-          </p>
-        </section>
-
-        {/* FAQ — native <details> accordion: keyboard + screen-reader friendly, no state */}
-        <section id="faq" className="mx-auto max-w-3xl px-4 pb-16">
-          <div className="mb-8 text-center">
-            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">FAQ</p>
-            <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">Frequently Asked Questions</h2>
-          </div>
-          <div className="space-y-3">
-            {FAQS.map(({ q, a }, i) => (
-              <details
-                key={q}
-                open={i === 0}
-                className="card group p-0 [&_summary::-webkit-details-marker]:hidden"
-              >
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-left">
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">{q}</span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
-                </summary>
-                <p className="px-5 pb-4 text-sm text-slate-600 dark:text-slate-300">{a}</p>
-              </details>
-            ))}
-          </div>
-        </section>
-
 
       </main>
       <Footer variant="qr" />

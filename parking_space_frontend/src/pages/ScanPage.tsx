@@ -24,6 +24,7 @@ type StickerState =
   | { state: 'unclaimed' }
   | { state: 'disabled' }
   | { state: 'expired' }
+  | { state: 'inactive' }
   | { state: 'claimed'; plateMask: string; hasEmergency: boolean };
 
 type CallStatus =
@@ -48,12 +49,12 @@ const CALL_STATUS_LABEL: Record<CallStatus, string> = {
   RINGING_CALLER:  'Calling your number…',
   CALLER_ANSWERED: 'Connecting you to the owner…',
   RINGING_OWNER:   'Ringing the owner…',
-  BRIDGED:         'Connected — stay on the line',
+  BRIDGED:         'Connected, stay on the line',
   COMPLETED:       'Call ended',
   NO_ANSWER:       "Owner didn't answer",
   BUSY:            "Owner's line is busy",
   OWNER_REJECTED:  'Owner declined the call',
-  FAILED:          'Call failed — please try again',
+  FAILED:          'Call failed, please try again',
   BLOCKED:         'Unable to place this call',
   CANCELLED:       'Call cancelled',
 };
@@ -184,6 +185,15 @@ const StickerFlow = ({ token }: { token: string }) => {
     );
   }
 
+  if (data?.state === 'inactive') {
+    return (
+      <ErrorCard
+        title="This QR is paused"
+        body="The owner has paused calls for this vehicle. Please try again later."
+      />
+    );
+  }
+
   if (data?.state === 'unclaimed') return <ConfigureSticker token={token} />;
 
   return <VerifyLast4 token={token} plateMask={data!.plateMask} hasEmergency={data!.hasEmergency} />;
@@ -275,7 +285,7 @@ const ConfigureSticker = ({ token }: { token: string }) => {
         );
         setPrefilled(true);
       })
-      .catch(() => { /* no existing registration for this plate — fresh entry */ });
+      .catch(() => { /* no existing registration for this plate, fresh entry */ });
   }, [user, plateNumber, setValue]);
 
   const configure = useMutation({
@@ -333,8 +343,8 @@ const ConfigureSticker = ({ token }: { token: string }) => {
         <div>
           <p className="font-semibold text-slate-800 dark:text-slate-100">Sticker activated</p>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Anyone who scans it can now reach you with a masked call. Manage it — silent hours, an
-            emergency card, blocking a caller — from My Vehicles.
+            Anyone who scans it can now reach you with a masked call. Manage it, silent hours, an
+            emergency card, blocking a caller, from My Vehicles.
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-2">
@@ -357,7 +367,7 @@ const ConfigureSticker = ({ token }: { token: string }) => {
           <Confirm label="Contact number" value={v.contactPhone} />
           {v.ownerName.trim() && <Confirm label="Owner name" value={v.ownerName} />}
           {(v.silentFrom || v.silentTo) && (
-            <Confirm label="Silent hours" value={`${v.silentFrom || '—'} → ${v.silentTo || '—'}`} />
+            <Confirm label="Silent hours" value={`${v.silentFrom || '-'} → ${v.silentTo || '-'}`} />
           )}
           <Confirm label="Emergency card" value={v.emergencyPublic ? 'On' : 'Off'} />
           {v.emergencyPublic && v.bloodGroup && <Confirm label="Blood group" value={v.bloodGroup} />}
@@ -396,7 +406,7 @@ const ConfigureSticker = ({ token }: { token: string }) => {
 
       {prefilled && (
         <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
-          We found saved details for this plate — review and edit anything below, then continue.
+          We found saved details for this plate, review and edit anything below, then continue.
         </p>
       )}
 
@@ -459,7 +469,7 @@ const ConfigureSticker = ({ token }: { token: string }) => {
           </label>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Off by default. When on, a scanner who verifies your plate sees this — blood group,
+          Off by default. When on, a scanner who verifies your plate sees this, blood group,
           notes, and family contacts. Every field here is optional.
         </p>
 
@@ -627,7 +637,7 @@ const FoundResult = ({ result, onReset }: { result: LookupResult; onReset?: () =
         <span className="inline-block rounded-lg border-2 border-slate-800 bg-white px-3 py-1.5 font-mono text-base font-bold tracking-wider text-slate-900 dark:border-slate-300 dark:bg-slate-800 dark:text-slate-100">
           {result.confirm}
         </span>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Car found — choose an option below</p>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Car found. Choose an option below</p>
       </div>
 
       <div className="space-y-2">
@@ -657,7 +667,7 @@ const FoundResult = ({ result, onReset }: { result: LookupResult; onReset?: () =
         {revealEmergency.isError && (
           <p className="flex items-start gap-1.5 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            {(revealEmergency.error as any)?.message ?? 'Could not load the emergency card. The link may have expired — scan again.'}
+            {(revealEmergency.error as any)?.message ?? 'Could not load the emergency card. The link may have expired, scan again.'}
           </p>
         )}
       </div>
@@ -844,7 +854,7 @@ const CallPanel = ({ permit }: { permit: string }) => {
         className="space-y-2 rounded-xl border border-slate-200 p-3 dark:border-slate-700"
       >
         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-          Your mobile number — we'll call you first, then connect you to the owner
+          Your mobile number, we'll call you first, then connect you to the owner
         </label>
         <input
           autoFocus

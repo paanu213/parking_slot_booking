@@ -51,7 +51,7 @@ export const BookingsPage = () => {
     <main className="mx-auto max-w-4xl px-4 py-8">
       <header>
         <h1 className="font-display text-2xl font-bold">My bookings</h1>
-        <p className="mt-1 text-sm text-slate-500">Upcoming, past, and pending payments — all in one place.</p>
+        <p className="mt-1 text-sm text-slate-500">Upcoming, past, and pending payments, all in one place.</p>
       </header>
 
       <div className="mt-6 space-y-3">
@@ -80,10 +80,10 @@ const BookingRow = ({ b }: { b: Booking }) => (
     <div className="min-w-0">
       <div className="flex items-center gap-2">
         <MapPin className="h-4 w-4 text-slate-400" />
-        <span className="truncate font-semibold">{b.slot?.location?.name ?? '—'}</span>
+        <span className="truncate font-semibold">{b.slot?.location?.name ?? '-'}</span>
       </div>
       <div className="mt-1 text-xs text-slate-500">
-        Slot {b.slot?.code ?? '—'} ·{' '}
+        Slot {b.slot?.code ?? '-'} ·{' '}
         {new Date(b.startAt).toLocaleString()} → {new Date(b.endAt).toLocaleString()}
       </div>
       <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">

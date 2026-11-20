@@ -35,16 +35,16 @@ export const issuePermit = (registrationId: string, ttlSec = DEFAULT_TTL_SEC): s
 export const verifyPermit = (permit: string): string => {
   const [data, sig] = String(permit ?? '').split('.');
   if (!data || !sig || !signaturesMatch(hmacSign(data), sig)) {
-    throw BadRequest('Invalid or expired link — please scan again');
+    throw BadRequest('Invalid or expired link, please scan again');
   }
   let payload: PermitPayload;
   try {
     payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
   } catch {
-    throw BadRequest('Invalid or expired link — please scan again');
+    throw BadRequest('Invalid or expired link, please scan again');
   }
   if (typeof payload.rid !== 'string' || Date.now() > payload.exp) {
-    throw BadRequest('Invalid or expired link — please scan again');
+    throw BadRequest('Invalid or expired link, please scan again');
   }
   return payload.rid;
 };

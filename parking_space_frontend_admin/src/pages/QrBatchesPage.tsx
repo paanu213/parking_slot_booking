@@ -17,7 +17,7 @@ interface StickerRow {
   id: string; token: string; url: string;
   status: 'UNCLAIMED' | 'CLAIMED' | 'DISABLED';
   batchLabel: string; plate: string | null; ownerEmail: string | null;
-  claimedAt: string | null; createdAt: string;
+  claimedAt: string | null; disabledReason?: string | null; createdAt: string;
 }
 
 const STICKER_STATUS = ['UNCLAIMED', 'CLAIMED', 'DISABLED'] as const;
@@ -62,14 +62,17 @@ export default function QrBatchesPage() {
   });
 
   const unbind = useMutation({
-    mutationFn: (id: string) => api.post(`/admin/qr/stickers/${id}/unbind`),
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) => api.post(`/admin/qr/stickers/${id}/unbind`, { reason }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-qr-stickers'] }),
+    onError: (e) => alert(errMsg(e, 'Could not unbind this sticker')),
   });
 
   const toggleDisabled = useMutation({
-    mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) =>
-      api.patch(`/admin/qr/stickers/${id}/disable`, { disabled }),
+    mutationFn: ({ id, disabled, reason }: { id: string; disabled: boolean; reason?: string }) =>
+      api.patch(`/admin/qr/stickers/${id}/disable`, { disabled, reason }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-qr-stickers'] }),
+    // e.g. re-enabling a replaced code while the car already has a live one
+    onError: (e) => alert(errMsg(e, 'Could not change this sticker')),
   });
 
   const exportCsv = async (id: string, batchLabel: string) => {
@@ -166,7 +169,7 @@ export default function QrBatchesPage() {
                   <td className="text-xs">
                     {b.printedAt
                       ? <span className="text-emerald-600">{fmtDateTime(b.printedAt)}</span>
-                      : <span className="text-slate-400">—</span>}
+                      : <span className="text-slate-400">-</span>}
                   </td>
                   <td className="text-right">
                     <div className="flex justify-end gap-3">
@@ -239,19 +242,25 @@ export default function QrBatchesPage() {
                     <tr key={s.id}>
                       <td className="font-mono text-xs">{s.token}</td>
                       <td className="text-xs text-slate-500">{s.batchLabel}</td>
-                      <td><span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(s.status))}>{s.status}</span></td>
+                      <td>
+                        <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', statusCls(s.status))}>{s.status}</span>
+                        {s.status === 'DISABLED' && s.disabledReason && <span className="mt-0.5 block max-w-[220px] text-[11px] text-slate-400">{s.disabledReason}</span>}
+                      </td>
                       <td>
                         {s.plate
                           ? <><span className="font-mono">{s.plate}</span><span className="block text-xs text-slate-400">{s.ownerEmail}</span></>
-                          : <span className="text-slate-400">—</span>}
+                          : <span className="text-slate-400">-</span>}
                       </td>
-                      <td className="text-xs text-slate-400">{s.claimedAt ? fmtDateTime(s.claimedAt) : '—'}</td>
+                      <td className="text-xs text-slate-400">{s.claimedAt ? fmtDateTime(s.claimedAt) : '-'}</td>
                       <td className="text-right">
                         <div className="flex justify-end gap-3">
                           {s.status === 'CLAIMED' && (
                             <button
                               type="button"
-                              onClick={() => { if (confirm(`Unbind sticker ${s.token} from ${s.plate}? The physical sticker is untouched; it returns to unclaimed.`)) unbind.mutate(s.id); }}
+                              onClick={() => {
+                                const reason = prompt(`Unbind ${s.token} from ${s.plate}? Scans stop reaching this car until it's set up again (only by the customer of its order). Reason:`);
+                                if (reason !== null) unbind.mutate({ id: s.id, reason: reason.trim() || undefined });
+                              }}
                               disabled={unbind.isPending}
                               className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 hover:underline disabled:opacity-50"
                             >
@@ -260,7 +269,13 @@ export default function QrBatchesPage() {
                           )}
                           <button
                             type="button"
-                            onClick={() => toggleDisabled.mutate({ id: s.id, disabled: s.status !== 'DISABLED' })}
+                            onClick={() => {
+                              if (s.status === 'DISABLED') { toggleDisabled.mutate({ id: s.id, disabled: false }); return; }
+                              const reason = prompt(s.status === 'CLAIMED'
+                                ? `Disable ${s.token}? ${s.plate} stops answering scans of this code. Reason:`
+                                : `Disable ${s.token}? It can't be set up while disabled. Reason:`);
+                              if (reason !== null) toggleDisabled.mutate({ id: s.id, disabled: true, reason: reason.trim() || undefined });
+                            }}
                             disabled={toggleDisabled.isPending}
                             className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:underline disabled:opacity-50"
                           >
@@ -286,12 +301,34 @@ export default function QrBatchesPage() {
 const slug = (s: string) => s.replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/^-+|-+$/g, '');
 const PREVIEW_LIMIT = 120;
 
+type Usage = 'USED' | 'DISPATCHED' | 'UNUSED' | 'DISABLED';
+interface BatchToken {
+  token: string;
+  url: string;
+  usage: Usage;
+  linkedAt: string | null;
+  dispatchedAt: string | null;
+  customer: { name: string; email: string; mobile: string } | null;
+  vehicle: { plate: string; type: 'CAR' | 'BIKE' } | null;
+}
+
+const USAGE_META: Record<Usage, { label: string; cls: string }> = {
+  USED:       { label: 'Used',       cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  DISPATCHED: { label: 'Dispatched', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
+  UNUSED:     { label: 'Unused',     cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
+  DISABLED:   { label: 'Disabled',   cls: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300' },
+};
+const USAGE_FILTERS: ('ALL' | Usage)[] = ['ALL', 'USED', 'DISPATCHED', 'UNUSED', 'DISABLED'];
+
 const BatchQrModal = ({ batch, onClose }: { batch: { id: string; label: string }; onClose: () => void }) => {
-  const { data, isLoading } = useQuery<{ items: { token: string; url: string }[] }>({
+  const [usageFilter, setUsageFilter] = useState<'ALL' | Usage>('ALL');
+  const { data, isLoading } = useQuery<{ items: BatchToken[]; counts: Partial<Record<Usage, number>> }>({
     queryKey: ['admin-qr-batch-tokens', batch.id],
     queryFn: async () => (await api.get(`/admin/qr/batches/${batch.id}/tokens`)).data,
   });
   const items = data?.items ?? [];
+  const counts = data?.counts ?? {};
+  const shownItems = usageFilter === 'ALL' ? items : items.filter((it) => it.usage === usageFilter);
 
   const [pngByToken, setPngByToken] = useState<Map<string, string>>(new Map());
   const [rendered, setRendered] = useState(0);
@@ -340,14 +377,14 @@ const BatchQrModal = ({ batch, onClose }: { batch: { id: string; label: string }
     const cells = items
       .map((it) => `<figure><img src="${pngByToken.get(it.token) ?? ''}" /><figcaption>${it.token}</figcaption></figure>`)
       .join('');
-    w.document.write(`<!doctype html><title>QR — ${batch.label}</title><style>
+    w.document.write(`<!doctype html><title>QR, ${batch.label}</title><style>
       body{font-family:system-ui,sans-serif;margin:16px}
       .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
       figure{margin:0;text-align:center;break-inside:avoid}
       img{width:100%;max-width:180px}
       figcaption{font:11px/1.3 ui-monospace,monospace;word-break:break-all;margin-top:4px}
       @media print{@page{margin:10mm}}
-    </style><h3>${batch.label} — ${items.length} codes</h3><div class="grid">${cells}</div>
+    </style><h3>${batch.label}, ${items.length} codes</h3><div class="grid">${cells}</div>
     <script>window.onload=()=>{window.focus();window.print()}</script>`);
     w.document.close();
   };
@@ -358,7 +395,7 @@ const BatchQrModal = ({ batch, onClose }: { batch: { id: string; label: string }
       <div className="relative flex max-h-[88vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3 dark:border-slate-800">
           <div>
-            <h2 className="text-sm font-bold">QR codes — {batch.label}</h2>
+            <h2 className="text-sm font-bold">QR codes, {batch.label}</h2>
             <p className="text-xs text-slate-400">
               {isLoading ? 'Loading…' : `${items.length} codes`}
               {!isLoading && !allReady && items.length > 0 && ` · rendering ${rendered}/${items.length}`}
@@ -387,12 +424,35 @@ const BatchQrModal = ({ batch, onClose }: { batch: { id: string; label: string }
           </div>
         </div>
 
+        <div className="flex flex-wrap gap-1.5 border-b border-slate-200 px-5 py-2.5 dark:border-slate-800">
+          {USAGE_FILTERS.map((f) => {
+            const n = f === 'ALL' ? items.length : counts[f] ?? 0;
+            return (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setUsageFilter(f)}
+                className={cn(
+                  'rounded-full px-3 py-1 text-xs font-semibold transition',
+                  usageFilter === f ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300',
+                )}
+              >
+                {f === 'ALL' ? 'All' : USAGE_META[f].label} · {n}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="overflow-y-auto p-5">
+          {shownItems.length === 0 && !isLoading && <p className="py-8 text-center text-sm text-slate-400">No codes in this group.</p>}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-            {items.slice(0, PREVIEW_LIMIT).map((it) => {
+            {shownItems.slice(0, PREVIEW_LIMIT).map((it) => {
               const png = pngByToken.get(it.token);
               return (
-                <div key={it.token} className="rounded-xl border border-slate-200 p-2 text-center dark:border-slate-700">
+                <div key={it.token} className={cn('rounded-xl border p-2 text-center', it.usage === 'USED' ? 'border-emerald-200 dark:border-emerald-500/30' : 'border-slate-200 dark:border-slate-700')}>
+                  <span className={cn('mb-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide', USAGE_META[it.usage].cls)}>
+                    {USAGE_META[it.usage].label}
+                  </span>
                   {png
                     ? <img src={png} alt={it.token} className="mx-auto aspect-square w-full max-w-[150px]" />
                     : <div className="mx-auto aspect-square w-full max-w-[150px] animate-pulse rounded bg-slate-100 dark:bg-slate-800" />}
@@ -407,6 +467,20 @@ const BatchQrModal = ({ batch, onClose }: { batch: { id: string; label: string }
                       {copiedToken === it.token ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
                     </button>
                   </div>
+                  {it.customer && (
+                    <div className="mt-1.5 rounded-lg bg-slate-50 px-2 py-1.5 text-left text-[11px] leading-snug dark:bg-slate-800/60">
+                      {it.vehicle && (
+                        <p className="font-mono font-semibold text-slate-800 dark:text-slate-100">
+                          {it.vehicle.plate} <span className="font-sans font-normal text-slate-400">· {it.vehicle.type === 'BIKE' ? 'Bike' : 'Car'}</span>
+                        </p>
+                      )}
+                      <p className="truncate text-slate-600 dark:text-slate-300" title={it.customer.email}>{it.customer.email}</p>
+                      <p className="text-slate-600 dark:text-slate-300">{it.customer.mobile}</p>
+                      <p className="mt-0.5 text-slate-400">
+                        {it.usage === 'USED' ? `Linked ${it.linkedAt ? fmtDateTime(it.linkedAt) : ''}` : `Dispatched ${it.dispatchedAt ? fmtDateTime(it.dispatchedAt) : ''}, not set up yet`}
+                      </p>
+                    </div>
+                  )}
                   {png && (
                     <a
                       href={png}
@@ -420,9 +494,9 @@ const BatchQrModal = ({ batch, onClose }: { batch: { id: string; label: string }
               );
             })}
           </div>
-          {items.length > PREVIEW_LIMIT && (
+          {shownItems.length > PREVIEW_LIMIT && (
             <p className="mt-4 text-center text-xs text-slate-400">
-              Showing the first {PREVIEW_LIMIT} of {items.length}. Use “Download all” or “Print sheet” for the complete set.
+              Showing the first {PREVIEW_LIMIT} of {shownItems.length}. Use “Download all” or “Print sheet” for the complete set.
             </p>
           )}
         </div>

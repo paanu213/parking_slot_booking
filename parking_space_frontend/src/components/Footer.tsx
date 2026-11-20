@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useQrPrice } from '@/hooks/useQrPrice';
 import { Mail, Phone, Shield, BadgeCheck, HeartHandshake, Lock, Truck } from 'lucide-react';
 import {
   BRAND_NAME,
@@ -7,7 +8,6 @@ import {
   SUPPORT_PHONE,
   SUPPORT_PHONE_DISPLAY,
   VENDOR_URL,
-  QR_STICKER_PRICE,
 } from '@/lib/config';
 
 interface FooterLink {
@@ -67,19 +67,21 @@ const TRUST = [
 ];
 
 // Trust points for the QR Calling product pages.
-const QR_TRUST = [
+const qrTrust = (price: number) => [
   { icon: Lock, title: 'Your number stays private', desc: 'Every call is masked, your number is never shown.' },
-  { icon: BadgeCheck, title: `Pay once, ₹${QR_STICKER_PRICE}`, desc: 'Secure checkout. Lifetime validity, no renewals.' },
+  { icon: BadgeCheck, title: `Pay once, ₹${price}`, desc: 'Secure checkout. Valid for 10 years, no renewals.' },
   { icon: Truck, title: 'Delivered to your door', desc: 'Dispatched in 1–2 days, delivered in 3–7.' },
 ];
 
 /** `variant="qr"` swaps the parking trust strip for QR Calling trust points. */
-export const Footer = ({ variant = 'parking' }: { variant?: 'parking' | 'qr' }) => (
+export const Footer = ({ variant = 'parking' }: { variant?: 'parking' | 'qr' }) => {
+  const price = useQrPrice();
+  return (
   <footer className="mt-16 border-t border-slate-200/70 bg-gradient-to-b from-white to-slate-50 dark:border-slate-800/70 dark:from-slate-950 dark:to-slate-900">
     {/* Trust strip */}
     <div className="border-b border-slate-200/70 dark:border-slate-800/70">
       <div className="mx-auto grid max-w-6xl gap-4 px-4 py-6 sm:grid-cols-3">
-        {(variant === 'qr' ? QR_TRUST : TRUST).map(({ icon: Icon, title, desc }) => (
+        {(variant === 'qr' ? qrTrust(price) : TRUST).map(({ icon: Icon, title, desc }) => (
           <div key={title} className="flex items-start gap-3">
             <span className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/10 text-brand-600 ring-1 ring-brand-500/20">
               <Icon className="h-5 w-5" />
@@ -109,7 +111,7 @@ export const Footer = ({ variant = 'parking' }: { variant?: 'parking' | 'qr' }) 
           </span>
         </Link>
         <p className="mt-3 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-          India's friendliest parking marketplace. Hourly, daily, and monthly spots — verified, covered, and
+          India's friendliest parking marketplace. Hourly, daily, and monthly spots, verified, covered, and
           cashless. Wherever you're headed, we've saved you a space.
         </p>
         {/* Social-media icon row removed — restore once real account URLs are
@@ -161,3 +163,4 @@ export const Footer = ({ variant = 'parking' }: { variant?: 'parking' | 'qr' }) 
     </div>
   </footer>
 );
+};

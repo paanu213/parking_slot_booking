@@ -328,7 +328,7 @@ export const ParkingSpacesPage = () => {
                   <div className="border-t border-slate-200 p-4 dark:border-slate-800">
                     <p className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">
                       {isApproved
-                        ? 'Edit Space — changes will go to admin for approval before going live'
+                        ? 'Edit Space, changes will go to admin for approval before going live'
                         : isRejected
                         ? 'Edit & Resubmit for Review'
                         : 'Update Submission'}

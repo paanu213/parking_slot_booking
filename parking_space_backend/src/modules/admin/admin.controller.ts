@@ -566,6 +566,14 @@ export const updateCallDailyCapSetting: RequestHandler = async (req, res, next) 
   } catch (e) { next(e); }
 };
 
+export const getQrPricingSetting: RequestHandler = async (_req, res, next) => {
+  try { res.json(await service.getQrPricingSetting()); } catch (e) { next(e); }
+};
+
+export const updateQrPricingSetting: RequestHandler = async (req, res, next) => {
+  try { res.json(await service.updateQrPricingSetting(req.user!.sub, Number(req.body.stickerPrice))); } catch (e) { next(e); }
+};
+
 export const getCallLimitsSetting: RequestHandler = async (_req, res, next) => {
   try {
     res.json(await service.getCallLimitsSetting());
@@ -639,6 +647,7 @@ export const listQrOrders: RequestHandler = async (req, res, next) => {
       status:        req.query.status as string | undefined,
       paymentStatus: req.query.paymentStatus as string | undefined,
       q:             req.query.q as string | undefined,
+      channel:       req.query.channel as string | undefined,
       vehicleType:   req.query.vehicleType as string | undefined,
       city:          req.query.city as string | undefined,
       state:         req.query.state as string | undefined,
@@ -692,6 +701,22 @@ export const refundQrOrder: RequestHandler = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+export const getQrVehicleHistory: RequestHandler = async (req, res, next) => {
+  try { res.json(await service.getQrVehicleHistory(req.params.id)); } catch (e) { next(e); }
+};
+
+export const adminCreateQrOrder: RequestHandler = async (req, res, next) => {
+  try {
+    res.status(201).json(await service.adminCreateQrOrder(req.user!.sub, req.body));
+  } catch (e) { next(e); }
+};
+
+export const lookupQrCustomer: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await service.lookupQrCustomer(String(req.query.email ?? '')));
+  } catch (e) { next(e); }
+};
+
 export const getQrOrderStickerPdf: RequestHandler = async (req, res, next) => {
   try {
     const { filename, pdf } = await service.getQrOrderStickerPdf(req.params.id);
@@ -701,10 +726,13 @@ export const getQrOrderStickerPdf: RequestHandler = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+export const handoverQrOrder: RequestHandler = async (req, res, next) => {
+  try { res.json(await service.handoverQrOrder(req.params.id, req.user!.sub, req.body)); } catch (e) { next(e); }
+};
+
 export const sendQrOrderReplacement: RequestHandler = async (req, res, next) => {
   try {
-    const { reason } = req.body as { reason: string };
-    res.json(await service.sendQrOrderReplacement(req.params.id, req.user!.sub, reason));
+    res.json(await service.sendQrOrderReplacement(req.params.id, req.user!.sub, req.body));
   } catch (e) { next(e); }
 };
 
@@ -776,7 +804,7 @@ export const listQrStickers: RequestHandler = async (req, res, next) => {
 
 export const unbindQrSticker: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await service.unbindQrSticker(req.params.id, req.user!.sub));
+    res.json(await service.unbindQrSticker(req.params.id, req.user!.sub, (req.body as { reason?: string } | undefined)?.reason));
   } catch (e) { next(e); }
 };
 

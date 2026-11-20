@@ -12,6 +12,8 @@ export interface VehicleActionTarget {
   status: 'ACTIVE' | 'PAUSED' | 'TRANSFERRED' | 'DELETED';
   contactPhone: string;
   validUntil: string | null;
+  /** true when admin set a custom end date (otherwise it's the 10-year default) */
+  validityCustom?: boolean;
 }
 
 /**
@@ -60,13 +62,13 @@ export const VehicleActionsMenu = ({ vehicle, onChanged }: { vehicle: VehicleAct
           <MenuItem icon={<CalendarClock className="h-4 w-4" />} onClick={() => setModal('validity')}>
             Set QR validity
           </MenuItem>
-          {vehicle.validUntil && (
+          {vehicle.validityCustom && (
             <MenuItem
               icon={<InfinityIcon className="h-4 w-4" />}
               onClick={() => clearValidity.mutate()}
               disabled={clearValidity.isPending}
             >
-              Make lifetime validity
+              Reset to 10-year default
             </MenuItem>
           )}
           <MenuDivider />
@@ -154,7 +156,7 @@ const ReassignModal = ({
   return (
     <ModalShell
       title="Reassign to a different owner"
-      subtitle="Dispute resolution — the plate belongs to someone other than whoever registered it first. The new owner needs an AutoSahay account already."
+      subtitle="Dispute resolution, the plate belongs to someone other than whoever registered it first. The new owner needs an AutoSahay account already."
       onClose={onClose}
     >
       <input
@@ -165,7 +167,7 @@ const ReassignModal = ({
         placeholder="owner@example.com"
         className="input mt-3 w-full"
       />
-      {save.isError && <p className="mt-1 text-xs text-rose-600">{errMsg(save.error, 'Could not reassign — check the email is correct.')}</p>}
+      {save.isError && <p className="mt-1 text-xs text-rose-600">{errMsg(save.error, 'Could not reassign. Check the email is correct.')}</p>}
       <button
         type="button"
         onClick={() => save.mutate()}
@@ -191,7 +193,7 @@ const SetValidityModal = ({
   return (
     <ModalShell
       title="Set QR validity"
-      subtitle="Lifetime by default. Past this date, the sticker stops resolving until extended or cleared."
+      subtitle="Valid for 10 years from registration by default. Past this date, the sticker stops working until you extend it or reset it."
       onClose={onClose}
     >
       <input

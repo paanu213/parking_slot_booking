@@ -11,12 +11,14 @@
  * scanner to be signed in (Google), until SMS-OTP is available.
  */
 import type { EmergencyCard, LookupResult } from '@ps/types';
+import { isQrExpired } from '../../lib/qrValidity.js';
 import { normalizePlate } from '@ps/types';
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../config/logger.js';
 import { decryptField, hmacHash } from '../../lib/crypto.js';
 import { issuePermit, verifyPermit } from '../../lib/scanPermit.js';
-import { BadRequest, Conflict, HttpError, NotFound } from '../../lib/http.js';
+import { BadRequest, Conflict, Forbidden, NotFound } from '../../lib/http.js';
+import { activeStickerOf, lockVehicle } from '../../lib/qrStickerRules.js';
 import * as vehiclesService from '../vehicles/vehicles.service.js';
 import type { ConfigureStickerInput } from './scan.schema.js';
 
@@ -29,12 +31,11 @@ const logAttempt = (outcome: 'FOUND' | 'NOT_FOUND' | 'BOT_BLOCKED', plateHash: s
 const plateMaskOf = (normalizedPlate: string) => normalizedPlate.slice(0, -4);
 const plateLast4Of = (normalizedPlate: string) => normalizedPlate.slice(-4);
 
-// The one-time sticker fee is lifetime by default (validUntil null). Admin
-// can set a per-vehicle end date under individual terms — past it, the
-// sticker/plate stops resolving, same as a paused registration.
-export const isExpired = (validUntil: Date | null) => validUntil !== null && validUntil.getTime() < Date.now();
-export const isUsable = (registration: { status: string; validUntil: Date | null }) =>
-  registration.status === 'ACTIVE' && !isExpired(registration.validUntil);
+// A sticker is valid for 10 years from registration, or until the custom end
+// date admin set (see lib/qrValidity.ts). Past it, the sticker/plate stops
+// resolving, same as a paused registration.
+export const isUsable = (registration: { status: string; validUntil: Date | null; createdAt: Date }) =>
+  registration.status === 'ACTIVE' && !isQrExpired(registration);
 
 // ── /c  (typed full plate — fallback) ─────────────────────────────────────────
 
@@ -69,6 +70,7 @@ type StickerState =
   | { state: 'unclaimed' }
   | { state: 'disabled' }
   | { state: 'expired' }
+  | { state: 'inactive' }
   | { state: 'claimed'; plateMask: string; hasEmergency: boolean };
 
 export const getStickerState = async (token: string): Promise<StickerState> => {
@@ -79,10 +81,10 @@ export const getStickerState = async (token: string): Promise<StickerState> => {
   if (!sticker) throw NotFound('This QR code is not recognised');
 
   if (sticker.status === 'DISABLED') return { state: 'disabled' };
-  if (sticker.status !== 'CLAIMED' || !sticker.registration || sticker.registration.status !== 'ACTIVE') {
-    return { state: 'unclaimed' };
-  }
-  if (isExpired(sticker.registration.validUntil)) return { state: 'expired' };
+  if (sticker.status !== 'CLAIMED' || !sticker.registration) return { state: 'unclaimed' };
+  // Set up, but the owner paused (or removed) the vehicle: not a setup screen, which would only fail.
+  if (sticker.registration.status !== 'ACTIVE') return { state: 'inactive' };
+  if (isQrExpired(sticker.registration)) return { state: 'expired' };
 
   return {
     state:       'claimed',
@@ -91,45 +93,115 @@ export const getStickerState = async (token: string): Promise<StickerState> => {
   };
 };
 
-/** First-scan setup by the owner (must be signed in). Binds this sticker to a vehicle. */
+/**
+ * First-scan setup by the owner (must be signed in). Binds this sticker to a vehicle.
+ *
+ * Guards (see lib/qrStickerRules.ts):
+ *  - a sticker sent for an order can only be set up by that order's account,
+ *    for that order's vehicle (a mixed-up or intercepted package can't be
+ *    hijacked onto someone else's car);
+ *  - a sticker not recorded at dispatch must match a paid order of this
+ *    account for this vehicle, and gets recorded against it automatically;
+ *  - a vehicle keeps one active QR, a second code needs an admin replacement;
+ *  - the claim is atomic, so two people scanning the same new sticker at once
+ *    can't both win.
+ * Every check that can fail runs before the vehicle is saved, so a refused
+ * setup leaves nothing half-done.
+ */
 export const configureSticker = async (token: string, userId: string, input: ConfigureStickerInput) => {
-  const sticker = await prisma.qrSticker.findUnique({ where: { token } });
+  const sticker = await prisma.qrSticker.findUnique({
+    where:   { token },
+    include: {
+      dispatchedFor: {
+        select: { id: true, userId: true, status: true, paymentStatus: true, registration: { select: { plateHash: true } } },
+      },
+    },
+  });
   if (!sticker) throw NotFound('This QR code is not recognised');
-  if (sticker.status === 'DISABLED') throw BadRequest('This sticker has been disabled — please contact support');
-  if (sticker.status === 'CLAIMED') throw Conflict('This sticker is already set up');
+  if (sticker.status === 'DISABLED') throw BadRequest('This sticker has been disabled, please contact support');
+  // CLAIMED without a vehicle only happens to legacy rows whose car record was removed; treat as free.
+  const isFree = sticker.status === 'UNCLAIMED' || (sticker.status === 'CLAIMED' && !sticker.registrationId);
+  if (!isFree) throw Conflict('This sticker is already set up');
 
-  // Register the vehicle, reusing this user's own existing registration for
-  // the same plate rather than failing (they may have added it elsewhere).
-  // Either way, the full form (silent hours, ICE) the owner just filled in
-  // here — possibly pre-filled from that existing registration and then
-  // edited — is what ends up saved.
-  let registration;
-  const { plateNumber: _plateNumber, ...profileFields } = input;
-  try {
-    registration = await vehiclesService.registerVehicle(userId, input);
-  } catch (e) {
-    if (e instanceof HttpError && e.status === 409) {
-      const existing = await prisma.vehicleRegistration.findUnique({
-        where: { plateHash: hmacHash(input.plateNumber) }, // already normalized by the zod transform
-      });
-      if (existing && existing.userId === userId && existing.status !== 'DELETED') {
-        registration = await vehiclesService.updateVehicle(userId, existing.id, profileFields);
-      } else {
-        throw e; // the plate belongs to another account
-      }
-    } else {
-      throw e;
+  const plateHash = hmacHash(input.plateNumber); // already normalized by the zod transform
+  const existingReg = await prisma.vehicleRegistration.findUnique({
+    where:  { plateHash },
+    select: { id: true, userId: true, status: true },
+  });
+  if (existingReg && existingReg.status !== 'DELETED' && existingReg.userId !== userId) {
+    throw Conflict('This car is already registered by another owner. Contact support if this is a mistake.');
+  }
+  const ownReg = existingReg && existingReg.status !== 'DELETED' ? existingReg : null;
+
+  // Which order does this physical sticker belong to?
+  let orderId: string;
+  let recordDispatch = false;
+  const sent = sticker.dispatchedFor;
+  if (sent) {
+    if (sent.userId !== userId) {
+      throw Forbidden('This sticker was sent to a different AutoSahay account. Sign in with the account that placed the order, or contact support.');
     }
+    if (sent.status === 'CANCELLED' || sent.paymentStatus !== 'PAID') {
+      throw BadRequest('The order for this sticker was cancelled or refunded, so it can not be set up. Please contact support.');
+    }
+    if (sent.registration && sent.registration.plateHash !== plateHash) {
+      throw BadRequest('This sticker was ordered for a different vehicle number. Enter the vehicle number from your order, or contact support to change it.');
+    }
+    orderId = sent.id;
+  } else {
+    const order = ownReg
+      ? await prisma.qrOrder.findFirst({
+          where:   { userId, registrationId: ownReg.id, paymentStatus: 'PAID', status: { not: 'CANCELLED' }, dispatchedStickerId: null },
+          orderBy: { createdAt: 'desc' },
+          select:  { id: true },
+        })
+      : null;
+    if (!order) {
+      throw BadRequest('We could not match this sticker to an order for this vehicle on your account. Check the vehicle number, or contact support.');
+    }
+    orderId = order.id;
+    recordDispatch = true;
   }
 
-  await prisma.qrSticker.update({
-    where: { id: sticker.id },
-    data:  {
-      status:          'CLAIMED',
-      registrationId:  registration.id,
-      claimedByUserId: userId,
-      claimedAt:       new Date(),
-    },
+  const ALREADY_HAS_QR = 'This vehicle already has an active QR sticker. If it was lost or damaged, contact support for a replacement.';
+  if (ownReg && (await activeStickerOf(prisma, ownReg.id, sticker.id))) throw Conflict(ALREADY_HAS_QR);
+
+  // Save the vehicle: the full form (silent hours, ICE) the owner just filled
+  // in here is what ends up saved, on their existing registration if any.
+  const { plateNumber: _plateNumber, ...profileFields } = input;
+  const registration = ownReg
+    ? await vehiclesService.updateVehicle(userId, ownReg.id, profileFields)
+    : await vehiclesService.registerVehicle(userId, input);
+
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await lockVehicle(tx, registration.id);
+    if (await activeStickerOf(tx, registration.id, sticker.id)) throw Conflict(ALREADY_HAS_QR);
+
+    const claimed = await tx.qrSticker.updateMany({
+      where: { id: sticker.id, OR: [{ status: 'UNCLAIMED' }, { status: 'CLAIMED', registrationId: null }] },
+      data:  { status: 'CLAIMED', registrationId: registration.id, claimedByUserId: userId, claimedAt: now },
+    });
+    if (claimed.count !== 1) throw Conflict('This sticker was just set up by someone else. Please contact support.');
+
+    if (recordDispatch) {
+      const linked = await tx.qrOrder.updateMany({
+        where: { id: orderId, dispatchedStickerId: null },
+        data:  { dispatchedStickerId: sticker.id, dispatchedAt: now },
+      });
+      if (linked.count === 1) {
+        const o = await tx.qrOrder.findUnique({ where: { id: orderId }, select: { status: true } });
+        await tx.qrOrderStatusEvent.create({
+          data: { qrOrderId: orderId, status: o!.status, actorId: userId, note: `Sticker ${sticker.token} linked when the customer set it up` },
+        });
+      }
+    }
+    await tx.auditLog.create({
+      data: {
+        actorId: userId, action: 'QR_STICKER_SETUP', entity: 'QrSticker', entityId: sticker.id,
+        metadata: JSON.stringify({ token: sticker.token, registrationId: registration.id, orderId, recordedOnSetup: recordDispatch }),
+      },
+    });
   });
 
   return { ok: true, plateMask: plateMaskOf(normalizePlate(registration.plateNumber)) };

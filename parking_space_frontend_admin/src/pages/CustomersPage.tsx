@@ -500,7 +500,7 @@ export const CustomersPage = () => {
                             <Avatar name={c.fullName} />
                             <div className="min-w-0">
                               <p className="text-sm font-medium group-hover:text-brand-600 group-hover:underline dark:group-hover:text-brand-400">
-                                {c.fullName || '—'}
+                                {c.fullName || '-'}
                               </p>
                               <p className="text-xs text-slate-400">{c.email}</p>
                             </div>
@@ -513,9 +513,9 @@ export const CustomersPage = () => {
                           </span>
                         </td>
                         {/* Phone */}
-                        <td className="text-sm text-slate-500">{c.phone ?? '—'}</td>
+                        <td className="text-sm text-slate-500">{c.phone ?? '-'}</td>
                         {/* Vehicle — N/A for registered */}
-                        <td><span className="text-xs text-slate-300">—</span></td>
+                        <td><span className="text-xs text-slate-300">-</span></td>
                         {/* Bookings */}
                         <td>
                           <div className="flex items-center gap-1.5">
@@ -524,7 +524,7 @@ export const CustomersPage = () => {
                           </div>
                         </td>
                         {/* Spaces visited — N/A */}
-                        <td><span className="text-xs text-slate-300">—</span></td>
+                        <td><span className="text-xs text-slate-300">-</span></td>
                         {/* Date */}
                         <td className="text-xs text-slate-500">{fmtDate(c.createdAt)}</td>
                         {/* Status */}
@@ -576,7 +576,7 @@ export const CustomersPage = () => {
                           <Avatar name={g.name} guest />
                           <div className="min-w-0">
                             <p className="text-sm font-medium group-hover:text-brand-600 group-hover:underline dark:group-hover:text-brand-400">
-                              {g.name || '—'}
+                              {g.name || '-'}
                             </p>
                           </div>
                         </button>
@@ -602,7 +602,7 @@ export const CustomersPage = () => {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-300">—</span>
+                          <span className="text-xs text-slate-300">-</span>
                         )}
                       </td>
                       {/* Bookings / visits */}
@@ -632,13 +632,13 @@ export const CustomersPage = () => {
                             )}
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-300">—</span>
+                          <span className="text-xs text-slate-300">-</span>
                         )}
                       </td>
                       {/* Last seen */}
                       <td className="text-xs text-slate-500">{fmtDate(g.lastSeen)}</td>
                       {/* Status — guests have no account status */}
-                      <td><span className="text-xs text-slate-300">—</span></td>
+                      <td><span className="text-xs text-slate-300">-</span></td>
                       {/* Edit action */}
                       <td>
                         <button

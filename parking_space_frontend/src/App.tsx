@@ -21,6 +21,7 @@ import { SavedSpacesPage } from '@/pages/SavedSpacesPage';
 import { MyVehiclesPage } from '@/pages/MyVehiclesPage';
 import { ScanPage } from '@/pages/ScanPage';
 import { QrCallingLandingPage } from '@/pages/QrCallingLandingPage';
+import { QrProductPage } from '@/pages/QrProductPage';
 import { QrOrdersPage } from '@/pages/QrOrdersPage';
 import { TransactionsPage } from '@/pages/TransactionsPage';
 import { useAuth } from '@/store/auth';
@@ -135,7 +136,8 @@ export default function App() {
           <Route path="/help" element={<HelpPage />} />
           <Route path="/c" element={<ScanPage />} />
           <Route path="/c/:token" element={<ScanPage />} />
-          <Route path="/qr-calling" element={<QrCallingLandingPage />} />
+          <Route path="/qr-calling" element={<QrProductPage />} />
+          <Route path="/qr-calling/order" element={<QrCallingLandingPage />} />
           <Route
             path="/profile"
             element={

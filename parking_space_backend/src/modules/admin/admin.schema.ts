@@ -142,10 +142,10 @@ export const blockCallGloballySchema = z.object({
 });
 
 /**
- * Per-vehicle QR validity end date — null clears it back to lifetime.
+ * Per-vehicle QR validity end date, null clears it back to the 10-year default.
  * z.null() MUST be tried before z.coerce.date(): `new Date(null)` coerces to
  * the epoch (1970-01-01) instead of failing, so the reverse order would
- * silently turn "clear to lifetime" into "expired since 1970".
+ * silently turn "clear to default" into "expired since 1970".
  */
 export const setVehicleValiditySchema = z.object({
   validUntil: z.union([z.null(), z.coerce.date()]),
@@ -157,13 +157,69 @@ export const setQrOrderStatusSchema = z.object({
 });
 
 /** Admin records which physical sticker (by its printed token) went into the package at dispatch. */
+const phone10 = z.string().trim().regex(/^\d{10}$/, 'Enter a valid 10-digit mobile number');
+
+/**
+ * Admin creating a sticker order on someone's behalf: influencers, campaigns,
+ * customers who could not finish online, offline sales. The customer is
+ * matched (or created) by email so they can later sign in and manage it.
+ */
+export const adminCreateQrOrderSchema = z.object({
+  channel: z.enum(['INFLUENCER', 'CAMPAIGN', 'SUPPORT', 'OFFLINE_SALE', 'OTHER']),
+  customer: z.object({
+    email:    z.string().trim().toLowerCase().email('Enter a valid email'),
+    fullName: z.string().trim().min(2, 'Enter the customer name').max(80),
+    phone:    phone10.optional(),
+  }),
+  vehicle: RegisterVehicleInput.pick({ plateNumber: true, vehicleType: true, contactPhone: true, ownerName: true }),
+  shippingName:  z.string().trim().min(2).max(80).optional(), // defaults to the vehicle owner name
+  shippingPhone: phone10.optional(),                          // defaults to the contact number
+  addressLine:   z.string().trim().min(5).max(300),
+  city:          z.string().trim().min(2).max(80),
+  state:         z.string().trim().min(2).max(80),
+  pincode:       z.string().trim().regex(/^[0-9]{4,10}$/, 'Enter a valid pincode'),
+  note:          z.string().trim().max(300).optional(),
+  payment: z.discriminatedUnion('mode', [
+    z.object({ mode: z.literal('COMPLIMENTARY'), reason: z.string().trim().max(200).optional() }),
+    z.object({
+      mode:      z.literal('OFFLINE'),
+      amount:    z.coerce.number().positive('Enter the amount collected').max(100000),
+      method:    z.enum(['CASH', 'UPI', 'BANK_TRANSFER', 'OTHER']),
+      reference: z.string().trim().max(100).optional(),
+      paidOn:    z.coerce.date().optional(),
+    }),
+    z.object({ mode: z.literal('ONLINE') }),
+  ]),
+});
+export type AdminCreateQrOrderInput = z.infer<typeof adminCreateQrOrderSchema>;
+
+export const qrPricingSchema = z.object({
+  stickerPrice: z.coerce.number().int('Use a whole rupee amount').min(1, 'Minimum ₹1').max(100000, 'Maximum ₹1,00,000'),
+});
+
+/** Admin hands the stickers to the customer in person: skips pick-up / courier delivery. */
+export const qrOrderHandoverSchema = z.object({
+  handedOverOn: z.coerce.date().optional(),
+  receivedBy:   z.string().trim().max(80).optional(),
+  note:         z.string().trim().max(300).optional(),
+});
+export type QrOrderHandoverInput = z.infer<typeof qrOrderHandoverSchema>;
+
 export const qrOrderReplacementSchema = z.object({
   reason: z.string().trim().min(2, 'Add a short reason').max(300),
+  // REPRINT: same QR (damaged/faded). NEW_CODE: lost/stolen/misused, old QR switched off.
+  mode:   z.enum(['REPRINT', 'NEW_CODE']).default('REPRINT'),
+  // NEW_CODE only: an unused sticker from stock (code or scanned URL). Blank = mint a new code to print.
+  token:  z.string().trim().max(300).optional(),
 });
 export type QrOrderReplacementInput = z.infer<typeof qrOrderReplacementSchema>;
 
 export const dispatchStickerSchema = z.object({
-  token: z.string().trim().min(4).max(40),
+  token: z.string().trim().min(4).max(300), // printed code, or the full scanned sticker URL
+});
+
+export const qrStickerUnbindSchema = z.object({
+  reason: z.string().trim().max(200).optional(),
 });
 
 /** Admin pause/resume — same effect as the owner's own toggle in My Vehicles. */

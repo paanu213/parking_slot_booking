@@ -25,7 +25,7 @@ r.post('/call/:provider', async (req, res) => {
   // thing standing between this endpoint and anyone who guesses the path.
   if (req.params.provider === 'exotel') {
     if (!env.EXOTEL_WEBHOOK_SECRET || req.query.token !== env.EXOTEL_WEBHOOK_SECRET) {
-      logger.warn({ event: 'exotel_webhook_bad_token' }, 'Rejected Exotel webhook — missing/wrong token');
+      logger.warn({ event: 'exotel_webhook_bad_token' }, 'Rejected Exotel webhook, missing/wrong token');
       res.sendStatus(401);
       return;
     }
@@ -57,7 +57,7 @@ r.post('/razorpay', async (req, res) => {
   const gateway = getGateway();
 
   if (!rawBody || typeof signature !== 'string' || !gateway.verifyWebhookSignature(rawBody, signature)) {
-    logger.warn({ event: 'razorpay_webhook_bad_signature', hasBody: !!rawBody, hasSignature: !!signature }, 'Rejected Razorpay webhook — signature did not verify');
+    logger.warn({ event: 'razorpay_webhook_bad_signature', hasBody: !!rawBody, hasSignature: !!signature }, 'Rejected Razorpay webhook, signature did not verify');
     res.sendStatus(400);
     return;
   }

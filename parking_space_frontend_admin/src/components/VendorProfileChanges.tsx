@@ -42,7 +42,7 @@ const parseRequests = (pendingData: unknown): EditRequest[] => {
 const fmt = (key: string, value: unknown) => {
   if (key !== 'aadharDocUrl') return undefined;
   const url = String(value ?? '').trim();
-  if (!url) return '—';
+  if (!url) return '-';
   return (
     <a href={url} target="_blank" rel="noreferrer"
        className="text-brand-600 underline hover:text-brand-700 dark:text-brand-400">
@@ -61,7 +61,7 @@ export const VendorProfileChanges = ({ vendor, onDone }: { vendor: any; onDone: 
   });
   const reject = useMutation({
     mutationFn: () => api.post(`/admin/vendors/${vendor.id}/reject-profile`, { note: note || undefined }),
-    onSuccess: () => onDone('Profile changes rejected — the vendor keeps their current details.'),
+    onSuccess: () => onDone('Profile changes rejected, the vendor keeps their current details.'),
   });
 
   const requests = parseRequests(vendor?.pendingProfileData);
@@ -101,7 +101,7 @@ export const VendorProfileChanges = ({ vendor, onDone }: { vendor: any; onDone: 
           <ChangeTable
             key={i}
             rows={rows}
-            title={multiple ? `Change request #${i + 1}` : 'Requested profile changes — review before approving'}
+            title={multiple ? `Change request #${i + 1}` : 'Requested profile changes, review before approving'}
             submittedAt={req.submittedAt || vendor.updatedAt}
             formatValue={fmt}
           />
@@ -112,7 +112,7 @@ export const VendorProfileChanges = ({ vendor, onDone }: { vendor: any; onDone: 
         {rejecting ? (
           <div className="space-y-2">
             <label className="block text-xs font-medium text-slate-500">
-              Reason for rejecting these changes (optional — shown to the vendor)
+              Reason for rejecting these changes (optional, shown to the vendor)
             </label>
             <textarea
               className="input w-full text-sm"

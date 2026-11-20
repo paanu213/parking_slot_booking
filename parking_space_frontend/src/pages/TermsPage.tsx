@@ -45,7 +45,7 @@ export const TermsPage = () => (
 
         <Section title="Bookings and payments">
           Reservations are confirmed once payment clears. Prices, taxes, and cancellation windows
-          are shown before you confirm — there are no hidden fees.
+          are shown before you confirm, there are no hidden fees.
         </Section>
 
         <Section title="Cancellations & refunds">

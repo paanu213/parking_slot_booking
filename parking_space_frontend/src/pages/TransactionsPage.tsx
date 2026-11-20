@@ -172,7 +172,7 @@ const TransactionRow = ({ t }: { t: Transaction }) => {
             <MapPin className="h-3.5 w-3.5 text-slate-400" /> {t.booking.locationName}
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t.booking.addressLine}, {t.booking.city}, {t.booking.state} — {t.booking.pincode}
+            {t.booking.addressLine}, {t.booking.city}, {t.booking.state}, {t.booking.pincode}
           </p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
             <span>Slot {t.booking.slotCode} · {t.booking.vehicleType}</span>

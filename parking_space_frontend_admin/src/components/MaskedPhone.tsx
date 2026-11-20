@@ -41,7 +41,7 @@ export const MaskedPhone = ({ masked, callId }: { masked: string; callId: string
       await navigator.clipboard.writeText(value);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch { /* clipboard unavailable — ignore */ }
+    } catch { /* clipboard unavailable, ignore */ }
   };
 
   const displayValue = visible && revealed ? revealed : masked;

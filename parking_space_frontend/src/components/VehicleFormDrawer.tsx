@@ -174,7 +174,7 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
                 {...register('plateNumber')}
               />
               <p className="mt-1 text-xs text-slate-400">
-                Plate can't be changed — remove and re-order a QR sticker if you made a mistake.
+                Plate can't be changed. Remove and re-order a QR sticker if you made a mistake.
               </p>
             </div>
 
@@ -264,8 +264,8 @@ export const VehicleFormDrawer = ({ vehicle, onClose }: { vehicle: Vehicle; onCl
               </label>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Off by default. When on, a scanner sees this — blood group, notes, and family
-              contacts — after entering your full plate. Every field here is optional.
+              Off by default. When on, a scanner sees this: blood group, notes, and family
+              contacts, after entering your full plate. Every field here is optional.
             </p>
 
             {emergencyPublic && (

@@ -118,7 +118,7 @@ export const ServicePartnerPage = () => {
               </p>
               <h2 className="mt-1 font-display text-xl font-bold">Register your service</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Pick your service category and share a few details — a team member will reach out
+                Pick your service category and share a few details, a team member will reach out
                 within 24 hours.
               </p>
             </div>
@@ -272,7 +272,7 @@ const SuccessCard = ({ onReset }: { onReset: () => void }) => (
     <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
       <CheckCircle2 className="h-7 w-7" />
     </span>
-    <h2 className="mt-4 font-display text-2xl font-bold">Thanks — we'll be in touch</h2>
+    <h2 className="mt-4 font-display text-2xl font-bold">Thanks, we'll be in touch</h2>
     <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
       Your details are with our partnerships team. Expect a call within 24 hours.
     </p>

@@ -11,13 +11,16 @@
  * is a keyed HMAC used for the exact-match unique lookup so the raw plate is
  * never queried directly.
  */
+import { releaseVehicleStickers } from '../../lib/qrStickerRules.js';
 import type { EmergencyContact, Prisma, QrSticker, VehicleRegistration } from '@prisma/client';
+import { effectiveValidUntil } from '../../lib/qrValidity.js';
 import type { RegisterVehicleInput } from '@ps/types';
 import { normalizePlate } from '@ps/types';
 import { prisma } from '../../lib/prisma.js';
 import { BadRequest, Conflict, NotFound } from '../../lib/http.js';
 import { decryptField, encryptField, hmacHash } from '../../lib/crypto.js';
 import type { UpdateVehicleInput } from './vehicles.schema.js';
+import { recordDetailChanges } from '../../lib/detailsChangeLog.js';
 
 type RegistrationWithContacts = VehicleRegistration & {
   emergencyContacts: EmergencyContact[];
@@ -37,7 +40,8 @@ const toDTO = (row: RegistrationWithContacts) => ({
   ownerName:       row.ownerName,
   bloodGroup:      row.bloodGroup,
   medicalNotes:    row.medicalNotes ? decryptField(row.medicalNotes) : null,
-  validUntil:      row.validUntil,
+  validUntil:      effectiveValidUntil(row),
+  validityCustom:  row.validUntil !== null,
   // Has the owner actually scanned + configured a physical QR sticker for
   // this car yet? (Separate from having *bought* one — see qrOrders.)
   qrLinked:        row.qrStickers.length > 0,
@@ -110,9 +114,19 @@ export const registerVehicle = async (userId: string, input: RegisterVehicleInpu
     // A soft-deleted registration for the same plate still occupies the
     // unique `plateHash` index — clear it out so the plate can be reused
     // (e.g. the previous owner deleted it, or the car changed hands).
-    if (dup) await tx.vehicleRegistration.delete({ where: { id: dup.id } });
+    // Its sticker is released first (a hard delete would leave it "set up"
+    // against nothing, and nobody could set it up again), and the same
+    // owner's orders are re-pointed at the new record below.
+    let ownOrderIds: string[] = [];
+    if (dup) {
+      await releaseVehicleStickers(tx, dup.id);
+      if (dup.userId === userId) {
+        ownOrderIds = (await tx.qrOrder.findMany({ where: { registrationId: dup.id, userId }, select: { id: true } })).map((o) => o.id);
+      }
+      await tx.vehicleRegistration.delete({ where: { id: dup.id } });
+    }
 
-    return tx.vehicleRegistration.create({
+    const reg = await tx.vehicleRegistration.create({
       data: {
         userId,
         plateHash,
@@ -141,12 +155,17 @@ export const registerVehicle = async (userId: string, input: RegisterVehicleInpu
       },
       include: INCLUDE,
     });
+    if (ownOrderIds.length) {
+      await tx.qrOrder.updateMany({ where: { id: { in: ownOrderIds } }, data: { registrationId: reg.id } });
+    }
+    return reg;
   });
 
   return toDTO(created);
 };
 
-export const updateVehicle = async (userId: string, id: string, input: UpdateVehicleInput) => {
+/** actorId: who is making the change (the owner by default; admin passes their own id). */
+export const updateVehicle = async (userId: string, id: string, input: UpdateVehicleInput, actorId: string = userId) => {
   const existing = await findOwned(userId, id);
   if (existing.status === 'DELETED') throw BadRequest('This registration has been deleted');
 
@@ -184,6 +203,30 @@ export const updateVehicle = async (userId: string, id: string, input: UpdateVeh
     }
   });
 
+  // Change history: contact number, owner name and vehicle type (who, when, old -> new).
+  await recordDetailChanges({
+    actorId,
+    entity: 'VehicleRegistration',
+    entityId: id,
+    changes: [
+      ...(input.contactPhone !== undefined ? [{ field: 'contactPhone', label: 'Contact number', from: decryptField(existing.contactPhone), to: input.contactPhone }] : []),
+      ...(input.ownerName !== undefined ? [{ field: 'ownerName', label: 'Owner name', from: existing.ownerName, to: input.ownerName || null }] : []),
+      ...(input.vehicleType !== undefined ? [{ field: 'vehicleType', label: 'Vehicle type', from: existing.vehicleType, to: input.vehicleType }] : []),
+    ],
+  });
+
+  // The vehicle's name and contact number are also the delivery name/phone on
+  // its sticker orders. Move orders that used the old values to the new ones.
+  if (input.contactPhone !== undefined) {
+    const oldPhone = decryptField(existing.contactPhone);
+    if (input.contactPhone !== oldPhone) {
+      await prisma.qrOrder.updateMany({ where: { registrationId: id, shippingPhone: oldPhone }, data: { shippingPhone: input.contactPhone } });
+    }
+  }
+  if (input.ownerName && existing.ownerName && input.ownerName !== existing.ownerName) {
+    await prisma.qrOrder.updateMany({ where: { registrationId: id, shippingName: existing.ownerName }, data: { shippingName: input.ownerName } });
+  }
+
   return getVehicle(userId, id);
 };
 
@@ -206,9 +249,15 @@ export const resumeVehicle = (userId: string, id: string) => setStatus(userId, i
 export const deleteVehicle = async (userId: string, id: string) => {
   const existing = await findOwned(userId, id);
   if (existing.status !== 'DELETED') {
-    await prisma.vehicleRegistration.update({
-      where: { id },
-      data:  { status: 'DELETED', isActive: false, deactivatedAt: new Date() },
+    // The sticker on a deleted car is released, so it isn't stuck "set up"
+    // against a removed vehicle. Only the original order's account can set it
+    // up again (lib/qrStickerRules.ts).
+    await prisma.$transaction(async (tx) => {
+      await tx.vehicleRegistration.update({
+        where: { id },
+        data:  { status: 'DELETED', isActive: false, deactivatedAt: new Date() },
+      });
+      await releaseVehicleStickers(tx, id);
     });
   }
   return { deleted: true };

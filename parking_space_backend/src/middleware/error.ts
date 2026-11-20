@@ -24,6 +24,19 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     });
   }
 
+  // Database briefly unreachable (connect timeout, pool exhausted, connection
+  // dropped): a temporary condition, not a bug. Say so, so people retry.
+  const prismaCode = (err as { errorCode?: string; code?: string })?.errorCode ?? (err as { code?: string })?.code;
+  const isDbDown =
+    (err as Error)?.constructor?.name === 'PrismaClientInitializationError' ||
+    ['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(prismaCode ?? '');
+  if (isDbDown) {
+    logger.warn({ code: prismaCode }, 'Database temporarily unavailable');
+    return res.status(503).json({
+      error: { code: 'DB_UNAVAILABLE', message: 'The database is not responding right now. Please try again in a few seconds.' },
+    });
+  }
+
   logger.error({ err }, 'Unhandled error');
   // Belt-and-braces: write directly to stderr so the error shows up even if
   // the pino transport is misconfigured on the host. Cheap diagnostic.

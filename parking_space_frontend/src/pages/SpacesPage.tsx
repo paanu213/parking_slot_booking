@@ -267,7 +267,7 @@ export const SpacesPage = () => {
                 Got empty parking bays? Turn them into revenue.
               </h2>
               <p className="mt-1 text-sm text-white/80">
-                List your space on AutoSahay in minutes — zero setup cost, weekly payouts.
+                List your space on AutoSahay in minutes, zero setup cost, weekly payouts.
               </p>
             </div>
             <Link

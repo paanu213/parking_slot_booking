@@ -344,7 +344,7 @@ export const SpaceEditPage = () => {
                 )}
               </div>
               {pincodeStatus === 'error' && (
-                <p className="mt-1 text-xs text-red-500">Not found — fill manually.</p>
+                <p className="mt-1 text-xs text-red-500">Not found, fill manually.</p>
               )}
             </div>
             <div>
@@ -372,7 +372,7 @@ export const SpaceEditPage = () => {
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">
               City / Town *
-              <span className="ml-1.5 font-normal text-slate-400">(auto from pincode — edit if needed)</span>
+              <span className="ml-1.5 font-normal text-slate-400">(auto from pincode, edit if needed)</span>
             </label>
             <input
               className="input w-full"
@@ -559,7 +559,7 @@ export const SpaceEditPage = () => {
         />
         {uploadImages.isError && (
           <p className="mt-2 text-xs text-rose-600">
-            Upload failed — {(uploadImages.error as any)?.response?.data?.message ?? 'please try again.'}
+            Upload failed, {(uploadImages.error as any)?.response?.data?.message ?? 'please try again.'}
           </p>
         )}
       </Section>

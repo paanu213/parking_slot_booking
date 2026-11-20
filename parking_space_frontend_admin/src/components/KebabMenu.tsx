@@ -25,15 +25,31 @@
  *   </KebabMenu>
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { createContext, useContext, useId, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreVertical } from 'lucide-react';
+
+// Lets a MenuItem close its own menu. Relying only on the document click
+// listener is not enough: a parent that stops click propagation (e.g. a table
+// row wrapper) keeps the menu open after an item is chosen.
+const CloseMenuContext = createContext<() => void>(() => {});
+
+// Only one menu open at a time: opening a menu announces itself, the others close.
+const OPEN_EVENT = 'kebab-menu-open';
 
 // ── KebabMenu ─────────────────────────────────────────────────────────────────
 export const KebabMenu = ({ children }: { children: React.ReactNode }) => {
   const [open, setOpen] = useState(false);
   const [pos,  setPos]  = useState({ top: 0, left: 0 });
   const btnRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  // Close when another menu opens (its opening click never reaches the document listener).
+  useEffect(() => {
+    const onOtherOpen = (e: Event) => { if ((e as CustomEvent<string>).detail !== menuId) setOpen(false); };
+    window.addEventListener(OPEN_EVENT, onOtherOpen);
+    return () => window.removeEventListener(OPEN_EVENT, onOtherOpen);
+  }, [menuId]);
 
   const toggle = (e: React.MouseEvent) => {
     // Stop both React synthetic bubbling AND the native DOM event so that
@@ -47,6 +63,7 @@ export const KebabMenu = ({ children }: { children: React.ReactNode }) => {
       const MENU_W = 208; // w-52 = 13rem = 208 px
       const left   = Math.max(8, r.right - MENU_W); // keep inside viewport
       setPos({ top: r.bottom + 4, left });
+      window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: menuId }));
     }
     setOpen((o) => !o);
   };
@@ -76,13 +93,12 @@ export const KebabMenu = ({ children }: { children: React.ReactNode }) => {
       </button>
 
       {open && createPortal(
-        // Clicking any item bubbles up to document → close handler fires → menu closes.
-        // No stopPropagation needed here.
+        // Items close the menu themselves (CloseMenuContext); outside clicks close it via the document listener.
         <div
           style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
           className="w-52 rounded-xl border border-slate-200 bg-white py-1 shadow-xl dark:border-slate-700 dark:bg-slate-900"
         >
-          {children}
+          <CloseMenuContext.Provider value={() => setOpen(false)}>{children}</CloseMenuContext.Provider>
         </div>,
         document.body,
       )}
@@ -104,6 +120,7 @@ export const MenuItem = ({
   disabled?: boolean;
   variant?:  'default' | 'danger' | 'warning';
 }) => {
+  const closeMenu = useContext(CloseMenuContext);
   const color = {
     default: 'text-slate-700 dark:text-slate-200',
     danger:  'text-red-600   dark:text-red-400',
@@ -112,7 +129,7 @@ export const MenuItem = ({
 
   return (
     <button
-      onClick={onClick}
+      onClick={() => { closeMenu(); onClick?.(); }}
       disabled={disabled}
       className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition
         hover:bg-slate-50 dark:hover:bg-slate-800

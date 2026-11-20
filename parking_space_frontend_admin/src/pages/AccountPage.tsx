@@ -55,15 +55,15 @@ export const AccountPage = () => {
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-xs text-slate-400">Name</dt>
-            <dd className="font-medium">{user?.fullName ?? '—'}</dd>
+            <dd className="font-medium">{user?.fullName ?? '-'}</dd>
           </div>
           <div>
             <dt className="text-xs text-slate-400">Email</dt>
-            <dd className="font-medium">{user?.email ?? '—'}</dd>
+            <dd className="font-medium">{user?.email ?? '-'}</dd>
           </div>
           <div>
             <dt className="text-xs text-slate-400">Role</dt>
-            <dd className="font-medium">{user?.role?.replace('_', ' ') ?? '—'}</dd>
+            <dd className="font-medium">{user?.role?.replace('_', ' ') ?? '-'}</dd>
           </div>
         </dl>
       </div>
