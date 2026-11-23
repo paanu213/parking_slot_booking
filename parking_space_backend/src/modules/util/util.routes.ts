@@ -4,6 +4,7 @@
  */
 import { Router } from 'express';
 import { validate } from '../../middleware/validate.js';
+import { optionalAuth } from '../../middleware/auth.js';
 import { leadSchema } from './util.schema.js';
 import { getPincode, submitVendorLead } from './util.controller.js';
 import { getStickerPricePaise } from '../../lib/qrPricing.js';
@@ -21,7 +22,9 @@ r.get('/qr-pricing', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /api/util/vendor-leads → creates a reviewable VendorLead
-r.post('/vendor-leads', validate(leadSchema), submitVendorLead);
+// POST /api/util/vendor-leads → creates a reviewable VendorLead.
+// "List your space" (PARKING) requires a signed-in account; the service-partner
+// form (SERVICE) still accepts guests. Enforced in the controller.
+r.post('/vendor-leads', optionalAuth, validate(leadSchema), submitVendorLead);
 
 export default r;

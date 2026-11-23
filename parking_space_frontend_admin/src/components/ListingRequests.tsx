@@ -21,6 +21,8 @@ type Lead = {
   businessName: string; fullName: string; email: string; phone: string;
   city: string; slotsApprox?: number | null; notes?: string | null; status: string;
   createdAt: string; reviewedAt?: string | null;
+  /** Account that submitted it (sign-in is required for List your space). */
+  user?: { id: string; fullName: string; email: string; phone: string | null } | null;
 };
 
 /**
@@ -128,6 +130,11 @@ export const ListingRequests = ({ leadType }: { leadType: 'PARKING' | 'SERVICE' 
                       <Detail icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={<a href={`mailto:${lead.email}`} className="text-brand-600 underline dark:text-brand-400">{lead.email}</a>} />
                       <Detail icon={<Phone className="h-3.5 w-3.5" />} label="Phone" value={<a href={`tel:${lead.phone}`} className="text-brand-600 underline dark:text-brand-400">{lead.phone}</a>} />
                       <Detail icon={<MapPin className="h-3.5 w-3.5" />} label="City" value={lead.city} />
+                      <Detail
+                        icon={<User className="h-3.5 w-3.5" />}
+                        label="Submitted by"
+                        value={lead.user ? `${lead.user.fullName} · ${lead.user.email}` : 'Guest (before sign-in was required)'}
+                      />
                       {isService ? (
                         <Detail icon={<Wrench className="h-3.5 w-3.5" />} label="Service" value={lead.serviceCategory ?? '-'} />
                       ) : (

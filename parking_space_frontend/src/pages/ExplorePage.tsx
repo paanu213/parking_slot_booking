@@ -414,7 +414,7 @@ export const ExplorePage = () => {
           </div>
 
           {/* Trust stats */}
-          <div className="mt-10 grid grid-cols-2 gap-6 text-white sm:grid-cols-4">
+          {/* <div className="mt-10 grid grid-cols-2 gap-6 text-white sm:grid-cols-4">
             {[
               { v: '100%', l: 'Verified slots' },
               { v: '48 sec', l: 'Avg booking time' },
@@ -426,7 +426,7 @@ export const ExplorePage = () => {
                 <p className="mt-1 text-xs text-white/70 sm:text-sm">{s.l}</p>
               </div>
             ))}
-          </div>
+          </div> */}
         </div>
       </section>
 

@@ -25,6 +25,18 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
   }
 };
 
+/** Like requireAuth, but a missing/invalid token just leaves req.user unset. */
+export const optionalAuth: RequestHandler = (req, _res, next) => {
+  const header = req.headers.authorization;
+  const token = header?.startsWith('Bearer ')
+    ? header.slice(7)
+    : (req.cookies?.access_token as string | undefined);
+  if (token) {
+    try { req.user = verifyAccessToken(token); } catch { /* treat as signed out */ }
+  }
+  next();
+};
+
 export const requireRole =
   (...roles: string[]): RequestHandler =>
   (req, _res, next) => {

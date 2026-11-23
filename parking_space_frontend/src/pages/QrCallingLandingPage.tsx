@@ -12,7 +12,7 @@ import { Footer } from '@/components/Footer';
 import { cn } from '@/lib/cn';
 import { phoneInputProps, phoneRules } from '@/lib/phone';
 import { VehicleTypePicker, vehicleKindLabel, type VehicleKind } from '@/components/VehicleTypePicker';
-import { API_URL } from '@/lib/config';
+import { startGoogleLogin } from '@/lib/googleLogin';
 import { useQrPrice } from '@/hooks/useQrPrice';
 import { friendlyPaymentError, useQrPaymentCheckout } from '@/hooks/useQrPaymentCheckout';
 
@@ -31,11 +31,7 @@ interface OrderForm {
   note: string;
 }
 
-const googleLogin = (returnPath: string) => {
-  const returnTo = encodeURIComponent(returnPath);
-  const origin = encodeURIComponent(window.location.origin);
-  window.location.href = `${API_URL}/auth/google?portal=customer&returnTo=${returnTo}&origin=${origin}`;
-};
+const googleLogin = startGoogleLogin;
 
 const ORDER_STEPS = [
   { key: 'signin', label: 'Sign in' },

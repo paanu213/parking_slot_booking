@@ -476,6 +476,7 @@ export const listVendorLeads = async (status?: string, type?: string) => {
       ...(status ? { status: status as any } : {}),
       ...(type ? { leadType: type } : {}),
     },
+    include: { user: { select: { id: true, fullName: true, email: true, phone: true } } },
     orderBy: { createdAt: 'desc' },
   });
   return { items };

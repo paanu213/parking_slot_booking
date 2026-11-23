@@ -124,6 +124,7 @@ model User {
   qrOrderStatusEvents QrOrderStatusEvent[]
 
   @@index([role, status])
+  vendorLeads        VendorLead[]
 }
 
 model SavedSpace {
@@ -208,10 +209,16 @@ model VendorLead {
   status       VendorLeadStatus @default(PENDING)
   reviewedAt   DateTime?
   reviewedById String?
+  // Account that submitted it. Required for "List your space" (PARKING) since
+  // 2026-11; older leads and SERVICE leads may have none.
+  userId       String?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
   @@index([status])
+  @@index([userId])
 }
 
 model ParkingLocation {

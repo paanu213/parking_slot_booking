@@ -15,6 +15,10 @@ export default {
         brand: Object.fromEntries(
           [50, 100, 200, 300, 400, 500, 600, 700, 800, 900].map((n) => [n, `rgb(var(--brand-${n}) / <alpha-value>)`]),
         ),
+        // Secondary colour (green): success, money, "go" actions. Also from CSS variables.
+        accent: Object.fromEntries(
+          [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((n) => [n, `rgb(var(--accent-${n}) / <alpha-value>)`]),
+        ),
       },
       borderRadius: { xl: '14px', '2xl': '20px' },
       keyframes: {

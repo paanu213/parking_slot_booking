@@ -8,7 +8,7 @@
  */
 import https from 'node:https';
 import { prisma } from '../../lib/prisma.js';
-import { HttpError } from '../../lib/http.js';
+import { Conflict, HttpError } from '../../lib/http.js';
 import type { LeadInput } from './util.schema.js';
 
 const insecureAgent = new https.Agent({ rejectUnauthorized: false });
@@ -94,10 +94,28 @@ export const lookupPincode = async (raw: string): Promise<PincodeLookup> => {
  */
 export const createVendorLead = async (
   data: LeadInput,
-  meta: { ip?: string; userAgent?: string | null },
+  meta: { ip?: string; userAgent?: string | null; userId?: string | null },
 ) => {
+  // Block repeats: the same account (or, for guest service leads, the same
+  // email) already has a PENDING request for this business. Name match is
+  // case-insensitive (MySQL default collation). Once the team approves or
+  // rejects it, a new request is allowed.
+  const duplicate = await prisma.vendorLead.findFirst({
+    where: {
+      leadType:     data.leadType,
+      status:       'PENDING',
+      businessName: data.businessName,
+      ...(meta.userId ? { userId: meta.userId } : { email: data.email }),
+    },
+    select: { id: true },
+  });
+  if (duplicate) {
+    throw Conflict('We already have your request for this place. Our team will call you within 24 hours.');
+  }
+
   const lead = await prisma.vendorLead.create({
     data: {
+      userId:          meta.userId ?? null,
       leadType:        data.leadType,
       serviceCategory: data.serviceCategory ?? null,
       businessName: data.businessName,
@@ -111,6 +129,7 @@ export const createVendorLead = async (
   });
   await prisma.auditLog.create({
     data: {
+      actorId:  meta.userId ?? null,
       action:   'VENDOR_LEAD_SUBMIT',
       entity:   'VendorLead',
       entityId: lead.id,
