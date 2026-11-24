@@ -180,7 +180,7 @@ export const ListYourSpacePage = () => {
                   height={1254}
                   className="block h-auto w-full rounded-[1.25rem]"
                   loading="eager"
-                  fetchPriority="high"
+                  {...{ fetchpriority: "high" }} // lowercase: React 18 only knows the DOM spelling
                 />
               </picture>
             </div>

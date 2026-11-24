@@ -1,4 +1,10 @@
-import sharp from 'sharp';
+import type SharpType from 'sharp';
+
+// sharp is a native module, loaded on first use rather than at startup: if its
+// binary ever fails to load on the host (e.g. Node too old for the installed
+// version), only image uploads fail, not the whole API.
+let sharpPromise: Promise<typeof SharpType> | null = null;
+const loadSharp = () => (sharpPromise ??= import('sharp').then((m) => m.default));
 import { nanoid } from 'nanoid';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { env } from '../config/env.js';
@@ -51,7 +57,7 @@ export const storeImageBuffer = async (buffer: Buffer): Promise<StoredImage> => 
   const id  = nanoid(16);
   const key = buildKey('', 'webp').replace(/[^/]+$/, `${id}.webp`); // keep YYYY/MM/ prefix
 
-  const { data, info } = await sharp(buffer)
+  const { data, info } = await (await loadSharp())(buffer)
     .rotate()
     .resize({ width: 1600, withoutEnlargement: true })
     .webp({ quality: 80 })
@@ -67,7 +73,7 @@ export const storeIconBuffer = async (buffer: Buffer): Promise<StoredImage> => {
   const id  = nanoid(16);
   const key = buildKey('icon-', 'webp').replace(/icon-[^/]+$/, `icon-${id}.webp`);
 
-  const { data, info } = await sharp(buffer)
+  const { data, info } = await (await loadSharp())(buffer)
     .rotate()
     .resize(96, 96, { fit: 'cover', position: 'centre' })
     .webp({ quality: 90 })
@@ -92,7 +98,7 @@ export const storeDocumentBuffer = async (
     contentType = 'application/pdf';
     key         = buildKey('doc-', 'pdf');
   } else {
-    body = await sharp(buffer)
+    body = await (await loadSharp())(buffer)
       .rotate()
       .resize({ width: 1600, withoutEnlargement: true })
       .webp({ quality: 85 })

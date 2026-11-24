@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EmergencyContactInput, RegisterVehicleInput } from '@ps/types';
+import { EmergencyContactInput, QrVehicleType, RegisterVehicleInput } from '@ps/types';
 
 /** Register a new car — full shape, defined once in @ps/types. */
 export const registerVehicleSchema = RegisterVehicleInput;
@@ -18,7 +18,10 @@ export const registerVehicleSchema = RegisterVehicleInput;
  */
 const s = RegisterVehicleInput.shape;
 export const updateVehicleSchema = z.object({
-  vehicleType:       s.vehicleType.optional(),
+  // The bare enum, not s.vehicleType: that one carries .default('CAR'), and since
+  // zod 4 a default still fills in under .optional(), which would turn a bike
+  // into a car on any edit that doesn't mention the type.
+  vehicleType:       QrVehicleType.optional(),
   contactPhone:      s.contactPhone.optional(),
   ownerName:         s.ownerName.nullable().optional(),
   silentFrom:        s.silentFrom.nullable(),

@@ -202,6 +202,6 @@ export const ProductPhotoVisual = () => (
     alt="Someone scanning an AutoSahay QR sticker on a car to call the owner"
     className="h-full w-full object-cover object-[70%_center]"
     loading="eager"
-    fetchPriority="high"
+    {...{ fetchpriority: "high" }} // lowercase: React 18 only knows the DOM spelling
   />
 );

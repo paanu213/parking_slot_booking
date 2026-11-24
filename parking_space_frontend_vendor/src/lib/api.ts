@@ -43,7 +43,8 @@ api.interceptors.response.use(
       return api(original);
     } catch (refreshError) {
       drainQueue(refreshError);
-      if (window.location.pathname !== '/login') {
+      // Public pages (sign-in, sign-up) must stay reachable for guests.
+      if (!['/login', '/register'].includes(window.location.pathname)) {
         // Preserve the page they were on so the login flow can send them back.
         const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
         window.location.href = `/login?returnTo=${returnTo}`;

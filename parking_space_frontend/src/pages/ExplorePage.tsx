@@ -183,7 +183,7 @@ export const ExplorePage = () => {
                 alt=""
                 className="h-full w-full object-cover object-[88%_center]"
                 loading="eager"
-                fetchPriority="high"
+                {...{ fetchpriority: "high" }} // lowercase: React 18 only knows the DOM spelling
               />
             </div>
             {/* Readability: dark from the left (copy column) and the bottom (feature row) */}
@@ -300,7 +300,7 @@ export const ExplorePage = () => {
               height={933}
               className="w-full rounded-3xl object-cover shadow-xl shadow-slate-900/10"
               loading="eager"
-              fetchPriority="high"
+              {...{ fetchpriority: "high" }} // lowercase: React 18 only knows the DOM spelling
             />
 
             {/* Top-left floating badge */}

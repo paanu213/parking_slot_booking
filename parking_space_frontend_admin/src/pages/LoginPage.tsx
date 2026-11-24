@@ -44,7 +44,8 @@ export const LoginPage = () => {
   // and `/login?...` themselves so we never loop the user back here.
   const safeReturnTo = (() => {
     const raw = params.get('returnTo');
-    if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/';
+    // Backslashes are rejected too: browsers treat "/\evil.com" like "//evil.com" (open redirect).
+    if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return '/';
     if (raw === '/login' || raw.startsWith('/login?') || raw.startsWith('/login#')) return '/';
     return raw;
   })();
