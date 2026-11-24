@@ -7,17 +7,19 @@
  */
 
 import { prisma } from './prisma.js';
+import { cachedSetting, invalidateSetting } from './settingsCache.js';
 
 export const COMMISSION_RATE_KEY = 'commission_rate';
 export const DEFAULT_COMMISSION_RATE = 10;
 
 /** Read the current commission rate (percent). Falls back to the default. */
-export const getCommissionRate = async (): Promise<number> => {
-  const row = await prisma.setting.findUnique({ where: { key: COMMISSION_RATE_KEY } });
-  if (!row) return DEFAULT_COMMISSION_RATE;
-  const n = Number(row.value);
-  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_COMMISSION_RATE;
-};
+export const getCommissionRate = (): Promise<number> =>
+  cachedSetting(COMMISSION_RATE_KEY, async () => {
+    const row = await prisma.setting.findUnique({ where: { key: COMMISSION_RATE_KEY } });
+    if (!row) return DEFAULT_COMMISSION_RATE;
+    const n = Number(row.value);
+    return Number.isFinite(n) && n >= 0 ? n : DEFAULT_COMMISSION_RATE;
+  });
 
 /** Persist a new commission rate (percent, 0–100). */
 export const setCommissionRate = async (rate: number): Promise<number> => {
@@ -27,6 +29,7 @@ export const setCommissionRate = async (rate: number): Promise<number> => {
     create: { key: COMMISSION_RATE_KEY, value: String(clamped) },
     update: { value: String(clamped) },
   });
+  invalidateSetting(COMMISSION_RATE_KEY);
   return clamped;
 };
 

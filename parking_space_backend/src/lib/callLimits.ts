@@ -8,6 +8,9 @@
  * the older single-setting UI carries over.
  */
 import { prisma } from './prisma.js';
+import { cachedSetting, invalidateSetting } from './settingsCache.js';
+
+const CACHE_KEY = 'call_limits';
 import { env } from '../config/env.js';
 
 export interface CallLimitDef {
@@ -71,11 +74,12 @@ const parse = (def: CallLimitDef, raw: string | undefined): number => {
 };
 
 /** All current limits in one query. */
-export const getCallLimits = async (): Promise<CallLimits> => {
-  const rows = await prisma.setting.findMany({ where: { key: { in: NAMES.map((n) => CALL_LIMIT_DEFS[n].key) } } });
-  const byKey = new Map(rows.map((r) => [r.key, r.value]));
-  return Object.fromEntries(NAMES.map((n) => [n, parse(CALL_LIMIT_DEFS[n], byKey.get(CALL_LIMIT_DEFS[n].key))])) as CallLimits;
-};
+export const getCallLimits = (): Promise<CallLimits> =>
+  cachedSetting(CACHE_KEY, async () => {
+    const rows = await prisma.setting.findMany({ where: { key: { in: NAMES.map((n) => CALL_LIMIT_DEFS[n].key) } } });
+    const byKey = new Map(rows.map((r) => [r.key, r.value]));
+    return Object.fromEntries(NAMES.map((n) => [n, parse(CALL_LIMIT_DEFS[n], byKey.get(CALL_LIMIT_DEFS[n].key))])) as CallLimits;
+  });
 
 /** Save any subset of the limits (each clamped to its bounds); returns the full set. */
 export const setCallLimits = async (patch: Partial<CallLimits>): Promise<CallLimits> => {
@@ -90,5 +94,6 @@ export const setCallLimits = async (patch: Partial<CallLimits>): Promise<CallLim
       update: { value: String(clamped) },
     });
   }
+  invalidateSetting(CACHE_KEY);
   return getCallLimits();
 };

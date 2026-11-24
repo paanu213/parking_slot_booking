@@ -1,18 +1,20 @@
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { BrowserRouter, Route, Routes, Link, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Clock, CheckCircle2, Layers, CalendarCheck, CircleDot, Wallet, TrendingUp, ArrowRight, Percent } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/auth';
 import { AppShell } from '@/components/AppShell';
-import { ParkingSpacesPage } from '@/pages/ParkingSpacesPage';
-import { AddParkingSpacePage } from '@/pages/AddParkingSpacePage';
-import { BookingsPage } from '@/pages/BookingsPage';
-import { CommissionsPage } from '@/pages/CommissionsPage';
-import { SlotBookingsPage } from '@/pages/SlotBookingsPage';
-import { ProfilePage } from '@/pages/ProfilePage';
-import { LoginPage } from '@/pages/LoginPage';
-import { RegisterPage } from '@/pages/RegisterPage';
+import { lazyPage } from '@/lib/lazyPage';
+import { PageLoader } from '@/components/PageLoader';
+const ParkingSpacesPage = lazyPage(() => import('@/pages/ParkingSpacesPage').then((m) => ({ default: m.ParkingSpacesPage })));
+const AddParkingSpacePage = lazyPage(() => import('@/pages/AddParkingSpacePage').then((m) => ({ default: m.AddParkingSpacePage })));
+const BookingsPage = lazyPage(() => import('@/pages/BookingsPage').then((m) => ({ default: m.BookingsPage })));
+const CommissionsPage = lazyPage(() => import('@/pages/CommissionsPage').then((m) => ({ default: m.CommissionsPage })));
+const SlotBookingsPage = lazyPage(() => import('@/pages/SlotBookingsPage').then((m) => ({ default: m.SlotBookingsPage })));
+const ProfilePage = lazyPage(() => import('@/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
+const LoginPage = lazyPage(() => import('@/pages/LoginPage').then((m) => ({ default: m.LoginPage })));
+const RegisterPage = lazyPage(() => import('@/pages/RegisterPage').then((m) => ({ default: m.RegisterPage })));
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -367,7 +369,8 @@ export default function App() {
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <HydrateSession />
-        <Routes>
+        <Suspense fallback={<PageLoader />}>
+<Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route
@@ -375,7 +378,8 @@ export default function App() {
             element={
               <AuthGuard>
                 <AppShell>
-                  <Routes>
+                  <Suspense fallback={<PageLoader />}>
+<Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/spaces" element={<ParkingSpacesPage />} />
                     <Route path="/spaces/add" element={<AddParkingSpacePage />} />
@@ -384,11 +388,13 @@ export default function App() {
                     <Route path="/commissions" element={<CommissionsPage />} />
                     <Route path="/profile" element={<ProfilePage />} />
                   </Routes>
+</Suspense>
                 </AppShell>
               </AuthGuard>
             }
           />
         </Routes>
+</Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   );

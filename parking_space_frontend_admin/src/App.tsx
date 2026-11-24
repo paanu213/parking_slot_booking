@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, Suspense } from 'react';
 import { BrowserRouter, Route, Routes, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -17,37 +17,45 @@ import { AmenityIcon, LUCIDE_ICON_MAP } from '@ps/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/auth';
 import { AppShell } from '@/components/AppShell';
-import { BookingsPage } from '@/pages/BookingsPage';
-import { PaymentsPage } from '@/pages/PaymentsPage';
-import { AdminsPage } from '@/pages/AdminsPage';
-import { SpacesPage } from '@/pages/SpacesPage';
-import { SpaceEditPage } from '@/pages/SpaceEditPage';
-import SpaceDetailsPage from '@/pages/SpaceDetailsPage';
-import CommissionsPage from '@/pages/CommissionsPage';
-import RequestsPage from '@/pages/RequestsPage';
-import { AddVendorPage } from '@/pages/AddVendorPage';
-import { AddSpacePage } from '@/pages/AddSpacePage';
-import { LoginPage } from '@/pages/LoginPage';
+const BookingsPage = lazyPage(() => import('@/pages/BookingsPage').then((m) => ({ default: m.BookingsPage })));
+const PaymentsPage = lazyPage(() => import('@/pages/PaymentsPage').then((m) => ({ default: m.PaymentsPage })));
+const AdminsPage = lazyPage(() => import('@/pages/AdminsPage').then((m) => ({ default: m.AdminsPage })));
+const SpacesPage = lazyPage(() => import('@/pages/SpacesPage').then((m) => ({ default: m.SpacesPage })));
+const SpaceEditPage = lazyPage(() => import('@/pages/SpaceEditPage').then((m) => ({ default: m.SpaceEditPage })));
+const SpaceDetailsPage = lazyPage(() => import('@/pages/SpaceDetailsPage'));
+const CommissionsPage = lazyPage(() => import('@/pages/CommissionsPage'));
+const RequestsPage = lazyPage(() => import('@/pages/RequestsPage'));
+const AddVendorPage = lazyPage(() => import('@/pages/AddVendorPage').then((m) => ({ default: m.AddVendorPage })));
+const AddSpacePage = lazyPage(() => import('@/pages/AddSpacePage').then((m) => ({ default: m.AddSpacePage })));
+const LoginPage = lazyPage(() => import('@/pages/LoginPage').then((m) => ({ default: m.LoginPage })));
 import { KebabMenu, MenuItem, MenuDivider } from '@/components/KebabMenu';
 import { SearchableSelect } from '@/components/SearchableSelect';
-import { CustomersPage } from '@/pages/CustomersPage';
-import { CustomerDetailsPage } from '@/pages/CustomerDetailsPage';
-import { VendorDetailsPage } from '@/pages/VendorDetailsPage';
-import { SlotBookingsPage } from '@/pages/SlotBookingsPage';
-import { ProfilePage } from '@/pages/ProfilePage';
-import { AccountPage } from '@/pages/AccountPage';
-import QrCallingPage from '@/pages/QrCallingPage';
-import { QrVehicleDetailPage } from '@/pages/QrVehicleDetailPage';
-import { AuditLogPage } from '@/pages/AuditLogPage';
-import RegistrationsPage from '@/pages/RegistrationsPage';
-import StickerOrdersPage from '@/pages/StickerOrdersPage';
-import NewStickerOrderPage from '@/pages/NewStickerOrderPage';
-import QrBatchesPage from '@/pages/QrBatchesPage';
-import QrSettingsPage from '@/pages/QrSettingsPage';
+import { lazyPage } from '@/lib/lazyPage';
+import { PageLoader } from '@/components/PageLoader';
+const CustomersPage = lazyPage(() => import('@/pages/CustomersPage').then((m) => ({ default: m.CustomersPage })));
+const CustomerDetailsPage = lazyPage(() => import('@/pages/CustomerDetailsPage').then((m) => ({ default: m.CustomerDetailsPage })));
+const VendorDetailsPage = lazyPage(() => import('@/pages/VendorDetailsPage').then((m) => ({ default: m.VendorDetailsPage })));
+const SlotBookingsPage = lazyPage(() => import('@/pages/SlotBookingsPage').then((m) => ({ default: m.SlotBookingsPage })));
+const ProfilePage = lazyPage(() => import('@/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
+const AccountPage = lazyPage(() => import('@/pages/AccountPage').then((m) => ({ default: m.AccountPage })));
+const QrCallingPage = lazyPage(() => import('@/pages/QrCallingPage'));
+const QrVehicleDetailPage = lazyPage(() => import('@/pages/QrVehicleDetailPage').then((m) => ({ default: m.QrVehicleDetailPage })));
+const AuditLogPage = lazyPage(() => import('@/pages/AuditLogPage').then((m) => ({ default: m.AuditLogPage })));
+const RegistrationsPage = lazyPage(() => import('@/pages/RegistrationsPage'));
+const StickerOrdersPage = lazyPage(() => import('@/pages/StickerOrdersPage'));
+const NewStickerOrderPage = lazyPage(() => import('@/pages/NewStickerOrderPage'));
+const QrBatchesPage = lazyPage(() => import('@/pages/QrBatchesPage'));
+const QrSettingsPage = lazyPage(() => import('@/pages/QrSettingsPage'));
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SUB_ADMIN'];
 
-const qc = new QueryClient();
+// Same defaults as the customer and vendor apps: data counts as fresh for 30 s
+// and isn't refetched just because the tab regained focus (that reloaded every
+// query on the page on each tab switch). Saves after edits still refresh
+// immediately through invalidateQueries.
+const qc = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: false } },
+});
 
 const HydrateSession = () => {
   const setSession = useAuth((s) => s.setSession);
@@ -1895,14 +1903,16 @@ export default function App() {
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <HydrateSession />
-        <Routes>
+        <Suspense fallback={<PageLoader />}>
+<Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route
             path="/*"
             element={
               <AuthGuard>
                 <AppShell>
-                  <Routes>
+                  <Suspense fallback={<PageLoader />}>
+<Routes>
                     <Route path="/" element={<Overview />} />
                     <Route path="/vendors" element={<Vendors />} />
                     <Route path="/requests" element={<RequestsPage />} />
@@ -1932,11 +1942,13 @@ export default function App() {
                     <Route path="/qr-batches" element={<QrBatchesPage />} />
                     <Route path="/qr-settings" element={<QrSettingsPage />} />
                   </Routes>
+</Suspense>
                 </AppShell>
               </AuthGuard>
             }
           />
         </Routes>
+</Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   );

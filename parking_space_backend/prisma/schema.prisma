@@ -348,6 +348,8 @@ model Booking {
 
   @@index([userId, status])
   @@index([slotId, startAt, endAt])
+  @@index([createdAt])
+  @@index([status, createdAt])
 }
 
 // A payment "attempt" — one row per Razorpay order we create. A retried
@@ -393,6 +395,7 @@ model Payment {
   @@index([qrOrderId])
   @@index([providerOrderId])
   @@index([providerPaymentId])
+  @@index([status, createdAt])
 }
 
 model AuditLog {
@@ -409,6 +412,7 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([actorId])
+  @@index([createdAt])
 }
 
 // Simple key/value store for admin-configurable settings (e.g. commission_rate).
@@ -681,6 +685,8 @@ model QrOrder {
   @@index([userId])
   @@index([status])
   @@index([registrationId])
+  @@index([createdAt])
+  @@index([paymentStatus, createdAt])
 }
 
 // Full fulfilment timeline for a QrOrder — one row per status change, so a

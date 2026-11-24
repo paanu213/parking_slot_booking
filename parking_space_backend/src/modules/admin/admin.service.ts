@@ -81,7 +81,9 @@ export const getStats = async (startQ?: string, endQ?: string) => {
     recentProfileEdits,
     pendingListingLeads,
     recentListingLeads,
-  ] = await prisma.$transaction([
+  // Independent read-only counts for display: run them in parallel. A $transaction
+  // ran all 19 one after another (one database round trip each).
+  ] = await Promise.all([
     prisma.vendor.count(),
     prisma.vendor.count({ where: { status: 'PENDING' } }),
     prisma.vendor.count({ where: { status: 'APPROVED' } }),

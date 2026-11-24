@@ -1,32 +1,34 @@
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Header } from '@/components/Header';
-import { ExplorePage } from '@/pages/ExplorePage';
-import { SpacesPage } from '@/pages/SpacesPage';
-import { ListYourSpacePage } from '@/pages/ListYourSpacePage';
-import { ServicePartnerPage } from '@/pages/ServicePartnerPage';
-import { PrivacyPage } from '@/pages/PrivacyPage';
-import { TermsPage } from '@/pages/TermsPage';
-import { ShippingPolicyPage } from '@/pages/ShippingPolicyPage';
-import { LoginPage } from '@/pages/LoginPage';
-import { RegisterPage } from '@/pages/RegisterPage';
-import { LocationDetailPage } from '@/pages/LocationDetailPage';
-import { CheckoutPage } from '@/pages/CheckoutPage';
-import { BookingsPage } from '@/pages/BookingsPage';
-import { ProfilePage } from '@/pages/ProfilePage';
-import { SettingsPage } from '@/pages/SettingsPage';
-import { HelpPage } from '@/pages/HelpPage';
-import { SavedSpacesPage } from '@/pages/SavedSpacesPage';
-import { MyVehiclesPage } from '@/pages/MyVehiclesPage';
-import { ScanPage } from '@/pages/ScanPage';
-import { QrCallingLandingPage } from '@/pages/QrCallingLandingPage';
-import { QrProductPage } from '@/pages/QrProductPage';
-import { QrOrdersPage } from '@/pages/QrOrdersPage';
-import { TransactionsPage } from '@/pages/TransactionsPage';
+const ExplorePage = lazyPage(() => import('@/pages/ExplorePage').then((m) => ({ default: m.ExplorePage })));
+const SpacesPage = lazyPage(() => import('@/pages/SpacesPage').then((m) => ({ default: m.SpacesPage })));
+const ListYourSpacePage = lazyPage(() => import('@/pages/ListYourSpacePage').then((m) => ({ default: m.ListYourSpacePage })));
+const ServicePartnerPage = lazyPage(() => import('@/pages/ServicePartnerPage').then((m) => ({ default: m.ServicePartnerPage })));
+const PrivacyPage = lazyPage(() => import('@/pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
+const TermsPage = lazyPage(() => import('@/pages/TermsPage').then((m) => ({ default: m.TermsPage })));
+const ShippingPolicyPage = lazyPage(() => import('@/pages/ShippingPolicyPage').then((m) => ({ default: m.ShippingPolicyPage })));
+const LoginPage = lazyPage(() => import('@/pages/LoginPage').then((m) => ({ default: m.LoginPage })));
+const RegisterPage = lazyPage(() => import('@/pages/RegisterPage').then((m) => ({ default: m.RegisterPage })));
+const LocationDetailPage = lazyPage(() => import('@/pages/LocationDetailPage').then((m) => ({ default: m.LocationDetailPage })));
+const CheckoutPage = lazyPage(() => import('@/pages/CheckoutPage').then((m) => ({ default: m.CheckoutPage })));
+const BookingsPage = lazyPage(() => import('@/pages/BookingsPage').then((m) => ({ default: m.BookingsPage })));
+const ProfilePage = lazyPage(() => import('@/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
+const SettingsPage = lazyPage(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const HelpPage = lazyPage(() => import('@/pages/HelpPage').then((m) => ({ default: m.HelpPage })));
+const SavedSpacesPage = lazyPage(() => import('@/pages/SavedSpacesPage').then((m) => ({ default: m.SavedSpacesPage })));
+const MyVehiclesPage = lazyPage(() => import('@/pages/MyVehiclesPage').then((m) => ({ default: m.MyVehiclesPage })));
+const ScanPage = lazyPage(() => import('@/pages/ScanPage').then((m) => ({ default: m.ScanPage })));
+const QrCallingLandingPage = lazyPage(() => import('@/pages/QrCallingLandingPage').then((m) => ({ default: m.QrCallingLandingPage })));
+const QrProductPage = lazyPage(() => import('@/pages/QrProductPage').then((m) => ({ default: m.QrProductPage })));
+const QrOrdersPage = lazyPage(() => import('@/pages/QrOrdersPage').then((m) => ({ default: m.QrOrdersPage })));
+const TransactionsPage = lazyPage(() => import('@/pages/TransactionsPage').then((m) => ({ default: m.TransactionsPage })));
 import { useAuth } from '@/store/auth';
 import { useSaved } from '@/store/savedSpaces';
 import { api } from '@/lib/api';
+import { lazyPage } from '@/lib/lazyPage';
+import { PageLoader } from '@/components/PageLoader';
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -122,7 +124,8 @@ export default function App() {
         <ScrollToTop />
         <QrThemeSync />
         <Header />
-        <Routes>
+        <Suspense fallback={<PageLoader />}>
+<Routes>
           <Route path="/" element={<ExplorePage />} />
           <Route path="/spaces" element={<SpacesPage />} />
           <Route path="/list-your-space" element={<ListYourSpacePage />} />
@@ -204,6 +207,7 @@ export default function App() {
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+</Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   );
