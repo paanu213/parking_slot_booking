@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { VehicleChangeHistory } from '@/components/VehicleChangeHistory';
 import { Plus, Trash2, X } from 'lucide-react';
@@ -92,10 +93,12 @@ export const QrVehicleEditDrawer = ({
     && (!f.customerPhone || isPhone10(f.customerPhone))
     && f.contacts.every((c) => c.name.trim().length > 0 && isPhone10(c.phone));
 
-  return (
-    <>
+  // Rendered into <body>: it's often opened from a table row's action menu, and
+  // inside that cell it inherited text-right (and row click handlers).
+  return createPortal(
+    <div onClick={(e) => e.stopPropagation()}>
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col bg-white shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+      <aside className="fixed inset-y-0 right-0 z-50 ml-auto flex h-full w-full max-w-[460px] flex-col bg-white text-left shadow-2xl dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <div>
             <h3 className="text-base font-bold">Edit customer details</h3>
@@ -217,6 +220,7 @@ export const QrVehicleEditDrawer = ({
           </button>
         </div>
       </aside>
-    </>
+    </div>,
+    document.body,
   );
 };

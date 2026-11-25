@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import { CalendarClock, Infinity as InfinityIcon, Pause, Pencil, Phone, Play, UserCog, X } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -94,8 +95,10 @@ export const VehicleActionsMenu = ({ vehicle, onChanged }: { vehicle: VehicleAct
   );
 };
 
-export const ModalShell = ({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+// Rendered into <body> so a dialog opened from a table cell doesn't inherit its
+// alignment or styles.
+export const ModalShell = ({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) => createPortal(
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 text-left" onClick={(e) => e.stopPropagation()}>
     <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
     <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
       <button onClick={onClose} className="absolute right-4 top-4 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -105,7 +108,8 @@ export const ModalShell = ({ title, subtitle, onClose, children }: { title: stri
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
       {children}
     </div>
-  </div>
+  </div>,
+  document.body,
 );
 
 const EditContactModal = ({

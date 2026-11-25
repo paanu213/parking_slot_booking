@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { Pagination, usePage, ADMIN_PAGE_SIZE, type PageInfo } from '@/components/Pagination';
 import { ChevronDown, History, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -38,9 +39,11 @@ export const AuditLogPage = () => {
     queryFn: async () => (await api.get('/admin/audit-logs/entities')).data,
   });
 
-  const { data, isLoading } = useQuery<{ items: AuditLogRow[] }>({
-    queryKey: ['admin-audit-logs', q, entity],
-    queryFn: async () => (await api.get('/admin/audit-logs', { params: { q: q || undefined, entity: entity || undefined } })).data,
+  const [page, setPage] = usePage([q, entity]);
+  const { data, isLoading, isFetching } = useQuery<{ items: AuditLogRow[] } & PageInfo>({
+    queryKey: ['admin-audit-logs', q, entity, page],
+    queryFn: async () => (await api.get('/admin/audit-logs', { params: { page, pageSize: 50, q: q || undefined, entity: entity || undefined } })).data,
+    placeholderData: keepPreviousData,
   });
   const items = data?.items ?? [];
 
@@ -52,7 +55,7 @@ export const AuditLogPage = () => {
         </div>
         <div>
           <h1 className="text-2xl font-bold">Audit Log</h1>
-          <p className="text-sm text-slate-500">Every admin action, who did it, and when, most recent 300.</p>
+          <p className="text-sm text-slate-500">Every admin action, who did it, and when.</p>
         </div>
       </div>
 
@@ -140,6 +143,7 @@ export const AuditLogPage = () => {
             )}
           </tbody>
         </table>
+        <Pagination info={data} onPage={setPage} isFetching={isFetching} noun="entries" />
       </div>
     </section>
   );

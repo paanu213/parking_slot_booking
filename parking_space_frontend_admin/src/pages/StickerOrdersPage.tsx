@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Pagination, usePage, ADMIN_PAGE_SIZE, type PageInfo } from '@/components/Pagination';
 import { Ban, CheckCircle2, Handshake, Plus, X, FileText, IndianRupee, MapPin, Package, PackageX, Pencil, QrCode, Repeat, RotateCcw, Truck, UserCog } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -367,9 +368,11 @@ export default function StickerOrdersPage() {
   // PAID + REFUNDED — everything that ever had money move on it, including
   // returns and refunds, so this stays the one place to see an order's full
   // lifecycle. Never-paid / failed attempts still live in Registrations only.
-  const { data, isLoading } = useQuery<{ items: OrderRow[] }>({
-    queryKey: ['admin-qr-orders', status, orderType, dq, filters.vehicleType, filters.state, filters.city],
-    queryFn: async () => (await api.get('/admin/qr/orders', { params: { status: status || undefined, paymentStatus: 'PAID,REFUNDED', channel: orderType || undefined, ...qrFilterParams({ ...filters, q: dq }, 'q') } })).data,
+  const [page, setPage] = usePage([status, orderType, dq, filters.vehicleType, filters.state, filters.city]);
+  const { data, isLoading, isFetching } = useQuery<{ items: OrderRow[] } & PageInfo>({
+    queryKey: ['admin-qr-orders', status, orderType, dq, filters.vehicleType, filters.state, filters.city, page],
+    queryFn: async () => (await api.get('/admin/qr/orders', { params: { page, pageSize: ADMIN_PAGE_SIZE, status: status || undefined, paymentStatus: 'PAID,REFUNDED', channel: orderType || undefined, ...qrFilterParams({ ...filters, q: dq }, 'q') } })).data,
+    placeholderData: keepPreviousData,
   });
   const items = data?.items ?? [];
 
@@ -524,6 +527,7 @@ export default function StickerOrdersPage() {
             )}
           </tbody>
         </table>
+        <Pagination info={data} onPage={setPage} isFetching={isFetching} noun="orders" />
       </div>
 
       {returningId && (

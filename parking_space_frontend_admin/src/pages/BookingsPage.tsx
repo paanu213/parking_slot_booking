@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Pagination, usePage, ADMIN_PAGE_SIZE, type PageInfo } from '@/components/Pagination';
+import { useDebounced } from '@/components/QrFilters';
 import { CalendarCheck, Search, Globe, UserCheck, Ban, Pencil, Clock, CalendarRange, Percent, CheckCircle2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { KebabMenu, MenuItem } from '@/components/KebabMenu';
@@ -56,15 +58,6 @@ const paymentOf = (status: string): { label: string; cls: string } | null => {
 
 const canCancel = (status: string) => ['CONFIRMED', 'PENDING_PAYMENT'].includes(status);
 
-// A monthly pass is "active" when it's a live booking whose 30-day window covers now.
-const isActiveMonthly = (b: any) => {
-  if (b.bookingType !== 'MONTHLY') return false;
-  if (!['CONFIRMED', 'COMPLETED'].includes(b.status)) return false;
-  const now = Date.now();
-  return now >= new Date(b.startAt).getTime() && now <= new Date(b.endAt).getTime();
-};
-
-const isRevenue = (b: any) => ['CONFIRMED', 'COMPLETED'].includes(b.status);
 
 // ── Summary card ──────────────────────────────────────────────────────────────
 const SummaryCard = ({
@@ -87,6 +80,11 @@ const SummaryCard = ({
 );
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
+interface BookingSummary {
+  total: number; online: number; direct: number; monthly: number; hourly: number;
+  activeMonthly: number; totalRevenue: number; monthlyRevenue: number; byStatus: Record<string, number>;
+}
+
 export const BookingsPage = () => {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
@@ -98,9 +96,15 @@ export const BookingsPage = () => {
   const [editingRate, setEditingRate]   = useState(false);
   const [rateInput, setRateInput]       = useState('');
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-bookings'],
-    queryFn: async () => (await api.get('/admin/bookings')).data,
+  // Filters, search and paging run on the server; `summary` covers ALL bookings.
+  const dSearch = useDebounced(search);
+  const [page, setPage] = usePage([statusFilter, typeFilter, planFilter, dSearch]);
+  const { data, isLoading, isFetching } = useQuery<{ items: any[]; summary?: BookingSummary } & PageInfo>({
+    queryKey: ['admin-bookings', statusFilter, typeFilter, planFilter, dSearch, page],
+    queryFn: async () => (await api.get('/admin/bookings', {
+      params: { page, pageSize: ADMIN_PAGE_SIZE, status: statusFilter, type: typeFilter, plan: planFilter, q: dSearch.trim() || undefined },
+    })).data,
+    placeholderData: keepPreviousData,
   });
 
   const cancel = useMutation({
@@ -169,50 +173,16 @@ export const BookingsPage = () => {
     },
   });
 
-  const allBookings: any[] = data?.items ?? [];
-
-  const filtered = allBookings.filter((b) => {
-    const matchStatus = statusFilter === 'ALL' || b.status === statusFilter;
-    const matchType =
-      typeFilter === 'ALL' ||
-      (typeFilter === 'DIRECT' && b.isDirectBooking) ||
-      (typeFilter === 'ONLINE' && !b.isDirectBooking);
-    const matchPlan =
-      planFilter === 'ALL' ||
-      (planFilter === 'MONTHLY' && b.bookingType === 'MONTHLY') ||
-      (planFilter === 'HOURLY'  && b.bookingType !== 'MONTHLY');
-
-    const q = search.toLowerCase();
-    const customerName = b.isDirectBooking
-      ? (b.guestName ?? b.user?.fullName ?? '')
-      : (b.user?.fullName ?? '');
-    const customerEmail = b.user?.email ?? '';
-    const vendorName    = b.slot?.location?.vendor?.businessName ?? '';
-    const spaceName     = b.slot?.location?.name ?? '';
-
-    const matchSearch =
-      !q ||
-      b.reference?.toLowerCase().includes(q) ||
-      customerName.toLowerCase().includes(q) ||
-      customerEmail.toLowerCase().includes(q) ||
-      vendorName.toLowerCase().includes(q) ||
-      spaceName.toLowerCase().includes(q);
-
-    return matchStatus && matchType && matchPlan && matchSearch;
-  });
-
-  const onlineCount = allBookings.filter((b) => !b.isDirectBooking).length;
-  const directCount = allBookings.filter((b) =>  b.isDirectBooking).length;
-
-  // ── Summary stats (computed over ALL bookings, not the current filter) ──
-  const monthlyCount    = allBookings.filter((b) => b.bookingType === 'MONTHLY').length;
-  const hourlyCount     = allBookings.length - monthlyCount;
-  const activeMonthly   = allBookings.filter(isActiveMonthly).length;
-  const revenueBookings = allBookings.filter(isRevenue);
-  const totalRevenue    = revenueBookings.reduce((sum, b) => sum + Number(b.totalAmount), 0);
-  const monthlyRevenue  = revenueBookings
-    .filter((b) => b.bookingType === 'MONTHLY')
-    .reduce((sum, b) => sum + Number(b.totalAmount), 0);
+  const filtered: any[] = data?.items ?? [];
+  const summary = data?.summary;
+  const totalCount     = summary?.total ?? 0;
+  const onlineCount    = summary?.online ?? 0;
+  const directCount    = summary?.direct ?? 0;
+  const monthlyCount   = summary?.monthly ?? 0;
+  const hourlyCount    = summary?.hourly ?? 0;
+  const activeMonthly  = summary?.activeMonthly ?? 0;
+  const totalRevenue   = summary?.totalRevenue ?? 0;
+  const monthlyRevenue = summary?.monthlyRevenue ?? 0;
 
   return (
     <>
@@ -225,7 +195,7 @@ export const BookingsPage = () => {
           <div>
             <h1 className="text-2xl font-bold">Bookings</h1>
             <p className="text-sm text-slate-500">
-              {allBookings.length} total &mdash;{' '}
+              {totalCount} total &mdash;{' '}
               <span className="inline-flex items-center gap-1">
                 <Globe className="h-3 w-3 text-blue-500" /> {onlineCount} online
               </span>
@@ -243,7 +213,7 @@ export const BookingsPage = () => {
             icon={<CalendarCheck className="h-4 w-4 text-blue-600 dark:text-blue-300" />}
             accent="bg-blue-100 dark:bg-blue-900/30"
             label="Total Bookings"
-            value={allBookings.length}
+            value={totalCount}
             sub={`${hourlyCount} hourly · ${monthlyCount} monthly`}
           />
           <SummaryCard
@@ -629,6 +599,7 @@ export const BookingsPage = () => {
               </tbody>
             </table>
           )}
+          <Pagination info={data} onPage={setPage} isFetching={isFetching} noun="bookings" />
         </div>
       </section>
 

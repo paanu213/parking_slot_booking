@@ -307,17 +307,19 @@ export const getSlotBookings: RequestHandler = async (req, res, next) => {
 };
 
 // ── Bookings & payments ───────────────────────────────────────────────────────
-export const listBookings: RequestHandler = async (_req, res, next) => {
+export const listBookings: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await service.listBookings());
+    const qs = req.query as Record<string, string | undefined>;
+    res.json(await service.listBookings({ status: qs.status, type: qs.type, plan: qs.plan, q: qs.q, page: qs.page, pageSize: qs.pageSize }));
   } catch (e) {
     next(e);
   }
 };
 
-export const listPayments: RequestHandler = async (_req, res, next) => {
+export const listPayments: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await service.listPayments());
+    const qs = req.query as Record<string, string | undefined>;
+    res.json(await service.listPayments({ status: qs.status, vendorId: qs.vendorId, q: qs.q, page: qs.page, pageSize: qs.pageSize }));
   } catch (e) {
     next(e);
   }
@@ -536,6 +538,8 @@ export const listQrVehicles: RequestHandler = async (req, res, next) => {
       vehicleType: req.query.vehicleType as string | undefined,
       city:        req.query.city as string | undefined,
       state:       req.query.state as string | undefined,
+      page:        req.query.page,
+      pageSize:    req.query.pageSize,
     }));
   } catch (e) { next(e); }
 };
@@ -651,6 +655,8 @@ export const listQrOrders: RequestHandler = async (req, res, next) => {
       vehicleType:   req.query.vehicleType as string | undefined,
       city:          req.query.city as string | undefined,
       state:         req.query.state as string | undefined,
+      page:          req.query.page,
+      pageSize:      req.query.pageSize,
     }));
   } catch (e) { next(e); }
 };
@@ -821,6 +827,8 @@ export const listAuditLogs: RequestHandler = async (req, res, next) => {
       q:      req.query.q as string | undefined,
       entity: req.query.entity as string | undefined,
       action: req.query.action as string | undefined,
+      page:     req.query.page,
+      pageSize: req.query.pageSize,
     }));
   } catch (e) { next(e); }
 };

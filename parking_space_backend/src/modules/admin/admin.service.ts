@@ -25,6 +25,8 @@ import { createQrOrder } from '../qrOrders/qrOrders.service.js';
 import { recordDetailChanges, getDetailsHistory } from '../../lib/detailsChangeLog.js';
 import { getStickerPricePaise, setStickerPricePaise } from '../../lib/qrPricing.js';
 import { activeStickerOf, lockVehicle, parseStickerCode, REPLACEMENT_BATCH_LABEL } from '../../lib/qrStickerRules.js';
+import { pageMeta, readPage, type PageInput } from '../../lib/paginate.js';
+import { Prisma } from '@prisma/client';
 import type {
   UpdateVendorInput,
   VendorLeadStatusInput,
@@ -893,53 +895,175 @@ export const getSlotBookings = async (id: string) => {
 };
 
 // ── Bookings & payments ───────────────────────────────────────────────────────
-export const listBookings = async () => {
-  const items = await prisma.booking.findMany({
-    include: {
-      user: { select: { fullName: true, email: true, phone: true } },
-      slot: {
-        include: {
-          location: {
-            include: {
-              vendor: {
-                select: {
-                  businessName: true,
-                  contactPhone: true,
-                  user: { select: { fullName: true, email: true } },
+export interface BookingListFilters extends PageInput {
+  status?: string; type?: string; plan?: string; q?: string;
+}
+
+const LIVE_BOOKING = ['CONFIRMED', 'COMPLETED'];
+
+/**
+ * Admin bookings: filters, search and paging on the server. `summary` is over
+ * ALL bookings (not the current filter), same as the page's stat cards.
+ */
+export const listBookings = async (f: BookingListFilters = {}) => {
+  const { page, pageSize, skip, take } = readPage(f);
+  const q = likeLiteral((f.q ?? '').trim());
+  const where: Prisma.BookingWhereInput = {
+    ...(f.status && f.status !== 'ALL' ? { status: f.status as any } : {}),
+    ...(f.type === 'DIRECT' ? { isDirectBooking: true } : f.type === 'ONLINE' ? { isDirectBooking: false } : {}),
+    ...(f.plan === 'MONTHLY' ? { bookingType: 'MONTHLY' } : f.plan === 'HOURLY' ? { bookingType: { not: 'MONTHLY' } } : {}),
+    ...(q
+      ? {
+          OR: [
+            { reference: { contains: q } },
+            { guestName: { contains: q } },
+            { user: { fullName: { contains: q } } },
+            { user: { email: { contains: q } } },
+            { slot: { location: { name: { contains: q } } } },
+            { slot: { location: { vendor: { businessName: { contains: q } } } } },
+          ],
+        }
+      : {}),
+  };
+  const now = new Date();
+  const [total, items, all, online, monthly, activeMonthly, revenue, monthlyRevenue, byStatus] = await Promise.all([
+    prisma.booking.count({ where }),
+    prisma.booking.findMany({
+      where,
+      include: {
+        user: { select: { fullName: true, email: true, phone: true } },
+        slot: {
+          include: {
+            location: {
+              include: {
+                vendor: {
+                  select: {
+                    businessName: true,
+                    contactPhone: true,
+                    user: { select: { fullName: true, email: true } },
+                  },
                 },
               },
             },
           },
         },
+        payments: true,
       },
-      payments: true,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    }),
+    prisma.booking.count(),
+    prisma.booking.count({ where: { isDirectBooking: false } }),
+    prisma.booking.count({ where: { bookingType: 'MONTHLY' } }),
+    prisma.booking.count({ where: { bookingType: 'MONTHLY', status: { in: LIVE_BOOKING as any }, startAt: { lte: now }, endAt: { gte: now } } }),
+    prisma.booking.aggregate({ _sum: { totalAmount: true }, where: { status: { in: LIVE_BOOKING as any } } }),
+    prisma.booking.aggregate({ _sum: { totalAmount: true }, where: { status: { in: LIVE_BOOKING as any }, bookingType: 'MONTHLY' } }),
+    prisma.booking.groupBy({ by: ['status'], _count: { _all: true } }),
+  ]);
+  return {
+    items,
+    ...pageMeta(total, page, pageSize),
+    summary: {
+      total:          all,
+      online,
+      direct:         all - online,
+      monthly,
+      hourly:         all - monthly,
+      activeMonthly,
+      totalRevenue:   Number(revenue._sum.totalAmount ?? 0),
+      monthlyRevenue: Number(monthlyRevenue._sum.totalAmount ?? 0),
+      byStatus:       Object.fromEntries(byStatus.map((r) => [r.status, r._count._all])),
     },
-    orderBy: { createdAt: 'desc' },
-    take: 200,
-  });
-  return { items };
+  };
 };
 
-export const listPayments = async () => {
-  // Return ALL bookings (online & direct) with payment + refund info.
-  const items = await prisma.booking.findMany({
-    include: {
-      user: { select: { fullName: true, email: true, phone: true } },
-      slot: {
+export interface PaymentListFilters extends PageInput {
+  status?: string; vendorId?: string; q?: string;
+}
+
+// Same rules as the admin Payments page: direct bookings from their own refund
+// fields, online ones from their latest Payment row.
+const PAYMENT_STATUS_SQL = Prisma.sql`CASE
+  WHEN b.isDirectBooking = 1 THEN
+    CASE WHEN COALESCE(b.refundAmount, 0) > 0 AND COALESCE(b.refundAmount, 0) >= b.totalAmount THEN 'FULLY_REFUNDED'
+         WHEN COALESCE(b.refundAmount, 0) > 0 THEN 'PARTIAL_REFUND'
+         ELSE 'COMPLETED' END
+  WHEN p.id IS NULL THEN 'PENDING'
+  WHEN p.status = 'FAILED' THEN 'FAILED'
+  WHEN p.status IN ('PAID', 'REFUNDED') THEN
+    CASE WHEN COALESCE(p.refundAmount, 0) > 0 AND COALESCE(p.refundAmount, 0) >= p.amount THEN 'FULLY_REFUNDED'
+         WHEN COALESCE(p.refundAmount, 0) > 0 THEN 'PARTIAL_REFUND'
+         ELSE 'COMPLETED' END
+  ELSE 'PENDING' END`;
+const PAYMENT_ROWS_SQL = Prisma.sql`
+  SELECT b.id, b.createdAt, l.vendorId,
+         ${PAYMENT_STATUS_SQL} AS derivedStatus,
+         b.totalAmount AS amount,
+         CASE WHEN b.isDirectBooking = 1 THEN COALESCE(b.refundAmount, 0) ELSE COALESCE(p.refundAmount, 0) END AS refund,
+         b.isDirectBooking AS isDirect,
+         b.reference, b.guestName, b.guestPhone, u.fullName, u.email, l.name AS spaceName, v.businessName
+  FROM Booking b
+  LEFT JOIN Payment p ON p.id = (SELECT p2.id FROM Payment p2 WHERE p2.bookingId = b.id ORDER BY p2.createdAt DESC LIMIT 1)
+  JOIN Slot s ON s.id = b.slotId
+  JOIN ParkingLocation l ON l.id = s.locationId
+  LEFT JOIN Vendor v ON v.id = l.vendorId
+  LEFT JOIN User u ON u.id = b.userId`;
+
+/** Admin payments: one row per booking with its derived payment status. */
+export const listPayments = async (f: PaymentListFilters = {}) => {
+  const { page, pageSize, skip, take } = readPage(f);
+  const q = (f.q ?? '').trim();
+  const like = `%${likeLiteral(q)}%`;
+  const conds: Prisma.Sql[] = [];
+  // BINARY: the CASE labels and the bound parameter can carry different collations,
+  // which MySQL refuses to compare; the values are fixed uppercase words anyway.
+  if (f.status && f.status !== 'ALL') conds.push(Prisma.sql`BINARY t.derivedStatus = BINARY ${f.status}`);
+  if (f.vendorId && f.vendorId !== 'ALL') conds.push(Prisma.sql`t.vendorId = ${f.vendorId}`);
+  if (q) {
+    conds.push(Prisma.sql`(t.reference LIKE ${like} OR t.guestName LIKE ${like} OR t.guestPhone LIKE ${like}
+      OR t.fullName LIKE ${like} OR t.email LIKE ${like} OR t.spaceName LIKE ${like} OR t.businessName LIKE ${like})`);
+  }
+  const whereSql = conds.length ? Prisma.sql`WHERE ${Prisma.join(conds, ' AND ')}` : Prisma.empty;
+
+  const [pageRows, countRows, summaryRows] = await Promise.all([
+    prisma.$queryRaw<{ id: string }[]>`SELECT t.id FROM (${PAYMENT_ROWS_SQL}) t ${whereSql} ORDER BY t.createdAt DESC LIMIT ${take} OFFSET ${skip}`,
+    prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM (${PAYMENT_ROWS_SQL}) t ${whereSql}`,
+    // Summary over ALL bookings (not the current filter), like the page's stat cards.
+    prisma.$queryRaw<{ derivedStatus: string; n: bigint; amount: unknown; refund: unknown; online: unknown }[]>`
+      SELECT t.derivedStatus, COUNT(*) AS n, SUM(t.amount) AS amount, SUM(t.refund) AS refund, SUM(CASE WHEN t.isDirect = 0 THEN 1 ELSE 0 END) AS online
+      FROM (${PAYMENT_ROWS_SQL}) t GROUP BY t.derivedStatus`,
+  ]);
+
+  const ids = pageRows.map((r) => r.id);
+  const bookings = ids.length
+    ? await prisma.booking.findMany({
+        where: { id: { in: ids } },
         include: {
-          location: {
-            include: {
-              vendor: { select: { id: true, businessName: true } },
-            },
-          },
+          user: { select: { fullName: true, email: true, phone: true } },
+          slot: { include: { location: { include: { vendor: { select: { id: true, businessName: true } } } } } },
+          payments: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
-      },
-      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 500,
-  });
-  return { items };
+      })
+    : [];
+  const byId = new Map(bookings.map((b) => [b.id, b]));
+  const items = ids.map((id) => byId.get(id)).filter(Boolean);
+
+  const byStatus: Record<string, number> = {};
+  let all = 0, online = 0, netCollected = 0, totalRefunded = 0;
+  for (const r of summaryRows) {
+    const n = Number(r.n);
+    byStatus[r.derivedStatus] = n;
+    all += n;
+    online += Number(r.online ?? 0);
+    totalRefunded += Number(r.refund ?? 0);
+    if (r.derivedStatus !== 'PENDING' && r.derivedStatus !== 'FAILED') netCollected += Number(r.amount ?? 0) - Number(r.refund ?? 0);
+  }
+  return {
+    items,
+    ...pageMeta(Number(countRows[0]?.n ?? 0), page, pageSize),
+    summary: { total: all, online, direct: all - online, netCollected, totalRefunded, byStatus },
+  };
 };
 
 const PAYMENT_METHODS = ['CASH', 'UPI', 'CARD_DEBIT', 'CARD_CREDIT', 'NETBANKING', 'WALLET'];
@@ -1742,26 +1866,76 @@ const qrEmergencyView = (r: QrEmergencySource) => ({
     .map((c) => ({ id: c.id, name: c.name, relation: c.relation, phone: decryptField(c.phone), showPublic: c.showPublic })),
 });
 
+/**
+ * Search over encrypted columns (plate, contact numbers). The database can't
+ * look inside them, so partial matches are checked by decrypting the most
+ * recent SEARCH_WINDOW rows; a full plate is matched exactly via plateHash
+ * across all rows, and plain columns are searched in the database.
+ */
+const SEARCH_WINDOW = 2000;
+const encHit = (q: string, ...encrypted: (string | null | undefined)[]) => {
+  const digits = q.replace(/\D/g, '');
+  const plate = normalizePlate(q).toLowerCase();
+  return encrypted.some((v) => {
+    if (!v) return false;
+    const plain = decryptField(v).toLowerCase();
+    return plain.includes(q) || (plate.length >= 2 && plain.includes(plate)) || (digits.length >= 3 && plain.replace(/\D/g, '').includes(digits));
+  });
+};
+/** Escape LIKE wildcards so a search for "QR_" or "50%" matches those characters literally. */
+const likeLiteral = (q: string) => q.replace(/[\\%_]/g, (m) => '\\' + m);
+
+const plateHashFor = (q: string) => {
+  const plate = normalizePlate(q);
+  return /^[A-Z0-9]{4,16}$/.test(plate) ? hmacHash(plate) : null;
+};
+
 const textHit = (q: string, ...parts: (string | null | undefined)[]) =>
   parts.some((p) => (p ?? '').toLowerCase().includes(q));
 
-export interface QrVehicleFilters {
+export interface QrVehicleFilters extends PageInput {
   search?: string; status?: string; vehicleType?: string; city?: string; state?: string;
 }
 
 export const listQrVehicles = async (f: QrVehicleFilters = {}) => {
-  const q = (f.search ?? '').trim().toLowerCase();
+  const { page, pageSize, skip, take } = readPage(f);
+  const rawQ = (f.search ?? '').trim();
+  const q = rawQ.toLowerCase();
+  const lq = likeLiteral(rawQ);
   // City/state only exist on the sticker order's shipping address, so a car
   // matches when any of its orders shipped to that city/state.
   const orderMatch = f.city || f.state
     ? { qrOrders: { some: { ...(f.city ? { city: f.city } : {}), ...(f.state ? { state: f.state } : {}) } } }
     : {};
-  const rows = await prisma.vehicleRegistration.findMany({
-    where: {
-      ...(f.status ? { status: f.status as any } : { status: { not: 'DELETED' } }),
-      ...(f.vehicleType ? { vehicleType: f.vehicleType as any } : {}),
-      ...orderMatch,
-    },
+  const baseWhere: Prisma.VehicleRegistrationWhereInput = {
+    ...(f.status ? { status: f.status as any } : { status: { not: 'DELETED' } }),
+    ...(f.vehicleType ? { vehicleType: f.vehicleType as any } : {}),
+    ...orderMatch,
+  };
+  let where = baseWhere;
+  if (q) {
+    const or: Prisma.VehicleRegistrationWhereInput[] = [
+      { ownerName: { contains: lq } },
+      { user: { fullName: { contains: lq } } },
+      { user: { email: { contains: lq } } },
+      { user: { phone: { contains: lq } } },
+      { qrOrders: { some: { OR: [{ city: { contains: lq } }, { state: { contains: lq } }, { shippingPhone: { contains: lq } }] } } },
+      { emergencyContacts: { some: { name: { contains: lq } } } },
+    ];
+    const ph = plateHashFor(rawQ);
+    if (ph) or.push({ plateHash: ph });
+    const recent = await prisma.vehicleRegistration.findMany({
+      where: baseWhere, orderBy: { createdAt: 'desc' }, take: SEARCH_WINDOW,
+      select: { id: true, plateNumber: true, contactPhone: true, emergencyContacts: { select: { phone: true } } },
+    });
+    const ids = recent.filter((r) => encHit(q, r.plateNumber, r.contactPhone, ...r.emergencyContacts.map((c) => c.phone))).map((r) => r.id);
+    if (ids.length) or.push({ id: { in: ids } });
+    where = { AND: [baseWhere, { OR: or }] };
+  }
+  const [total, rows] = await Promise.all([
+    prisma.vehicleRegistration.count({ where }),
+    prisma.vehicleRegistration.findMany({
+    where,
     include: {
       user:              { select: { id: true, fullName: true, email: true, phone: true } },
       emergencyContacts: { orderBy: { sortOrder: 'asc' } },
@@ -1769,9 +1943,10 @@ export const listQrVehicles = async (f: QrVehicleFilters = {}) => {
       _count:            { select: { calls: true, emergencyContacts: true } },
     },
     orderBy: { createdAt: 'desc' },
-    // Text search runs in memory over decrypted fields, so widen the window when searching.
-    take: q ? 2000 : 300,
-  });
+    skip,
+    take,
+    }),
+  ]);
 
   const items = rows.map((r) => ({
     id:                    r.id,
@@ -1793,13 +1968,7 @@ export const listQrVehicles = async (f: QrVehicleFilters = {}) => {
     createdAt:             r.createdAt,
   }));
 
-  if (!q) return { items };
-  return {
-    items: items.filter((v) =>
-      textHit(q, v.plateNumber, v.contactPhone, v.ownerName, v.owner.email, v.owner.fullName, v.owner.phone, v.city, v.state)
-      || v.emergency.contacts.some((c) => textHit(q, c.name, c.phone)),
-    ).slice(0, 300),
-  };
+  return { items, ...pageMeta(total, page, pageSize) };
 };
 
 export const getQrVehicle = async (id: string) => {
@@ -2175,26 +2344,62 @@ export const unblockQrNumber = async (id: string, actorId: string) => {
 // Requests come in with no online charge (payment paused sitewide); admin
 // confirms payment was collected offline, then ships.
 
-export interface QrOrderFilters {
+export interface QrOrderFilters extends PageInput {
   status?: string; paymentStatus?: string; q?: string; vehicleType?: string; city?: string; state?: string;
   channel?: string; // order type: WEBSITE, INFLUENCER, CAMPAIGN, SUPPORT, OFFLINE_SALE, OTHER
 }
 
 export const listQrOrders = async (params: QrOrderFilters) => {
   const { status, paymentStatus } = params;
-  const q = (params.q ?? '').trim().toLowerCase();
+  const { page, pageSize, skip, take } = readPage(params);
+  const rawQ = (params.q ?? '').trim();
+  const q = rawQ.toLowerCase();
+  const lq = likeLiteral(rawQ);
   // paymentStatus accepts a comma-separated list (e.g. "PAID,REFUNDED") so the
   // fulfilment queue can show both without a second round trip.
   const paymentStatuses = paymentStatus ? paymentStatus.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
-  const rows = await prisma.qrOrder.findMany({
-    where: {
-      ...(status ? { status: status as any } : {}),
-      ...(paymentStatuses ? { paymentStatus: { in: paymentStatuses as any } } : {}),
-      ...(params.city ? { city: params.city } : {}),
-      ...(params.channel ? { channel: params.channel as any } : {}),
-      ...(params.state ? { state: params.state } : {}),
-      ...(params.vehicleType ? { registration: { vehicleType: params.vehicleType as any } } : {}),
-    },
+  const baseWhere: Prisma.QrOrderWhereInput = {
+    ...(status ? { status: status as any } : {}),
+    ...(paymentStatuses ? { paymentStatus: { in: paymentStatuses as any } } : {}),
+    ...(params.city ? { city: params.city } : {}),
+    ...(params.channel ? { channel: params.channel as any } : {}),
+    ...(params.state ? { state: params.state } : {}),
+    ...(params.vehicleType ? { registration: { vehicleType: params.vehicleType as any } } : {}),
+  };
+  let where = baseWhere;
+  if (q) {
+    const or: Prisma.QrOrderWhereInput[] = [
+      { user: { fullName: { contains: lq } } },
+      { user: { email: { contains: lq } } },
+      { user: { phone: { contains: lq } } },
+      { shippingName: { contains: lq } },
+      { shippingPhone: { contains: lq } },
+      { addressLine: { contains: lq } },
+      { city: { contains: lq } },
+      { state: { contains: lq } },
+      { pincode: { contains: lq } },
+      { paymentRef: { contains: lq } },
+      { dispatchedSticker: { token: { contains: lq } } },
+      { registration: { ownerName: { contains: lq } } },
+      { registration: { qrStickers: { some: { token: { contains: lq } } } } },
+      { registration: { emergencyContacts: { some: { name: { contains: lq } } } } },
+    ];
+    const ph = plateHashFor(rawQ);
+    if (ph) or.push({ registration: { plateHash: ph } });
+    const recent = await prisma.qrOrder.findMany({
+      where: baseWhere, orderBy: { createdAt: 'desc' }, take: SEARCH_WINDOW,
+      select: { id: true, registration: { select: { plateNumber: true, contactPhone: true, emergencyContacts: { select: { phone: true } } } } },
+    });
+    const ids = recent
+      .filter((o) => o.registration && encHit(q, o.registration.plateNumber, o.registration.contactPhone, ...o.registration.emergencyContacts.map((c) => c.phone)))
+      .map((o) => o.id);
+    if (ids.length) or.push({ id: { in: ids } });
+    where = { AND: [baseWhere, { OR: or }] };
+  }
+  const [total, rows] = await Promise.all([
+    prisma.qrOrder.count({ where }),
+    prisma.qrOrder.findMany({
+    where,
     include: {
       user: { select: { fullName: true, email: true, phone: true } },
       registration: {
@@ -2224,9 +2429,10 @@ export const listQrOrders = async (params: QrOrderFilters) => {
       dispatchedSticker: { select: { token: true, batch: { select: { id: true, label: true } } } },
     },
     orderBy: { createdAt: 'desc' },
-    // Text search runs in memory over decrypted fields, so widen the window when searching.
-    take: q ? 2000 : 300,
-  });
+    skip,
+    take,
+    }),
+  ]);
 
   const fulfilment = await qrOrderFulfilmentCounts(rows.map((r) => r.id));
 
@@ -2281,14 +2487,7 @@ export const listQrOrders = async (params: QrOrderFilters) => {
     };
   });
 
-  if (!q) return { items };
-  return {
-    items: items.filter((o) =>
-      textHit(q, o.plate, o.ownerName, o.ownerEmail, o.ownerPhone, o.shippingName, o.shippingPhone, o.addressLine,
-        o.city, o.state, o.pincode, o.paymentRef, o.qrToken, o.dispatchedStickerToken)
-      || (o.emergency?.contacts ?? []).some((c) => textHit(q, c.name, c.phone)),
-    ).slice(0, 300),
-  };
+  return { items, ...pageMeta(total, page, pageSize) };
 };
 
 /** Admin correcting an order's shipping details — wrong address, phone, pincode, etc. */
@@ -3256,19 +3455,36 @@ export const setQrStickerDisabled = async (
 
 // ── Audit log — every admin action across the app writes a row here via
 // prisma.auditLog.create(); this is the one place to read them back. ───────
-export const listAuditLogs = async (params: { q?: string; entity?: string; action?: string }) => {
+export const listAuditLogs = async (params: { q?: string; entity?: string; action?: string } & PageInput) => {
   const { q, entity, action } = params;
-  const search = (q ?? '').trim().toLowerCase();
+  const { page, pageSize, skip, take } = readPage(params, 50, 200);
+  const search = likeLiteral((q ?? '').trim());
 
-  const rows = await prisma.auditLog.findMany({
-    where: {
-      ...(entity ? { entity } : {}),
-      ...(action ? { action } : {}),
-    },
-    include: { actor: { select: { fullName: true, email: true } } },
-    orderBy: { createdAt: 'desc' },
-    take: 300,
-  });
+  const where: Prisma.AuditLogWhereInput = {
+    ...(entity ? { entity } : {}),
+    ...(action ? { action } : {}),
+    ...(search
+      ? {
+          OR: [
+            { action: { contains: search } },
+            { entity: { contains: search } },
+            { entityId: { contains: search } },
+            { actor: { fullName: { contains: search } } },
+            { actor: { email: { contains: search } } },
+          ],
+        }
+      : {}),
+  };
+  const [total, rows] = await Promise.all([
+    prisma.auditLog.count({ where }),
+    prisma.auditLog.findMany({
+      where,
+      include: { actor: { select: { fullName: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    }),
+  ]);
 
   const items = rows.map((r) => ({
     id:        r.id,
@@ -3279,17 +3495,7 @@ export const listAuditLogs = async (params: { q?: string; entity?: string; actio
     createdAt: r.createdAt,
     actor:     r.actor ? { fullName: r.actor.fullName, email: r.actor.email } : null,
   }));
-
-  if (!search) return { items };
-  return {
-    items: items.filter((r) =>
-      r.action.toLowerCase().includes(search) ||
-      r.entity.toLowerCase().includes(search) ||
-      (r.entityId ?? '').toLowerCase().includes(search) ||
-      (r.actor?.fullName ?? '').toLowerCase().includes(search) ||
-      (r.actor?.email ?? '').toLowerCase().includes(search),
-    ),
-  };
+  return { items, ...pageMeta(total, page, pageSize) };
 };
 
 /** Distinct entity types seen in the log, for the filter dropdown. */

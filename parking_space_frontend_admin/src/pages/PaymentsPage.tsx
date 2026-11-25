@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Pagination, usePage, ADMIN_PAGE_SIZE, type PageInfo } from '@/components/Pagination';
+import { useDebounced } from '@/components/QrFilters';
 import {
   Wallet, Search, TrendingUp, Globe, UserCheck,
   Banknote, Smartphone, CreditCard, Building, X, RotateCcw,
@@ -256,6 +258,11 @@ const PaymentMethodModal = ({ row, onClose }: { row: Row; onClose: () => void })
 // RowMenu is inlined at the call site using KebabMenu from @/components/KebabMenu.
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+interface PaymentSummary {
+  total: number; online: number; direct: number; netCollected: number; totalRefunded: number;
+  byStatus: Record<string, number>;
+}
+
 export const PaymentsPage = () => {
   const [statusFilter, setStatusFilter] = useState<'ALL' | DerivedStatus>('ALL');
   const [vendorFilter, setVendorFilter] = useState('ALL');
@@ -263,9 +270,17 @@ export const PaymentsPage = () => {
   const [refundRow, setRefundRow]       = useState<Row | null>(null);
   const [methodRow, setMethodRow]       = useState<Row | null>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-payments'],
-    queryFn:  async () => (await api.get('/admin/payments')).data,
+  // Status/vendor filters, search and paging run on the server (the derived
+  // payment status is computed there with the same rules as deriveStatus).
+  // `summary` covers ALL bookings, like the stat cards always did.
+  const dSearch = useDebounced(search);
+  const [page, setPage] = usePage([statusFilter, vendorFilter, dSearch]);
+  const { data, isLoading, isFetching } = useQuery<{ items: any[]; summary?: PaymentSummary } & PageInfo>({
+    queryKey: ['admin-payments', statusFilter, vendorFilter, dSearch, page],
+    queryFn:  async () => (await api.get('/admin/payments', {
+      params: { page, pageSize: ADMIN_PAGE_SIZE, status: statusFilter, vendorId: vendorFilter, q: dSearch.trim() || undefined },
+    })).data,
+    placeholderData: keepPreviousData,
   });
 
   // Load ALL vendors for the dropdown (not just those with payments)
@@ -283,27 +298,12 @@ export const PaymentsPage = () => {
     .sort((a: { id: string; name: string }, b: { id: string; name: string }) => a.name.localeCompare(b.name));
 
   // Stats
-  const netCollected = rows
-    .filter((r) => r.status !== 'PENDING' && r.status !== 'FAILED')
-    .reduce((s, r) => s + r.amount - r.refundAmount, 0);
-  const totalRefunded = rows.reduce((s, r) => s + r.refundAmount, 0);
-
-  // Apply all filters
-  const filtered = rows.filter((r) => {
-    if (statusFilter !== 'ALL' && r.status !== statusFilter) return false;
-    if (vendorFilter !== 'ALL' && r.vendorId !== vendorFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      const hit =
-        r.customerName.toLowerCase().includes(q)  ||
-        r.customerEmail.toLowerCase().includes(q) ||
-        r.reference.toLowerCase().includes(q)     ||
-        r.spaceName.toLowerCase().includes(q)     ||
-        r.vendorName.toLowerCase().includes(q);
-      if (!hit) return false;
-    }
-    return true;
-  });
+  const summary = data?.summary;
+  const netCollected  = summary?.netCollected ?? 0;
+  const totalRefunded = summary?.totalRefunded ?? 0;
+  const statusCount = (st: 'ALL' | DerivedStatus) => (st === 'ALL' ? summary?.total ?? 0 : summary?.byStatus?.[st] ?? 0);
+  // Rows on screen are already filtered by the server.
+  const filtered = rows;
 
   return (
     <>
@@ -317,9 +317,9 @@ export const PaymentsPage = () => {
             <div>
               <h1 className="text-2xl font-bold">Payments</h1>
               <p className="text-sm text-slate-500">
-                {rows.filter((r) => !r.isDirect).length} online ·{' '}
-                {rows.filter((r) => r.isDirect).length} direct ·{' '}
-                {rows.length} total
+                {summary?.online ?? 0} online ·{' '}
+                {summary?.direct ?? 0} direct ·{' '}
+                {summary?.total ?? 0} total
               </p>
             </div>
           </div>
@@ -349,7 +349,7 @@ export const PaymentsPage = () => {
         <div className="mt-5 overflow-x-auto">
           <div className="flex w-fit gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
             {(['ALL', 'COMPLETED', 'PENDING', 'PARTIAL_REFUND', 'FULLY_REFUNDED', 'FAILED'] as const).map((s) => {
-              const count = s === 'ALL' ? rows.length : rows.filter((r) => r.status === s).length;
+              const count = statusCount(s);
               const label = s === 'ALL' ? 'All' : STATUS_META[s].label;
               return (
                 <button
@@ -419,7 +419,7 @@ export const PaymentsPage = () => {
             </div>
           ) : filtered.length === 0 ? (
             <div className="p-10 text-center text-sm text-slate-400">
-              {rows.length === 0 ? 'No bookings found.' : 'No payments match this filter.'}
+              {(summary?.total ?? 0) === 0 ? 'No bookings found.' : 'No payments match this filter.'}
             </div>
           ) : (
             <table className="table">
@@ -529,6 +529,7 @@ export const PaymentsPage = () => {
               </tbody>
             </table>
           )}
+          <Pagination info={data} onPage={setPage} isFetching={isFetching} noun="payments" />
         </div>
       </section>
 

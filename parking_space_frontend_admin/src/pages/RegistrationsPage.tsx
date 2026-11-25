@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Pagination, usePage, ADMIN_PAGE_SIZE, type PageInfo } from '@/components/Pagination';
 import { CheckCircle2, ClipboardList, Plus, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { OrderSourceBadge, OrderTypeSelect, OrderPhones, paymentLabel } from '@/components/OrderStickerQr';
@@ -49,9 +50,11 @@ export default function RegistrationsPage() {
   const qc = useQueryClient();
   const dq = useDebounced(filters.q);
 
-  const { data, isLoading } = useQuery<{ items: RegistrationRow[] }>({
-    queryKey: ['admin-qr-registrations', tab, orderType, dq, filters.vehicleType, filters.state, filters.city],
-    queryFn: async () => (await api.get('/admin/qr/orders', { params: { paymentStatus: tab === 'ALL' ? undefined : tab, channel: orderType || undefined, ...qrFilterParams({ ...filters, q: dq }, 'q') } })).data,
+  const [page, setPage] = usePage([tab, orderType, dq, filters.vehicleType, filters.state, filters.city]);
+  const { data, isLoading, isFetching } = useQuery<{ items: RegistrationRow[] } & PageInfo>({
+    queryKey: ['admin-qr-registrations', tab, orderType, dq, filters.vehicleType, filters.state, filters.city, page],
+    queryFn: async () => (await api.get('/admin/qr/orders', { params: { page, pageSize: ADMIN_PAGE_SIZE, paymentStatus: tab === 'ALL' ? undefined : tab, channel: orderType || undefined, ...qrFilterParams({ ...filters, q: dq }, 'q') } })).data,
+    placeholderData: keepPreviousData,
   });
   const items = data?.items ?? [];
 
@@ -165,6 +168,7 @@ export default function RegistrationsPage() {
             )}
           </tbody>
         </table>
+        <Pagination info={data} onPage={setPage} isFetching={isFetching} noun="orders" />
       </div>
 
       {editingVehicle && (

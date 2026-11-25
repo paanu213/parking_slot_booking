@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Pagination, usePage, ADMIN_PAGE_SIZE, type PageInfo } from '@/components/Pagination';
 import {
   AlertTriangle, Ban, Car, IndianRupee, Pencil, PhoneCall,
   Search, ShieldCheck, TrendingUp, Undo2, Wallet,
@@ -331,9 +332,11 @@ const VehiclesTab = () => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const dq = useDebounced(filters.q);
 
-  const { data, isLoading } = useQuery<{ items: VehicleRow[] }>({
-    queryKey: ['admin-qr-vehicles', dq, status, filters.vehicleType, filters.state, filters.city],
-    queryFn: async () => (await api.get('/admin/qr/vehicles', { params: { ...qrFilterParams({ ...filters, q: dq }, 'search'), status: status || undefined } })).data,
+  const [page, setPage] = usePage([dq, status, filters.vehicleType, filters.state, filters.city]);
+  const { data, isLoading, isFetching } = useQuery<{ items: VehicleRow[] } & PageInfo>({
+    queryKey: ['admin-qr-vehicles', dq, status, filters.vehicleType, filters.state, filters.city, page],
+    queryFn: async () => (await api.get('/admin/qr/vehicles', { params: { page, pageSize: ADMIN_PAGE_SIZE, ...qrFilterParams({ ...filters, q: dq }, 'search'), status: status || undefined } })).data,
+    placeholderData: keepPreviousData,
   });
   const items = data?.items ?? [];
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin-qr-vehicles'] });
@@ -418,6 +421,7 @@ const VehiclesTab = () => {
             )}
           </tbody>
         </table>
+        <Pagination info={data} onPage={setPage} isFetching={isFetching} noun="vehicles" />
       </div>
 
     </div>
